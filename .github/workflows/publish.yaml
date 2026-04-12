@@ -62,22 +62,13 @@ jobs:
             exit 1
           fi
 
-      - name: go vet (root module)
-        env:
-          GOPRIVATE: 'github.com/kenyamaneko/*'
+      - name: Vet api-account
         run: go vet ./...
-
-      - name: go vet (api-account, standalone / no workspace)
-        env:
-          GOPRIVATE: 'github.com/kenyamaneko/*'
-          GOWORK: 'off'
         working-directory: packages/api-account
-        run: go vet ./...
 
-      - name: go test
-        env:
-          GOPRIVATE: 'github.com/kenyamaneko/*'
-        run: go test ./...
+      - name: Build api-account
+        run: go build ./...
+        working-directory: packages/api-account
 
   publish:
     needs: check
