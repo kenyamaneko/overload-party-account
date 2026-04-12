@@ -11,7 +11,7 @@ import (
 	"fmt"
 	"log"
 
-	"cloud.google.com/go/pubsub"
+	"cloud.google.com/go/pubsub/v2"
 
 	pubsubevents "github.com/kenyamaneko/overload-party-common/packages/pubsub-events"
 
@@ -21,16 +21,15 @@ import (
 // FactionSelectedSubscriber は faction-selected-account-sub からイベントを取得し、
 // player_factions への INSERT と初期選択時の players.selected_faction 更新を行います。
 type FactionSelectedSubscriber struct {
-	client       *pubsub.Client
-	subscription *pubsub.Subscription
-	playerRepo   port.PlayerRepo
-	factionRepo  port.FactionRepo
-	txRunner     port.TxRunner
-	eventRepo    port.ProcessedEventRepo
+	client     *pubsub.Client
+	subscriber *pubsub.Subscriber
+	playerRepo  port.PlayerRepo
+	factionRepo port.FactionRepo
+	txRunner    port.TxRunner
+	eventRepo   port.ProcessedEventRepo
 }
 
 // NewFactionSelectedSubscriber は FactionSelectedSubscriber を生成します。
-// subscription は Terraform で事前作成済みである必要があります。
 func NewFactionSelectedSubscriber(
 	ctx context.Context,
 	projectID, subscriptionID string,
@@ -46,30 +45,20 @@ func NewFactionSelectedSubscriber(
 	if err != nil {
 		return nil, fmt.Errorf("faction-selected subscriber: new client: %w", err)
 	}
-	sub := client.Subscription(subscriptionID)
-	ok, err := sub.Exists(ctx)
-	if err != nil {
-		_ = client.Close()
-		return nil, fmt.Errorf("faction-selected subscriber: exists check: %w", err)
-	}
-	if !ok {
-		_ = client.Close()
-		return nil, fmt.Errorf("faction-selected subscriber: subscription %q not found", subscriptionID)
-	}
 	return &FactionSelectedSubscriber{
-		client:       client,
-		subscription: sub,
-		playerRepo:   playerRepo,
-		factionRepo:  factionRepo,
-		txRunner:     txRunner,
-		eventRepo:    eventRepo,
+		client:      client,
+		subscriber:  client.Subscriber(subscriptionID),
+		playerRepo:  playerRepo,
+		factionRepo: factionRepo,
+		txRunner:    txRunner,
+		eventRepo:   eventRepo,
 	}, nil
 }
 
 // Start は ctx がキャンセルされるか Receive がエラーを返すまでブロックします。
 func (s *FactionSelectedSubscriber) Start(ctx context.Context) error {
-	log.Printf("faction-selected subscriber: pulling from %s", s.subscription.ID())
-	return s.subscription.Receive(ctx, s.handle)
+	log.Printf("faction-selected subscriber: pulling from %s", s.subscriber.ID())
+	return s.subscriber.Receive(ctx, s.handle)
 }
 
 // Close は Pub/Sub クライアントを閉じます。

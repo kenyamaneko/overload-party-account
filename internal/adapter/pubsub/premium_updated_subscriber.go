@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"log"
 
-	"cloud.google.com/go/pubsub"
+	"cloud.google.com/go/pubsub/v2"
 
 	pubsubevents "github.com/kenyamaneko/overload-party-common/packages/pubsub-events"
 
@@ -17,11 +17,11 @@ import (
 // PremiumUpdatedSubscriber は premium-updated-account-sub からイベントを取得し、
 // players.is_premium と premium_expires_at を更新します。
 type PremiumUpdatedSubscriber struct {
-	client       *pubsub.Client
-	subscription *pubsub.Subscription
-	playerRepo   port.PlayerRepo
-	txRunner     port.TxRunner
-	eventRepo    port.ProcessedEventRepo
+	client     *pubsub.Client
+	subscriber *pubsub.Subscriber
+	playerRepo port.PlayerRepo
+	txRunner   port.TxRunner
+	eventRepo  port.ProcessedEventRepo
 }
 
 // NewPremiumUpdatedSubscriber は PremiumUpdatedSubscriber を生成します。
@@ -39,29 +39,19 @@ func NewPremiumUpdatedSubscriber(
 	if err != nil {
 		return nil, fmt.Errorf("premium-updated subscriber: new client: %w", err)
 	}
-	sub := client.Subscription(subscriptionID)
-	ok, err := sub.Exists(ctx)
-	if err != nil {
-		_ = client.Close()
-		return nil, fmt.Errorf("premium-updated subscriber: exists check: %w", err)
-	}
-	if !ok {
-		_ = client.Close()
-		return nil, fmt.Errorf("premium-updated subscriber: subscription %q not found", subscriptionID)
-	}
 	return &PremiumUpdatedSubscriber{
-		client:       client,
-		subscription: sub,
-		playerRepo:   playerRepo,
-		txRunner:     txRunner,
-		eventRepo:    eventRepo,
+		client:     client,
+		subscriber: client.Subscriber(subscriptionID),
+		playerRepo: playerRepo,
+		txRunner:   txRunner,
+		eventRepo:  eventRepo,
 	}, nil
 }
 
 // Start は ctx がキャンセルされるか Receive がエラーを返すまでブロックします。
 func (s *PremiumUpdatedSubscriber) Start(ctx context.Context) error {
-	log.Printf("premium-updated subscriber: pulling from %s", s.subscription.ID())
-	return s.subscription.Receive(ctx, s.handle)
+	log.Printf("premium-updated subscriber: pulling from %s", s.subscriber.ID())
+	return s.subscriber.Receive(ctx, s.handle)
 }
 
 // Close は Pub/Sub クライアントを閉じます。
