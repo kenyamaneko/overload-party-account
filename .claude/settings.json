@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(GOPRIVATE='github.com/kenyamaneko/*' go vet ./...)",
+      "Read(//Users/kenyamamoto/Documents/key_and_notes/overload-party/**)",
+      "Bash([ -f \"/Users/kenyamamoto/Documents/key_and_notes/overload-party/overload-party-$repo/go.mod\" ])",
+      "Bash(grep -l \"errorStatus\\\\|respondError\\\\|error.*http\\\\|StatusCode\" /Users/kenyamamoto/Documents/key_and_notes/overload-party/overload-party-gateway/internal/handler/rest/*.go)",
+      "Bash(grep -n \"errors\\\\.New\\\\|var.*Err\" /Users/kenyamamoto/Documents/key_and_notes/overload-party/overload-party-card/internal/service/*.go)"
+    ]
+  }
+}

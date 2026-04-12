@@ -1,0 +1,161 @@
+# SSoT for account-owned types.
+#
+# The account service is the owner of player / player_daily_battle /
+# player_factions / user_settings. This file drives scripts/generate_types.py
+# to emit Go code into packages/api-account/*_gen.go, which gateway (and other
+# services) go-get as a published contract.
+#
+# Every section is routed to the Go module dir `packages/api-account` with
+# Go package name `apiaccount`. The target is always Go (no TS/C# here — the
+# account contract is consumed only by Go services).
+#
+# Fields:
+#   target: "both" — kept for parity with common's schema; unused by the
+#           account generator but lets us reuse the same YAML shape.
+#   Per-type fields: name (Go identifier), type (Go type string), json, db
+
+files:
+  # ─── Player domain types ─────────────────────────────
+  - name: player
+    target: both
+    imports:
+      - time
+      - cloud.google.com/go/civil
+    types:
+      - name: Player
+        comment: "Player is the account.players row."
+        fields:
+          - {name: PlayerID, type: string, json: "player_id", db: "player_id"}
+          - {name: FirebaseUID, type: string, json: "firebase_uid", db: "firebase_uid"}
+          - {name: Username, type: string, json: "username", db: "username"}
+          - {name: Level, type: int64, json: "level", db: "level"}
+          - {name: Exp, type: int64, json: "exp", db: "exp"}
+          - {name: IsPremium, type: bool, json: "is_premium", db: "is_premium"}
+          - {name: EquippedIconNo, type: "*int64", json: "equipped_icon_no,omitempty", db: "equipped_icon_no"}
+          - {name: SelectedFaction, type: "*string", json: "selected_faction,omitempty", db: "selected_faction"}
+          - {name: PremiumExpiresAt, type: "*time.Time", json: "premium_expires_at,omitempty", db: "premium_expires_at"}
+          - {name: CreatedAt, type: time.Time, json: "created_at", db: "created_at"}
+          - {name: UpdatedAt, type: time.Time, json: "updated_at", db: "updated_at"}
+
+      - name: PlayerDailyBattle
+        comment: "PlayerDailyBattle is the account.player_daily_battle row."
+        fields:
+          - {name: PlayerID, type: string, json: "player_id", db: "player_id"}
+          - {name: DailyBattleCount, type: int64, json: "daily_battle_count", db: "daily_battle_count"}
+          - {name: LastResetDate, type: civil.Date, json: "last_reset_date", db: "last_reset_date"}
+
+      - name: PlayerFaction
+        comment: "PlayerFaction is a single row in account.player_factions."
+        fields:
+          - {name: PlayerID, type: string, json: "player_id", db: "player_id"}
+          - {name: Faction, type: string, json: "faction", db: "faction"}
+          - {name: Source, type: string, json: "source", db: "source"}
+          - {name: AcquiredAt, type: time.Time, json: "acquired_at", db: "acquired_at"}
+
+      - name: UserSettings
+        comment: "UserSettings is the account.user_settings row."
+        fields:
+          - {name: PlayerID, type: string, json: "player_id", db: "player_id"}
+          - {name: Language, type: string, json: "language", db: "language"}
+          - {name: BgmVolume, type: int64, json: "bgm_volume", db: "bgm_volume"}
+          - {name: SeVolume, type: int64, json: "se_volume", db: "se_volume"}
+          - {name: PushEnabled, type: bool, json: "push_enabled", db: "push_enabled"}
+          - {name: UpdatedAt, type: time.Time, json: "updated_at", db: "updated_at"}
+
+  # ─── Internal REST request / response envelopes ──────
+  - name: rest_api
+    target: both
+    imports:
+      - time
+    types:
+      # ── Responses ──
+      - name: PlayerResponse
+        comment: "PlayerResponse is returned by GET /internal/v1/players/:playerId and kin. It is Player + computed level progress."
+        fields:
+          - {name: PlayerID, type: string, json: "player_id"}
+          - {name: FirebaseUID, type: string, json: "firebase_uid"}
+          - {name: Username, type: string, json: "username"}
+          - {name: Level, type: int64, json: "level"}
+          - {name: Exp, type: int64, json: "exp"}
+          - {name: IsPremium, type: bool, json: "is_premium"}
+          - {name: EquippedIconNo, type: "*int64", json: "equipped_icon_no,omitempty"}
+          - {name: SelectedFaction, type: "*string", json: "selected_faction,omitempty"}
+          - {name: PremiumExpiresAt, type: "*time.Time", json: "premium_expires_at,omitempty"}
+          - {name: CreatedAt, type: time.Time, json: "created_at"}
+          - {name: UpdatedAt, type: time.Time, json: "updated_at"}
+          - {name: LevelExpCurrent, type: int64, json: "level_exp_current"}
+          - {name: LevelExpRequired, type: int64, json: "level_exp_required"}
+
+      - name: BattleLimitResponse
+        comment: "BattleLimitResponse is returned by GET /internal/v1/players/:playerId/battle-limit."
+        fields:
+          - {name: DailyBattleCount, type: int64, json: "daily_battle_count"}
+          - {name: DailyBattleLimit, type: int64, json: "daily_battle_limit"}
+          - {name: CanBattle, type: bool, json: "can_battle"}
+
+      - name: ListFactionsResponse
+        comment: "ListFactionsResponse is returned by GET /internal/v1/players/:playerId/factions."
+        fields:
+          - {name: Factions, type: "[]string", json: "factions"}
+
+      # ── Requests ──
+      - name: RegisterRequest
+        comment: "RegisterRequest is the body for POST /internal/v1/auth/register. The internal RPC form carries firebase_uid explicitly; the public-facing form (client → gateway) only has username — gateway forwards the Firebase-verified UID."
+        fields:
+          - {name: FirebaseUID, type: string, json: "firebase_uid"}
+          - {name: Username, type: string, json: "username"}
+
+      - name: LoginRequest
+        comment: "LoginRequest is the body for POST /internal/v1/auth/login."
+        fields:
+          - {name: FirebaseUID, type: string, json: "firebase_uid"}
+
+      - name: UpdateNameRequest
+        comment: "UpdateNameRequest is the body for PUT /internal/v1/players/:playerId/name."
+        fields:
+          - {name: Name, type: string, json: "name"}
+
+      - name: UpdatePremiumRequest
+        comment: "UpdatePremiumRequest is the body for PUT /internal/v1/players/:playerId/premium. ExpiresAtMillis is a UNIX millisecond timestamp; null resets to NULL."
+        fields:
+          - {name: IsPremium, type: bool, json: "is_premium"}
+          - {name: ExpiresAtMillis, type: "*int64", json: "expires_at_millis,omitempty"}
+
+      - name: UpdateFactionRequest
+        comment: "UpdateFactionRequest is the body for PUT /internal/v1/players/:playerId/faction."
+        fields:
+          - {name: Faction, type: string, json: "faction"}
+
+      - name: AddExpRequest
+        comment: "AddExpRequest is the body for POST /internal/v1/players/:playerId/exp."
+        fields:
+          - {name: ExpGain, type: int64, json: "exp_gain"}
+
+      - name: AwardGameExpRequest
+        comment: "AwardGameExpRequest is the body for POST /internal/v1/players/award-game-exp."
+        fields:
+          - {name: Player1ID, type: string, json: "player1_id"}
+          - {name: Player2ID, type: string, json: "player2_id"}
+          - {name: WinnerNum, type: int64, json: "winner_num"}
+          - {name: Reason, type: string, json: "reason"}
+          - {name: MatchType, type: string, json: "match_type"}
+
+      - name: FactionGrantRequest
+        comment: "FactionGrantRequest is the body for POST /internal/v1/players/:playerId/factions."
+        fields:
+          - {name: Faction, type: string, json: "faction"}
+          - {name: Source, type: string, json: "source"}
+
+      - name: SelectInitialFactionRequest
+        comment: "SelectInitialFactionRequest is the body for POST /internal/v1/players/:playerId/factions/select. Scenario calls this once the tutorial/story pins the player's faction choice; account inserts player_factions (ON CONFLICT DO NOTHING RETURNING) + UPDATE players.selected_faction in one tx, then calls card.grant-initial-pack."
+        fields:
+          - {name: FactionID, type: string, json: "faction_id"}
+          - {name: Source, type: string, json: "source"}
+
+      - name: UpdateSettingsRequest
+        comment: "UpdateSettingsRequest is the body for PUT /internal/v1/players/:playerId/settings."
+        fields:
+          - {name: Language, type: string, json: "language"}
+          - {name: BgmVolume, type: int64, json: "bgm_volume"}
+          - {name: SeVolume, type: int64, json: "se_volume"}
+          - {name: PushEnabled, type: bool, json: "push_enabled"}

@@ -1,0 +1,161 @@
+# ─── API Endpoint Definitions ──────────────────────────
+endpoint_groups:
+  - name: Internal REST
+    base_path: /internal/v1
+    auth: internal
+    endpoints:
+      - method: POST
+        path: /auth/register
+        summary: 新規プレイヤーを登録する（gateway が Firebase UID + username を中継）
+        request_type: RegisterRequest
+        response_type: PlayerResponse
+        notes: 成功時 201 Created。username は 1〜50 文字
+        errors:
+          - {status: 400, description: firebase_uid が空 / username が 1〜50 文字範囲外}
+          - {status: 409, description: 同一 firebase_uid で既に登録済み}
+          - {status: 500, description: DB 接続エラー}
+
+      - method: POST
+        path: /auth/login
+        summary: Firebase UID でログイン（プレイヤー情報を返す）
+        request_type: LoginRequest
+        response_type: PlayerResponse
+        errors:
+          - {status: 400, description: firebase_uid が空}
+          - {status: 404, description: プレイヤーが存在しない}
+          - {status: 500, description: DB 接続エラー}
+
+      - method: GET
+        path: /players/by-firebase-uid/{firebaseUID}
+        summary: Firebase UID からプレイヤーを検索する
+        response_type: PlayerResponse
+        errors:
+          - {status: 400, description: firebaseUID が空}
+          - {status: 404, description: プレイヤーが存在しない}
+          - {status: 500, description: DB 接続エラー}
+
+      - method: POST
+        path: /players/award-game-exp
+        summary: 対戦終了後に両プレイヤーへ経験値を付与する（battle → gateway → account）
+        request_type: AwardGameExpRequest
+        notes: 成功時 204 No Content。サービス間呼び出し用（playerId パスパラメータなし）
+        errors:
+          - {status: 400, description: リクエストボディ不正}
+          - {status: 404, description: プレイヤーが存在しない}
+          - {status: 500, description: DB 接続エラー}
+
+      - method: GET
+        path: /players/{playerId}
+        summary: プレイヤー情報を返す（レベル進捗を含む）
+        response_type: PlayerResponse
+        errors:
+          - {status: 400, description: playerId が空}
+          - {status: 404, description: プレイヤーが存在しない}
+          - {status: 500, description: DB 接続エラー}
+
+      - method: PUT
+        path: /players/{playerId}/name
+        summary: プレイヤー名を変更する
+        request_type: UpdateNameRequest
+        response_type: PlayerResponse
+        errors:
+          - {status: 400, description: playerId が空 / name が空}
+          - {status: 404, description: プレイヤーが存在しない}
+          - {status: 500, description: DB 接続エラー}
+
+      - method: GET
+        path: /players/{playerId}/battle-limit
+        summary: 1 日のバトル回数制限と残り回数を返す
+        response_type: BattleLimitResponse
+        errors:
+          - {status: 400, description: playerId が空}
+          - {status: 404, description: プレイヤーが存在しない}
+          - {status: 500, description: DB 接続エラー}
+
+      - method: POST
+        path: /players/{playerId}/battle-limit/increment
+        summary: バトル回数を 1 増やす（バトル開始時に gateway が呼び出す）
+        notes: 成功時 204 No Content
+        errors:
+          - {status: 400, description: playerId が空}
+          - {status: 404, description: プレイヤーが存在しない}
+          - {status: 500, description: DB 接続エラー}
+
+      - method: PUT
+        path: /players/{playerId}/premium
+        summary: プレミアムステータスを更新する（shop webhook 経由）
+        request_type: UpdatePremiumRequest
+        notes: 成功時 204 No Content
+        errors:
+          - {status: 400, description: playerId が空 / リクエストボディ不正}
+          - {status: 404, description: プレイヤーが存在しない}
+          - {status: 500, description: DB 接続エラー}
+
+      - method: PUT
+        path: /players/{playerId}/faction
+        summary: 選択中ファクションを変更する
+        request_type: UpdateFactionRequest
+        notes: 成功時 204 No Content
+        errors:
+          - {status: 400, description: playerId が空 / faction が空}
+          - {status: 404, description: プレイヤーが存在しない}
+          - {status: 500, description: DB 接続エラー}
+
+      - method: POST
+        path: /players/{playerId}/exp
+        summary: 経験値を加算する
+        request_type: AddExpRequest
+        notes: 成功時 204 No Content
+        errors:
+          - {status: 400, description: playerId が空 / リクエストボディ不正}
+          - {status: 404, description: プレイヤーが存在しない}
+          - {status: 500, description: DB 接続エラー}
+
+      - method: POST
+        path: /players/{playerId}/factions
+        summary: ファクション所有権を付与する（購入・報酬等）
+        request_type: FactionGrantRequest
+        notes: 成功時 204 No Content
+        errors:
+          - {status: 400, description: playerId が空 / faction または source が空}
+          - {status: 404, description: プレイヤーが存在しない}
+          - {status: 500, description: DB 接続エラー}
+
+      - method: POST
+        path: /players/{playerId}/factions/select
+        summary: 初期ファクション選択（チュートリアル完了時に scenario が呼び出す）
+        request_type: SelectInitialFactionRequest
+        notes: 冪等。既に選択済みの場合は 409 を返すがクライアントにとってはエラーではない
+        errors:
+          - {status: 400, description: faction_id が空 / 無効なファクション / source が initial_selection 以外}
+          - {status: 404, description: プレイヤーが存在しない}
+          - {status: 409, description: 初期ファクション選択済み（冪等 no-op）}
+          - {status: 500, description: DB 接続エラー}
+
+      - method: GET
+        path: /players/{playerId}/factions
+        summary: プレイヤーが所有するファクション一覧を返す
+        response_type: ListFactionsResponse
+        errors:
+          - {status: 400, description: playerId が空}
+          - {status: 404, description: プレイヤーが存在しない}
+          - {status: 500, description: DB 接続エラー}
+
+      - method: GET
+        path: /players/{playerId}/settings
+        summary: ユーザー設定を返す
+        response_type: UserSettings
+        errors:
+          - {status: 400, description: playerId が空}
+          - {status: 404, description: プレイヤーが存在しない}
+          - {status: 500, description: DB 接続エラー}
+
+      - method: PUT
+        path: /players/{playerId}/settings
+        summary: ユーザー設定を更新する
+        request_type: UpdateSettingsRequest
+        response_type: UserSettings
+        errors:
+          - {status: 400, description: playerId が空 / language が空}
+          - {status: 404, description: プレイヤーが存在しない}
+          - {status: 500, description: DB 接続エラー}
