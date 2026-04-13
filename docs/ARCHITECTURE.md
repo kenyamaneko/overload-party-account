@@ -42,7 +42,7 @@ SELECT battle_date, battle_count
 
 1. `FOR UPDATE` で行ロックを取得 (同一プレイヤーの並行インクリメントを排他)
 2. `battle_date` が当日のゲーム日と異なる場合、カウンターを 0 にリセットして日付を更新
-3. `battle_count` が上限 (`shared.game_config` の `free_daily_battle_limit`) に達している場合:
+3. `battle_count` が上限 (Firestore `game_config` の `free_daily_battle_limit`) に達している場合:
    - `players.is_premium = true` ならプレミアム会員は制限なし
    - それ以外は `ErrBattleLimitReached` を返す
 4. `battle_count` をインクリメントして COMMIT
@@ -55,7 +55,7 @@ SELECT battle_date, battle_count
 
 バトル終了時に battle サービスから呼ばれる。両プレイヤーの経験値を 1 リクエストで更新する:
 
-- 勝者: `shared.game_config` の `exp_formula_coefficient` に基づく base exp
+- 勝者: Firestore `game_config` の `exp_formula_coefficient` に基づく base exp
 - 敗者: base exp の半分
 - `match_type` (pvp / npc) による補正あり
 

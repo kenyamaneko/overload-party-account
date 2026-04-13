@@ -46,7 +46,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-      - name: Set up Java (Firestore emulator runtime, ADR-017)
+      - name: Set up Java (Firestore emulator runtime)
         uses: actions/setup-java@v4
         with:
           distribution: temurin

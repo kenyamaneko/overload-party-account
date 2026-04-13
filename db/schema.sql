@@ -21,7 +21,6 @@ CREATE SCHEMA IF NOT EXISTS account;
 
 -- =============================================================================
 -- Schema-local helpers
--- shared スキーマ廃止に伴い、updated_at トリガー関数を account スキーマ内に定義する。
 -- =============================================================================
 
 CREATE OR REPLACE FUNCTION account.update_updated_at()
