@@ -105,7 +105,7 @@ func (s *PlayerService) GetBattleLimit(ctx context.Context, playerID string) (*a
 		count = 0 // Will be reset on next increment
 	}
 
-	freeLimit, err := s.gameConfigRepo.GetInt64(ctx, configKeyFreeDailyBattleLimit, 0)
+	freeLimit, err := s.gameConfigRepo.GetInt64(ctx, configKeyFreeDailyBattleLimit)
 	if err != nil {
 		return nil, fmt.Errorf("get free battle limit: %w", err)
 	}
@@ -138,7 +138,7 @@ func (s *PlayerService) AwardExp(ctx context.Context, playerID string, expGain i
 	if expGain <= 0 {
 		return nil
 	}
-	coeff, err := s.gameConfigRepo.GetInt64(ctx, ConfigKeyExpFormulaCoefficient, 0)
+	coeff, err := s.gameConfigRepo.GetInt64(ctx, ConfigKeyExpFormulaCoefficient)
 	if err != nil {
 		return fmt.Errorf("get exp_formula_coefficient: %w", err)
 	}
@@ -171,15 +171,15 @@ func ComputeLevel(newExp, currentLevel, coeff int64) int64 {
 // AwardGameExp はゲーム終了後に両プレイヤーに経験値を付与します。
 // NPC 戦（matchType == "npc"）では人間プレイヤー（player1）のみに付与します。
 func (s *PlayerService) AwardGameExp(ctx context.Context, player1ID, player2ID string, winnerNum int64, reason, matchType string) error {
-	expWin, err := s.gameConfigRepo.GetInt64(ctx, "exp_win", 0)
+	expWin, err := s.gameConfigRepo.GetInt64(ctx, "exp_win")
 	if err != nil {
 		return fmt.Errorf("read exp_win: %w", err)
 	}
-	expLoss, err := s.gameConfigRepo.GetInt64(ctx, "exp_loss", 0)
+	expLoss, err := s.gameConfigRepo.GetInt64(ctx, "exp_loss")
 	if err != nil {
 		return fmt.Errorf("read exp_loss: %w", err)
 	}
-	expDraw, err := s.gameConfigRepo.GetInt64(ctx, "exp_draw", 0)
+	expDraw, err := s.gameConfigRepo.GetInt64(ctx, "exp_draw")
 	if err != nil {
 		return fmt.Errorf("read exp_draw: %w", err)
 	}
@@ -248,7 +248,7 @@ func (s *PlayerService) GetPlayerResponse(ctx context.Context, playerID string) 
 
 // GetLevelProgress は指定レベル・経験値のレベル進捗を返します。
 func (s *PlayerService) GetLevelProgress(ctx context.Context, level, exp int64) (*LevelProgress, error) {
-	coeff, err := s.gameConfigRepo.GetInt64(ctx, ConfigKeyExpFormulaCoefficient, 0)
+	coeff, err := s.gameConfigRepo.GetInt64(ctx, ConfigKeyExpFormulaCoefficient)
 	if err != nil {
 		return nil, fmt.Errorf("get exp_formula_coefficient: %w", err)
 	}

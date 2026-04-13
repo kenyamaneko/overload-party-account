@@ -9,6 +9,7 @@ import (
 	"syscall"
 	"time"
 
+	"cloud.google.com/go/firestore"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/kenyamaneko/overload-party-account/internal/config"
@@ -40,10 +41,16 @@ func run() error {
 	}
 	defer pool.Close()
 
+	fsClient, err := firestore.NewClient(ctx, cfg.FirestoreProjectID)
+	if err != nil {
+		return fmt.Errorf("firestore new client: %w", err)
+	}
+	defer func() { _ = fsClient.Close() }()
+
 	txManager := repository.NewTxManager(pool)
 	playerRepo := repository.NewPgPlayerRepository(pool)
 	userSettingsRepo := repository.NewPgUserSettingsRepository(pool)
-	gameConfigRepo := repository.NewPgGameConfigRepository(pool)
+	gameConfigRepo := repository.NewFirestoreGameConfigRepository(fsClient)
 	factionRepo := repository.NewPgFactionRepository(pool)
 	eventRepo := repository.NewPgProcessedEventRepository(pool)
 

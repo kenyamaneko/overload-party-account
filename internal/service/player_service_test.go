@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -19,11 +20,11 @@ type mockGameConfigRepo struct {
 	values map[string]int64
 }
 
-func (m *mockGameConfigRepo) GetInt64(ctx context.Context, key string, fallback int64) (int64, error) {
+func (m *mockGameConfigRepo) GetInt64(_ context.Context, key string) (int64, error) {
 	if v, ok := m.values[key]; ok {
 		return v, nil
 	}
-	return fallback, nil
+	return 0, fmt.Errorf("game config %q: %w", key, port.ErrNotFound)
 }
 
 func today() civil.Date {

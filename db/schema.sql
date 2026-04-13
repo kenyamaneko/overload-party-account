@@ -20,15 +20,11 @@
 CREATE SCHEMA IF NOT EXISTS account;
 
 -- =============================================================================
--- Shared helpers
--- Mirrored from overload-party-common/db/schema_postgres.sql so that the
--- account schema is self-contained in test environments. The shared schema
--- creation is a no-op when multiple services target the same database.
+-- Schema-local helpers
+-- shared スキーマ廃止に伴い、updated_at トリガー関数を account スキーマ内に定義する。
 -- =============================================================================
 
-CREATE SCHEMA IF NOT EXISTS shared;
-
-CREATE OR REPLACE FUNCTION shared.update_updated_at()
+CREATE OR REPLACE FUNCTION account.update_updated_at()
 RETURNS TRIGGER AS $$
 BEGIN
   NEW.updated_at = now();
@@ -56,7 +52,7 @@ CREATE TABLE account.players (
 );
 
 CREATE UNIQUE INDEX idx_players_firebase_uid ON account.players(firebase_uid);
-CREATE TRIGGER trg_players_updated_at BEFORE UPDATE ON account.players FOR EACH ROW EXECUTE FUNCTION shared.update_updated_at();
+CREATE TRIGGER trg_players_updated_at BEFORE UPDATE ON account.players FOR EACH ROW EXECUTE FUNCTION account.update_updated_at();
 
 ALTER TABLE account.players
   ADD CONSTRAINT chk_players_selected_faction
@@ -96,7 +92,7 @@ CREATE TABLE account.user_settings (
   push_enabled BOOLEAN NOT NULL,                     -- 通知許可
   updated_at   TIMESTAMPTZ NOT NULL DEFAULT now()    -- 更新日時
 );
-CREATE TRIGGER trg_user_settings_updated_at BEFORE UPDATE ON account.user_settings FOR EACH ROW EXECUTE FUNCTION shared.update_updated_at();
+CREATE TRIGGER trg_user_settings_updated_at BEFORE UPDATE ON account.user_settings FOR EACH ROW EXECUTE FUNCTION account.update_updated_at();
 
 -- =============================================================================
 -- account.processed_events (Pub/Sub subscriber idempotency)
