@@ -41,7 +41,7 @@ Battle (service-to-service)
 |---|---|---|
 | `PORT` | `9005` | リッスンポート |
 | `ENV` | `dev` | `dev` / `stg` / `prod` |
-| `PUBSUB_PROJECT_ID` | (必須) | Pub/Sub GCP プロジェクト |
+| `PUBSUB_PROJECT_ID` | (必須) | Pub/Sub Google Cloud プロジェクト |
 | `FACTION_SELECTED_SUBSCRIPTION` | `faction-selected-account-sub` | faction-selected Pub/Sub サブスクリプション名 |
 | `PREMIUM_UPDATED_SUBSCRIPTION` | `premium-updated-account-sub` | premium-updated Pub/Sub サブスクリプション名 |
 
