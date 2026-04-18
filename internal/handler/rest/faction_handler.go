@@ -1,13 +1,12 @@
 package rest
 
 import (
-	"errors"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
 
-	apiaccount "github.com/kenyamaneko/overload-party-account/packages/api-account"
 	"github.com/kenyamaneko/overload-party-account/internal/service"
+	apiaccount "github.com/kenyamaneko/overload-party-account/packages/api-account"
 )
 
 // FactionHandler は初期ファクション選択フローの REST エンドポイントを処理します。
@@ -45,15 +44,9 @@ func (h *FactionHandler) SelectInitialFaction(c *gin.Context) {
 		return
 	}
 
-	err := h.factionService.SelectInitialFaction(c.Request.Context(), playerID, req.FactionID)
-	switch {
-	case err == nil:
-		c.Status(http.StatusOK)
-	case errors.Is(err, service.ErrFactionAlreadySelected):
-		c.JSON(http.StatusConflict, gin.H{"error": "initial faction already selected"})
-	case errors.Is(err, service.ErrInvalidFaction):
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-	default:
+	if err := h.factionService.SelectInitialFaction(c.Request.Context(), playerID, req.FactionID); err != nil {
 		respondError(c, err)
+		return
 	}
+	c.Status(http.StatusOK)
 }

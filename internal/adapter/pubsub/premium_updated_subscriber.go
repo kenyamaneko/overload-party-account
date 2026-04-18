@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 
 	"cloud.google.com/go/pubsub/v2"
 
@@ -50,7 +50,7 @@ func NewPremiumUpdatedSubscriber(
 
 // Start は ctx がキャンセルされるか Receive がエラーを返すまでブロックします。
 func (s *PremiumUpdatedSubscriber) Start(ctx context.Context) error {
-	log.Printf("premium-updated subscriber: pulling from %s", s.subscriber.ID())
+	slog.Info("premium-updated subscriber: pulling", "subscription", s.subscriber.ID())
 	return s.subscriber.Receive(ctx, s.handle)
 }
 
@@ -60,12 +60,12 @@ func (s *PremiumUpdatedSubscriber) Close() error { return s.client.Close() }
 func (s *PremiumUpdatedSubscriber) handle(ctx context.Context, msg *pubsub.Message) {
 	var ev pubsubevents.PremiumUpdatedEvent
 	if err := json.Unmarshal(msg.Data, &ev); err != nil {
-		log.Printf("premium-updated subscriber: bad payload (nack): %v", err)
+		slog.Error("premium-updated subscriber: bad payload (nack)", "error", err)
 		msg.Nack()
 		return
 	}
 	if ev.EventType != pubsubevents.EventTypePremiumUpdated {
-		log.Printf("premium-updated subscriber: unknown event_type %q, acking", ev.EventType)
+		slog.Warn("premium-updated subscriber: unknown event_type, acking", "event_type", ev.EventType)
 		msg.Ack()
 		return
 	}
@@ -83,8 +83,8 @@ func (s *PremiumUpdatedSubscriber) handle(ctx context.Context, msg *pubsub.Messa
 		}
 		return nil
 	}); err != nil {
-		log.Printf("premium-updated subscriber: handler failed event=%s player=%s: %v",
-			ev.EventID, ev.PlayerID, err)
+		slog.Error("premium-updated subscriber: handler failed",
+			"event_id", ev.EventID, "player_id", ev.PlayerID, "error", err)
 		msg.Nack()
 		return
 	}

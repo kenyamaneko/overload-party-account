@@ -7,52 +7,111 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/kenyamaneko/overload-party-account/internal/repository"
+	"github.com/kenyamaneko/overload-party-account/internal/model"
 )
 
+// newAuthTestService は実 PostgreSQL repository + TxManager を束ねて
+// AuthService を返す。DB の truncate は呼び出し側（各 Test が sharedPg.Truncate）で行う。
 func newAuthTestService() *AuthService {
-	playerRepo := repository.NewMockPlayerRepository()
-	userSettingsRepo := repository.NewMockUserSettingsRepository()
-	return NewAuthService(playerRepo, userSettingsRepo, &repository.MockTxRunner{})
+	playerRepo, _, userSettingsRepo, tx := newRealRepos()
+	return NewAuthService(playerRepo, userSettingsRepo, tx)
 }
 
-func TestRegister_ReturnsPlayerWithCorrectFields(t *testing.T) {
-	svc := newAuthTestService()
+func TestAuthService_Register(t *testing.T) {
+	ctx := context.Background()
 
-	player, err := svc.Register(context.Background(), "firebase-uid-1", "TestUser")
+	tests := []struct {
+		name        string
+		preRegister *struct {
+			firebaseUID string
+			username    string
+		}
+		firebaseUID string
+		username    string
+		wantErr     error
+	}{
+		{
+			name:        "新規登録は成功",
+			firebaseUID: "firebase-uid-1",
+			username:    "TestUser",
+		},
+		{
+			name: "同一 Firebase UID の重複登録は ErrPlayerAlreadyRegistered",
+			preRegister: &struct {
+				firebaseUID string
+				username    string
+			}{"firebase-uid-dup", "FirstUser"},
+			firebaseUID: "firebase-uid-dup",
+			username:    "SecondUser",
+			wantErr:     ErrPlayerAlreadyRegistered,
+		},
+	}
 
-	require.NoError(t, err)
-	assert.NotEmpty(t, player.PlayerID)
-	assert.Equal(t, "firebase-uid-1", player.FirebaseUID)
-	assert.Equal(t, "TestUser", player.Username)
-	assert.Equal(t, int64(1), player.Level)
-	assert.Equal(t, int64(0), player.Exp)
-	assert.False(t, player.IsPremium)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			sharedPg.Truncate(t)
+			svc := newAuthTestService()
+
+			if tt.preRegister != nil {
+				_, err := svc.Register(ctx, tt.preRegister.firebaseUID, tt.preRegister.username)
+				require.NoError(t, err)
+			}
+
+			player, err := svc.Register(ctx, tt.firebaseUID, tt.username)
+			if tt.wantErr != nil {
+				require.ErrorIs(t, err, tt.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			assert.NotEmpty(t, player.PlayerID)
+			assert.Equal(t, tt.firebaseUID, player.FirebaseUID)
+			assert.Equal(t, tt.username, player.Username)
+			assert.Equal(t, int64(1), player.Level)
+			assert.Equal(t, int64(0), player.Exp)
+			assert.False(t, player.IsPremium)
+
+			// Register はトランザクションで player と user_settings をアトミックに作成する。
+			// tx の commit を実 DB 行の存在で検証する。
+			var count int
+			require.NoError(t, sharedPg.Pool.QueryRow(ctx,
+				`SELECT COUNT(*) FROM account.user_settings WHERE player_id = $1`,
+				player.PlayerID,
+			).Scan(&count))
+			assert.Equal(t, 1, count, "Register はデフォルトの user_settings を作成する")
+
+			// default 値の確認
+			var language string
+			var bgm, se int64
+			var push bool
+			require.NoError(t, sharedPg.Pool.QueryRow(ctx,
+				`SELECT language, bgm_volume, se_volume, push_enabled
+				 FROM account.user_settings WHERE player_id = $1`,
+				player.PlayerID,
+			).Scan(&language, &bgm, &se, &push))
+			assert.Equal(t, model.DefaultLanguage, language)
+			assert.Equal(t, model.DefaultBgmVolume, bgm)
+			assert.Equal(t, model.DefaultSeVolume, se)
+			assert.Equal(t, model.DefaultPushEnabled, push)
+		})
+	}
 }
 
-func TestRegister_ThenLoginSucceeds(t *testing.T) {
+func TestAuthService_RegisterThenLogin(t *testing.T) {
+	sharedPg.Truncate(t)
 	svc := newAuthTestService()
+	ctx := context.Background()
 
-	registered, err := svc.Register(context.Background(), "firebase-uid-login", "LoginUser")
+	registered, err := svc.Register(ctx, "firebase-uid-login", "LoginUser")
 	require.NoError(t, err)
 
-	loggedIn, err := svc.Login(context.Background(), "firebase-uid-login")
+	loggedIn, err := svc.Login(ctx, "firebase-uid-login")
 	require.NoError(t, err)
 	assert.Equal(t, registered.PlayerID, loggedIn.PlayerID)
 	assert.Equal(t, "LoginUser", loggedIn.Username)
 }
 
-func TestRegister_AlreadyRegistered(t *testing.T) {
-	svc := newAuthTestService()
-
-	_, err := svc.Register(context.Background(), "firebase-uid-dup", "FirstUser")
-	require.NoError(t, err)
-
-	_, err = svc.Register(context.Background(), "firebase-uid-dup", "SecondUser")
-	require.ErrorIs(t, err, ErrPlayerAlreadyRegistered)
-}
-
-func TestLogin_PlayerNotFound(t *testing.T) {
+func TestAuthService_Login_NotFound(t *testing.T) {
+	sharedPg.Truncate(t)
 	svc := newAuthTestService()
 
 	_, err := svc.Login(context.Background(), "nonexistent-uid")

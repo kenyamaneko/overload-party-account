@@ -79,4 +79,3 @@ func validateInitialFaction(faction string) error {
 	return fmt.Errorf("%w: %q is not selectable (expected one of %v)",
 		ErrInvalidFaction, faction, gamedesign.SelectableFactions)
 }
-

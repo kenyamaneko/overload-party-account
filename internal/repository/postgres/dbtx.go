@@ -1,11 +1,11 @@
-// Package repository は PostgreSQL によるデータアクセスを実装します。
+// Package postgres は PostgreSQL による account サービスのデータアクセス実装を提供する。
 //
 // トランザクション方針:
 // 全 repository メソッドは context 経由のトランザクション（TxManager.RunInTx が設定）
-// に参加します。単文メソッドは connFrom(ctx, pool) で透過的にトランザクションまたは
-// コネクションプールを使用します。複文メソッドは既存トランザクションを確認し、
-// なければ独自トランザクションを開始します。
-package repository
+// に参加する。単文メソッドは connFrom(ctx, pool) で透過的にトランザクションまたは
+// コネクションプールを使用する。複文メソッドは既存トランザクションを確認し、
+// なければ独自トランザクションを開始する。
+package postgres
 
 import (
 	"context"
@@ -20,7 +20,7 @@ import (
 
 var _ port.TxRunner = (*TxManager)(nil)
 
-// dbtx は pgxpool.Pool と pgx.Tx の共通インターフェースです。
+// dbtx は pgxpool.Pool と pgx.Tx の共通インターフェースである。
 type dbtx interface {
 	Exec(ctx context.Context, sql string, arguments ...any) (pgconn.CommandTag, error)
 	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
@@ -43,17 +43,17 @@ func connFrom(ctx context.Context, pool *pgxpool.Pool) dbtx {
 	return pool
 }
 
-// TxManager は pgxpool.Pool を使用した TxRunner の実装です。
+// TxManager は pgxpool.Pool を使用した TxRunner の実装である。
 type TxManager struct {
 	pool *pgxpool.Pool
 }
 
-// NewTxManager は TxManager を生成します。
+// NewTxManager は TxManager を生成する。
 func NewTxManager(pool *pgxpool.Pool) *TxManager {
 	return &TxManager{pool: pool}
 }
 
-// RunInTx はトランザクション内で fn を実行します。
+// RunInTx はトランザクション内で fn を実行する。
 func (m *TxManager) RunInTx(ctx context.Context, fn func(ctx context.Context) error) error {
 	tx, err := m.pool.Begin(ctx)
 	if err != nil {
@@ -69,12 +69,4 @@ func (m *TxManager) RunInTx(ctx context.Context, fn func(ctx context.Context) er
 		return fmt.Errorf("commit tx: %w", err)
 	}
 	return nil
-}
-
-// MockTxRunner はテスト用の TxRunner 実装です。実際のトランザクションは開始しません。
-type MockTxRunner struct{}
-
-// RunInTx は fn を直接実行します（テスト用）。
-func (m *MockTxRunner) RunInTx(ctx context.Context, fn func(ctx context.Context) error) error {
-	return fn(ctx)
 }

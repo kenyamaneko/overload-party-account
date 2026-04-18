@@ -8,9 +8,9 @@ import (
 	"cloud.google.com/go/civil"
 	"github.com/google/uuid"
 
-	apiaccount "github.com/kenyamaneko/overload-party-account/packages/api-account"
 	"github.com/kenyamaneko/overload-party-account/internal/model"
 	"github.com/kenyamaneko/overload-party-account/internal/port"
+	apiaccount "github.com/kenyamaneko/overload-party-account/packages/api-account"
 )
 
 // AuthService はプレイヤーの登録・ログインを管理します。

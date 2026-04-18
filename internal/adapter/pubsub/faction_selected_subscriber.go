@@ -9,7 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 
 	"cloud.google.com/go/pubsub/v2"
 
@@ -21,8 +21,8 @@ import (
 // FactionSelectedSubscriber は faction-selected-account-sub からイベントを取得し、
 // player_factions への INSERT と初期選択時の players.selected_faction 更新を行います。
 type FactionSelectedSubscriber struct {
-	client     *pubsub.Client
-	subscriber *pubsub.Subscriber
+	client      *pubsub.Client
+	subscriber  *pubsub.Subscriber
 	playerRepo  port.PlayerRepo
 	factionRepo port.FactionRepo
 	txRunner    port.TxRunner
@@ -57,7 +57,7 @@ func NewFactionSelectedSubscriber(
 
 // Start は ctx がキャンセルされるか Receive がエラーを返すまでブロックします。
 func (s *FactionSelectedSubscriber) Start(ctx context.Context) error {
-	log.Printf("faction-selected subscriber: pulling from %s", s.subscriber.ID())
+	slog.Info("faction-selected subscriber: pulling", "subscription", s.subscriber.ID())
 	return s.subscriber.Receive(ctx, s.handle)
 }
 
@@ -67,12 +67,12 @@ func (s *FactionSelectedSubscriber) Close() error { return s.client.Close() }
 func (s *FactionSelectedSubscriber) handle(ctx context.Context, msg *pubsub.Message) {
 	var ev pubsubevents.FactionSelectedEvent
 	if err := json.Unmarshal(msg.Data, &ev); err != nil {
-		log.Printf("faction-selected subscriber: bad payload (nack): %v", err)
+		slog.Error("faction-selected subscriber: bad payload (nack)", "error", err)
 		msg.Nack()
 		return
 	}
 	if ev.EventType != pubsubevents.EventTypeFactionSelected {
-		log.Printf("faction-selected subscriber: unknown event_type %q, acking", ev.EventType)
+		slog.Warn("faction-selected subscriber: unknown event_type, acking", "event_type", ev.EventType)
 		msg.Ack()
 		return
 	}
@@ -101,8 +101,8 @@ func (s *FactionSelectedSubscriber) handle(ctx context.Context, msg *pubsub.Mess
 		}
 		return nil
 	}); err != nil {
-		log.Printf("faction-selected subscriber: handler failed event=%s player=%s: %v",
-			ev.EventID, ev.PlayerID, err)
+		slog.Error("faction-selected subscriber: handler failed",
+			"event_id", ev.EventID, "player_id", ev.PlayerID, "error", err)
 		msg.Nack()
 		return
 	}

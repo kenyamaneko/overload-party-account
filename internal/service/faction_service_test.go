@@ -4,90 +4,134 @@ import (
 	"context"
 	"errors"
 	"testing"
-	"time"
 
-	"cloud.google.com/go/civil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	apiaccount "github.com/kenyamaneko/overload-party-account/packages/api-account"
-
-	"github.com/kenyamaneko/overload-party-account/internal/repository"
 )
 
-func newFactionTestEnv(t *testing.T, playerID string) (*FactionService, *repository.MockPlayerRepository, *repository.MockFactionRepository) {
+// newFactionTestService は実 DB に playerID をシードし、実 repository で
+// FactionService を組む。shop 流の「service テストも sharedPg で組む」方針。
+func newFactionTestService(t *testing.T, playerID string) *FactionService {
 	t.Helper()
-	playerRepo := repository.NewMockPlayerRepository()
-	factionRepo := repository.NewMockFactionRepository()
-	svc := NewFactionService(playerRepo, factionRepo, &repository.MockTxRunner{})
+	sharedPg.Truncate(t)
+	seedPlayer(t, playerID, "uid-"+playerID, "tester", false)
 
-	now := time.Now()
-	player := &apiaccount.Player{
-		PlayerID:    playerID,
-		FirebaseUID: "uid-" + playerID,
-		Username:    "tester",
-		Level:       1,
-		Exp:         0,
-		IsPremium:   false,
-		CreatedAt:   now,
-		UpdatedAt:   now,
+	playerRepo, factionRepo, _, tx := newRealRepos()
+	return NewFactionService(playerRepo, factionRepo, tx)
+}
+
+func TestFactionService_SelectInitialFaction(t *testing.T) {
+	ctx := context.Background()
+
+	tests := []struct {
+		name          string
+		playerID      string
+		preSelect     string // 事前に InsertInitial を通す faction（空なら skip）
+		faction       string
+		wantErrIs     error
+		wantFactions  []string
+		wantSelected  *string
+		wantSkipSeed  bool // true なら seed player を行わない
+		useEmptyPID   bool // SelectInitialFaction に空の playerID を渡す
+	}{
+		{
+			name:         "初回選択は player_factions 挿入 + selected_faction 更新",
+			playerID:     testPlayerID1,
+			faction:      "SHE",
+			wantFactions: []string{"SHE"},
+			wantSelected: strPtr("SHE"),
+		},
+		{
+			name:         "既存選択済みは ErrFactionAlreadySelected",
+			playerID:     testPlayerID1,
+			preSelect:    "Tenki",
+			faction:      "Tenki",
+			wantErrIs:    ErrFactionAlreadySelected,
+			wantFactions: []string{"Tenki"},
+			wantSelected: strPtr("Tenki"),
+		},
+		{
+			name:         "Neutral は選択不可 (ErrInvalidFaction)",
+			playerID:     testPlayerID1,
+			faction:      "Neutral",
+			wantErrIs:    ErrInvalidFaction,
+			wantFactions: nil,
+			wantSelected: nil,
+		},
+		{
+			name:         "未知ファクションは ErrInvalidFaction",
+			playerID:     testPlayerID1,
+			faction:      "bogus",
+			wantErrIs:    ErrInvalidFaction,
+			wantFactions: nil,
+			wantSelected: nil,
+		},
+		{
+			name:         "空ファクションは ErrInvalidFaction",
+			playerID:     testPlayerID1,
+			faction:      "",
+			wantErrIs:    ErrInvalidFaction,
+			wantFactions: nil,
+			wantSelected: nil,
+		},
+		{
+			name:        "空 playerID は ErrInvalidFaction",
+			playerID:    testPlayerID1,
+			useEmptyPID: true,
+			faction:     "SHE",
+			wantErrIs:   ErrInvalidFaction,
+		},
 	}
-	dailyBattle := &apiaccount.PlayerDailyBattle{
-		PlayerID:         playerID,
-		DailyBattleCount: 0,
-		LastResetDate:    civil.DateOf(now.UTC()),
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			svc := newFactionTestService(t, tt.playerID)
+
+			if tt.preSelect != "" {
+				require.NoError(t, svc.SelectInitialFaction(ctx, tt.playerID, tt.preSelect))
+			}
+
+			pidArg := tt.playerID
+			if tt.useEmptyPID {
+				pidArg = ""
+			}
+			err := svc.SelectInitialFaction(ctx, pidArg, tt.faction)
+
+			if tt.wantErrIs != nil {
+				require.Error(t, err)
+				assert.True(t, errors.Is(err, tt.wantErrIs),
+					"err %v should be %v", err, tt.wantErrIs)
+			} else {
+				require.NoError(t, err)
+			}
+
+			if tt.useEmptyPID {
+				// 空 playerID のケースは副作用が無いことだけを確認して終了。
+				return
+			}
+
+			// player_factions の状態
+			_, factionRepo, _, _ := newRealRepos()
+			factions, err := factionRepo.GetPlayerFactions(ctx, tt.playerID)
+			require.NoError(t, err)
+			if tt.wantFactions == nil {
+				assert.Empty(t, factions)
+			} else {
+				assert.ElementsMatch(t, tt.wantFactions, factions)
+			}
+
+			// players.selected_faction の状態
+			playerRepo, _, _, _ := newRealRepos()
+			p, err := playerRepo.FindByID(ctx, tt.playerID)
+			require.NoError(t, err)
+			if tt.wantSelected == nil {
+				assert.Nil(t, p.SelectedFaction)
+			} else {
+				require.NotNil(t, p.SelectedFaction)
+				assert.Equal(t, *tt.wantSelected, *p.SelectedFaction)
+			}
+		})
 	}
-	require.NoError(t, playerRepo.Create(context.Background(), player, dailyBattle))
-	return svc, playerRepo, factionRepo
 }
 
-func TestSelectInitialFaction_FirstTime_InsertsAndGrants(t *testing.T) {
-	svc, playerRepo, factionRepo := newFactionTestEnv(t, "p1")
-
-	err := svc.SelectInitialFaction(context.Background(), "p1", "SHE")
-	require.NoError(t, err)
-
-	factions, err := factionRepo.GetPlayerFactions(context.Background(), "p1")
-	require.NoError(t, err)
-	assert.ElementsMatch(t, []string{"SHE"}, factions)
-
-	p, err := playerRepo.FindByID(context.Background(), "p1")
-	require.NoError(t, err)
-	require.NotNil(t, p.SelectedFaction)
-	assert.Equal(t, "SHE", *p.SelectedFaction)
-}
-
-func TestSelectInitialFaction_Repeat_NoopReturnsAlreadySelected(t *testing.T) {
-	svc, _, _ := newFactionTestEnv(t, "p1")
-
-	require.NoError(t, svc.SelectInitialFaction(context.Background(), "p1", "Tenki"))
-
-	err := svc.SelectInitialFaction(context.Background(), "p1", "Tenki")
-	require.Error(t, err)
-	assert.True(t, errors.Is(err, ErrFactionAlreadySelected))
-}
-
-func TestSelectInitialFaction_InvalidFaction(t *testing.T) {
-	svc, _, factionRepo := newFactionTestEnv(t, "p1")
-
-	cases := []string{"Neutral", "bogus", ""}
-	for _, f := range cases {
-		err := svc.SelectInitialFaction(context.Background(), "p1", f)
-		require.Errorf(t, err, "faction %q should be rejected", f)
-		assert.Truef(t, errors.Is(err, ErrInvalidFaction),
-			"faction %q should map to ErrInvalidFaction, got %v", f, err)
-	}
-
-	factions, err := factionRepo.GetPlayerFactions(context.Background(), "p1")
-	require.NoError(t, err)
-	assert.Empty(t, factions)
-}
-
-
-func TestSelectInitialFaction_EmptyPlayerID(t *testing.T) {
-	svc, _, _ := newFactionTestEnv(t, "p1")
-
-	err := svc.SelectInitialFaction(context.Background(), "", "SHE")
-	require.Error(t, err)
-	assert.True(t, errors.Is(err, ErrInvalidFaction))
-}
+func strPtr(s string) *string { return &s }

@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"time"
 
-	apiaccount "github.com/kenyamaneko/overload-party-account/packages/api-account"
 	"github.com/kenyamaneko/overload-party-account/internal/model"
 	"github.com/kenyamaneko/overload-party-account/internal/port"
+	apiaccount "github.com/kenyamaneko/overload-party-account/packages/api-account"
 )
 
 // UserSettingsService はユーザー設定の参照・更新を提供します。

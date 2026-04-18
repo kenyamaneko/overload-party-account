@@ -5,8 +5,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	apiaccount "github.com/kenyamaneko/overload-party-account/packages/api-account"
 	"github.com/kenyamaneko/overload-party-account/internal/service"
+	apiaccount "github.com/kenyamaneko/overload-party-account/packages/api-account"
 )
 
 // PlayerHandler はプレイヤー情報の REST エンドポイントを処理します。

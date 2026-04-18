@@ -1,66 +1,44 @@
-name: publish
+name: Publish
 
-# Publishes the packages/api-account Go module on push to main.
-#
-# The Go module tag format for a nested module is:
-#   packages/api-account/v<semver>
-# We never create tags manually (see common/memory feedback_no_manual_tags).
-# This workflow computes the next tag and pushes it only after check + test
-# pass.
-#
-# Bump strategy:
-#   - push to main  → automatic patch bump
-#   - workflow_dispatch with `bump=minor|major` → manual override
+# api-account Go モジュールを手動でタグ付け・公開する。
+# バージョンを上げるタイミングは人が判断して workflow_dispatch で実行する。
+# タグの手動打ちは禁止 — このワークフローがモジュールタグの唯一の発行元。
+
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'packages/api-account/**'
-      - 'data/models.yaml'
-      - 'scripts/generate_types.py'
-      - '.github/workflows/publish.yaml'
   workflow_dispatch:
     inputs:
       bump:
-        description: 'Semver bump (patch/minor/major)'
+        description: "Version bump level"
         required: true
-        default: 'patch'
+        default: "patch"
         type: choice
-        options: [patch, minor, major]
-
-permissions:
-  contents: write
+        options:
+          - patch
+          - minor
+          - major
 
 concurrency:
-  group: publish-api-account
+  group: publish-${{ github.ref }}
+  # タグの採番が競合しないように、先行ジョブの完了を待つ
   cancel-in-progress: false
 
+permissions:
+  # タグを push するために write 権限が必要
+  contents: write
+
 jobs:
-  check:
+  publish-package:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-go@v5
+      - name: Checkout
+        uses: actions/checkout@v4
         with:
-          go-version: '1.25.1'
+          fetch-depth: 0
 
-      - uses: actions/setup-python@v5
+      - name: Set up Go
+        uses: actions/setup-go@v5
         with:
-          python-version: '3.12'
-
-      - name: Install codegen dependencies
-        run: pip install pyyaml
-
-      - name: Verify codegen is in sync
-        run: |
-          python3 scripts/generate_types.py
-          if ! git diff --quiet -- packages/api-account docs/API_REFERENCE.md; then
-            echo "::error::Generated files are out of sync with data/models.yaml."
-            echo "Run 'python3 scripts/generate_types.py' and commit."
-            git diff -- packages/api-account docs/API_REFERENCE.md
-            exit 1
-          fi
+          go-version-file: packages/api-account/go.mod
 
       - name: Vet api-account
         run: go vet ./...
@@ -70,47 +48,13 @@ jobs:
         run: go build ./...
         working-directory: packages/api-account
 
-  publish:
-    needs: check
-    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
       - name: Determine next tag
-        id: next_tag
+        id: tag
         env:
-          BUMP: ${{ github.event.inputs.bump || 'patch' }}
-        run: |
-          set -euo pipefail
-          prefix='packages/api-account/'
-          latest=$(git tag --list "${prefix}v*" | sort -V | tail -n 1 || true)
-          if [ -z "${latest}" ]; then
-            next='v0.1.0'
-          else
-            ver="${latest#${prefix}v}"
-            IFS='.' read -r major minor patch <<< "${ver}"
-            case "${BUMP}" in
-              major) major=$((major + 1)); minor=0; patch=0 ;;
-              minor) minor=$((minor + 1)); patch=0 ;;
-              patch) patch=$((patch + 1)) ;;
-              *) echo "::error::unknown bump '${BUMP}'"; exit 1 ;;
-            esac
-            next="v${major}.${minor}.${patch}"
-          fi
-          tag="${prefix}${next}"
-          echo "tag=${tag}" >> "${GITHUB_OUTPUT}"
-          echo "Next tag: ${tag}"
+          BUMP: ${{ inputs.bump }}
+        run: .github/scripts/publish/next-tag.sh
 
-      - name: Create and push tag
+      - name: Tag and push
         env:
-          TAG: ${{ steps.next_tag.outputs.tag }}
-        run: |
-          set -euo pipefail
-          git config user.name 'github-actions[bot]'
-          git config user.email 'github-actions[bot]@users.noreply.github.com'
-          git tag "${TAG}"
-          git push origin "${TAG}"
-
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: .github/scripts/publish/tag-and-push.sh

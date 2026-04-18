@@ -1,4 +1,4 @@
-package repository
+package postgres
 
 import (
 	"context"
@@ -10,25 +10,25 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	apiaccount "github.com/kenyamaneko/overload-party-account/packages/api-account"
 	"github.com/kenyamaneko/overload-party-account/internal/port"
+	apiaccount "github.com/kenyamaneko/overload-party-account/packages/api-account"
 )
 
-var _ port.PlayerRepo = (*PgPlayerRepository)(nil)
+var _ port.PlayerRepo = (*PlayerRepository)(nil)
 
-// PgPlayerRepository は PostgreSQL を使用した PlayerRepo の実装です。
-type PgPlayerRepository struct {
+// PlayerRepository は PostgreSQL を使用した PlayerRepo の実装である。
+type PlayerRepository struct {
 	pool *pgxpool.Pool
 }
 
-// NewPgPlayerRepository は PgPlayerRepository を生成します。
-func NewPgPlayerRepository(pool *pgxpool.Pool) *PgPlayerRepository {
-	return &PgPlayerRepository{pool: pool}
+// NewPlayerRepository は PlayerRepository を生成する。
+func NewPlayerRepository(pool *pgxpool.Pool) *PlayerRepository {
+	return &PlayerRepository{pool: pool}
 }
 
-// Create は players と player_daily_battle をアトミックに挿入します。
-// context にトランザクションがあればそれに参加し、なければ独自トランザクションを使用します。
-func (r *PgPlayerRepository) Create(ctx context.Context, player *apiaccount.Player, dailyBattle *apiaccount.PlayerDailyBattle) error {
+// Create は account.players と account.player_daily_battle をアトミックに挿入する。
+// context にトランザクションがあればそれに参加し、なければ独自トランザクションを使用する。
+func (r *PlayerRepository) Create(ctx context.Context, player *apiaccount.Player, dailyBattle *apiaccount.PlayerDailyBattle) error {
 	if txFromContext(ctx) != nil {
 		return r.createInner(ctx, connFrom(ctx, r.pool), player, dailyBattle)
 	}
@@ -44,9 +44,9 @@ func (r *PgPlayerRepository) Create(ctx context.Context, player *apiaccount.Play
 	return tx.Commit(ctx)
 }
 
-func (r *PgPlayerRepository) createInner(ctx context.Context, db dbtx, player *apiaccount.Player, dailyBattle *apiaccount.PlayerDailyBattle) error {
+func (r *PlayerRepository) createInner(ctx context.Context, db dbtx, player *apiaccount.Player, dailyBattle *apiaccount.PlayerDailyBattle) error {
 	_, err := db.Exec(ctx,
-		`INSERT INTO players (player_id, firebase_uid, username, level, exp, is_premium, equipped_icon_no, selected_faction, premium_expires_at, created_at, updated_at)
+		`INSERT INTO account.players (player_id, firebase_uid, username, level, exp, is_premium, equipped_icon_no, selected_faction, premium_expires_at, created_at, updated_at)
 		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
 		player.PlayerID,
 		player.FirebaseUID,
@@ -66,7 +66,7 @@ func (r *PgPlayerRepository) createInner(ctx context.Context, db dbtx, player *a
 
 	lastResetTime := civilDateToTime(dailyBattle.LastResetDate)
 	_, err = db.Exec(ctx,
-		`INSERT INTO player_daily_battle (player_id, daily_battle_count, last_reset_date)
+		`INSERT INTO account.player_daily_battle (player_id, daily_battle_count, last_reset_date)
 		 VALUES ($1,$2,$3)`,
 		dailyBattle.PlayerID,
 		dailyBattle.DailyBattleCount,
@@ -79,11 +79,11 @@ func (r *PgPlayerRepository) createInner(ctx context.Context, db dbtx, player *a
 	return nil
 }
 
-// FindByID はプレイヤー ID で検索します。
-func (r *PgPlayerRepository) FindByID(ctx context.Context, playerID string) (*apiaccount.Player, error) {
+// FindByID はプレイヤー ID で検索する。該当なしは port.ErrNotFound でラップして返す。
+func (r *PlayerRepository) FindByID(ctx context.Context, playerID string) (*apiaccount.Player, error) {
 	row := connFrom(ctx, r.pool).QueryRow(ctx,
 		`SELECT player_id, firebase_uid, username, level, exp, is_premium, equipped_icon_no, selected_faction, premium_expires_at, created_at, updated_at
-		 FROM players WHERE player_id = $1`,
+		 FROM account.players WHERE player_id = $1`,
 		playerID,
 	)
 
@@ -97,11 +97,11 @@ func (r *PgPlayerRepository) FindByID(ctx context.Context, playerID string) (*ap
 	return p, nil
 }
 
-// FindByFirebaseUID は Firebase UID で検索します。該当なしは (nil, nil) を返します。
-func (r *PgPlayerRepository) FindByFirebaseUID(ctx context.Context, firebaseUID string) (*apiaccount.Player, error) {
+// FindByFirebaseUID は Firebase UID で検索する。該当なしは (nil, nil) を返す。
+func (r *PlayerRepository) FindByFirebaseUID(ctx context.Context, firebaseUID string) (*apiaccount.Player, error) {
 	row := connFrom(ctx, r.pool).QueryRow(ctx,
 		`SELECT player_id, firebase_uid, username, level, exp, is_premium, equipped_icon_no, selected_faction, premium_expires_at, created_at, updated_at
-		 FROM players WHERE firebase_uid = $1 LIMIT 1`,
+		 FROM account.players WHERE firebase_uid = $1 LIMIT 1`,
 		firebaseUID,
 	)
 
@@ -115,11 +115,11 @@ func (r *PgPlayerRepository) FindByFirebaseUID(ctx context.Context, firebaseUID 
 	return p, nil
 }
 
-// GetDailyBattle はプレイヤーの日次バトルデータを返します。該当なしは (nil, nil) を返します。
-func (r *PgPlayerRepository) GetDailyBattle(ctx context.Context, playerID string) (*apiaccount.PlayerDailyBattle, error) {
+// GetDailyBattle はプレイヤーの日次バトルデータを返す。該当なしは (nil, nil) を返す。
+func (r *PlayerRepository) GetDailyBattle(ctx context.Context, playerID string) (*apiaccount.PlayerDailyBattle, error) {
 	row := connFrom(ctx, r.pool).QueryRow(ctx,
 		`SELECT player_id, daily_battle_count, last_reset_date
-		 FROM player_daily_battle WHERE player_id = $1`,
+		 FROM account.player_daily_battle WHERE player_id = $1`,
 		playerID,
 	)
 
@@ -133,9 +133,9 @@ func (r *PgPlayerRepository) GetDailyBattle(ctx context.Context, playerID string
 	return db, nil
 }
 
-// IncrementDailyBattle は日次バトル回数をアトミックにインクリメントします。
-// last_reset_date が今日以前ならカウントをリセットします。新しいカウントを返します。
-func (r *PgPlayerRepository) IncrementDailyBattle(ctx context.Context, playerID string, today civil.Date) (int64, error) {
+// IncrementDailyBattle は日次バトル回数をアトミックにインクリメントする。
+// last_reset_date が今日以前ならカウントをリセットする。新しいカウントを返す。
+func (r *PlayerRepository) IncrementDailyBattle(ctx context.Context, playerID string, today civil.Date) (int64, error) {
 	if txFromContext(ctx) != nil {
 		return r.incrementDailyBattleInner(ctx, connFrom(ctx, r.pool), playerID, today)
 	}
@@ -155,16 +155,19 @@ func (r *PgPlayerRepository) IncrementDailyBattle(ctx context.Context, playerID 
 	return count, nil
 }
 
-func (r *PgPlayerRepository) incrementDailyBattleInner(ctx context.Context, db dbtx, playerID string, today civil.Date) (int64, error) {
+func (r *PlayerRepository) incrementDailyBattleInner(ctx context.Context, db dbtx, playerID string, today civil.Date) (int64, error) {
 	row := db.QueryRow(ctx,
 		`SELECT daily_battle_count, last_reset_date
-		 FROM player_daily_battle WHERE player_id = $1 FOR UPDATE`,
+		 FROM account.player_daily_battle WHERE player_id = $1 FOR UPDATE`,
 		playerID,
 	)
 
 	var count int64
 	var lastResetTime time.Time
 	if err := row.Scan(&count, &lastResetTime); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return 0, fmt.Errorf("daily battle for player %s: %w", playerID, port.ErrNotFound)
+		}
 		return 0, fmt.Errorf("read daily battle: %w", err)
 	}
 
@@ -177,7 +180,7 @@ func (r *PgPlayerRepository) incrementDailyBattleInner(ctx context.Context, db d
 
 	todayTime := civilDateToTime(today)
 	_, err := db.Exec(ctx,
-		`UPDATE player_daily_battle SET daily_battle_count = $1, last_reset_date = $2 WHERE player_id = $3`,
+		`UPDATE account.player_daily_battle SET daily_battle_count = $1, last_reset_date = $2 WHERE player_id = $3`,
 		count, todayTime, playerID,
 	)
 	if err != nil {
@@ -187,10 +190,10 @@ func (r *PgPlayerRepository) incrementDailyBattleInner(ctx context.Context, db d
 	return count, nil
 }
 
-// UpdateUsername はプレイヤー名を更新し、更新後のプレイヤーを返します。
-func (r *PgPlayerRepository) UpdateUsername(ctx context.Context, playerID string, username string) (*apiaccount.Player, error) {
+// UpdateUsername はプレイヤー名を更新し、更新後のプレイヤーを返す。
+func (r *PlayerRepository) UpdateUsername(ctx context.Context, playerID string, username string) (*apiaccount.Player, error) {
 	row := connFrom(ctx, r.pool).QueryRow(ctx,
-		`UPDATE players SET username = $1, updated_at = NOW()
+		`UPDATE account.players SET username = $1, updated_at = NOW()
 		 WHERE player_id = $2
 		 RETURNING player_id, firebase_uid, username, level, exp, is_premium, equipped_icon_no, selected_faction, premium_expires_at, created_at, updated_at`,
 		username, playerID,
@@ -198,16 +201,19 @@ func (r *PgPlayerRepository) UpdateUsername(ctx context.Context, playerID string
 
 	p, err := scanPlayer(row)
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, fmt.Errorf("player %s: %w", playerID, port.ErrNotFound)
+		}
 		return nil, fmt.Errorf("update username: %w", err)
 	}
 	return p, nil
 }
 
-// UpdatePremium はプレミアムステータスを更新します。
-func (r *PgPlayerRepository) UpdatePremium(ctx context.Context, playerID string, isPremium bool, expiresAt *time.Time) error {
+// UpdatePremium はプレミアムステータスを更新する。
+func (r *PlayerRepository) UpdatePremium(ctx context.Context, playerID string, isPremium bool, expiresAt *time.Time) error {
 	db := connFrom(ctx, r.pool)
 	_, err := db.Exec(ctx,
-		`UPDATE players SET is_premium = $1, premium_expires_at = $2, updated_at = $3
+		`UPDATE account.players SET is_premium = $1, premium_expires_at = $2, updated_at = $3
 		 WHERE player_id = $4`,
 		isPremium, expiresAt, time.Now(), playerID,
 	)
@@ -217,10 +223,10 @@ func (r *PgPlayerRepository) UpdatePremium(ctx context.Context, playerID string,
 	return nil
 }
 
-// UpdateFaction は選択ファクションを更新します。
-func (r *PgPlayerRepository) UpdateFaction(ctx context.Context, playerID, faction string) error {
+// UpdateFaction は選択ファクションを更新する。
+func (r *PlayerRepository) UpdateFaction(ctx context.Context, playerID, faction string) error {
 	_, err := connFrom(ctx, r.pool).Exec(ctx,
-		`UPDATE players SET selected_faction = $1, updated_at = $2
+		`UPDATE account.players SET selected_faction = $1, updated_at = $2
 		 WHERE player_id = $3`,
 		faction, time.Now(), playerID,
 	)
@@ -230,9 +236,9 @@ func (r *PgPlayerRepository) UpdateFaction(ctx context.Context, playerID, factio
 	return nil
 }
 
-// AddExp は SELECT FOR UPDATE で経験値をアトミックに加算しレベルを再計算します。
-// computeLevel はサービス層が提供するレベル計算関数です。
-func (r *PgPlayerRepository) AddExp(ctx context.Context, playerID string, expGain int64, computeLevel func(newExp, currentLevel int64) int64) (*apiaccount.Player, error) {
+// AddExp は SELECT FOR UPDATE で経験値をアトミックに加算しレベルを再計算する。
+// computeLevel はサービス層が提供するレベル計算関数である。
+func (r *PlayerRepository) AddExp(ctx context.Context, playerID string, expGain int64, computeLevel func(newExp, currentLevel int64) int64) (*apiaccount.Player, error) {
 	if txFromContext(ctx) != nil {
 		return r.addExpInner(ctx, connFrom(ctx, r.pool), playerID, expGain, computeLevel)
 	}
@@ -252,13 +258,16 @@ func (r *PgPlayerRepository) AddExp(ctx context.Context, playerID string, expGai
 	return p, nil
 }
 
-func (r *PgPlayerRepository) addExpInner(ctx context.Context, db dbtx, playerID string, expGain int64, computeLevel func(newExp, currentLevel int64) int64) (*apiaccount.Player, error) {
+func (r *PlayerRepository) addExpInner(ctx context.Context, db dbtx, playerID string, expGain int64, computeLevel func(newExp, currentLevel int64) int64) (*apiaccount.Player, error) {
 	var curExp, curLevel int64
 	err := db.QueryRow(ctx,
-		`SELECT exp, level FROM players WHERE player_id = $1 FOR UPDATE`,
+		`SELECT exp, level FROM account.players WHERE player_id = $1 FOR UPDATE`,
 		playerID,
 	).Scan(&curExp, &curLevel)
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, fmt.Errorf("player %s: %w", playerID, port.ErrNotFound)
+		}
 		return nil, fmt.Errorf("add exp select: %w", err)
 	}
 
@@ -266,7 +275,7 @@ func (r *PgPlayerRepository) addExpInner(ctx context.Context, db dbtx, playerID 
 	newLevel := computeLevel(newExp, curLevel)
 
 	row := db.QueryRow(ctx,
-		`UPDATE players SET exp = $2, level = $3, updated_at = NOW()
+		`UPDATE account.players SET exp = $2, level = $3, updated_at = NOW()
 		 WHERE player_id = $1
 		 RETURNING player_id, firebase_uid, username, level, exp, is_premium, equipped_icon_no, selected_faction, premium_expires_at, created_at, updated_at`,
 		playerID, newExp, newLevel,

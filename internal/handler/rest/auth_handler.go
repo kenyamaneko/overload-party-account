@@ -1,14 +1,13 @@
 package rest
 
 import (
-	"errors"
 	"net/http"
 	"unicode/utf8"
 
 	"github.com/gin-gonic/gin"
 
-	apiaccount "github.com/kenyamaneko/overload-party-account/packages/api-account"
 	"github.com/kenyamaneko/overload-party-account/internal/service"
+	apiaccount "github.com/kenyamaneko/overload-party-account/packages/api-account"
 )
 
 const maxUsernameRunes = 50
@@ -41,11 +40,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 
 	player, err := h.authService.Register(c.Request.Context(), req.FirebaseUID, req.Username)
 	if err != nil {
-		if errors.Is(err, service.ErrPlayerAlreadyRegistered) {
-			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
-			return
-		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondError(c, err)
 		return
 	}
 
@@ -66,11 +61,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 
 	player, err := h.authService.Login(c.Request.Context(), req.FirebaseUID)
 	if err != nil {
-		if errors.Is(err, service.ErrPlayerNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
-			return
-		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondError(c, err)
 		return
 	}
 

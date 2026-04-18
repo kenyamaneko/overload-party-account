@@ -1,58 +1,69 @@
 # overload-party-account
 
-プレイヤー管理・設定・ファクション所有・経験値・対戦制限を担う内部マイクロサービス。
+プレイヤーマスター・ユーザー設定・ファクション所有・経験値・デイリーバトル制限を所有する内部マイクロサービス。ポート 9005 で起動する。
 
-## サービス間連携
+詳細は [機能仕様書](docs/FEATURE_SPEC.md) / [サービス設計書](docs/ARCHITECTURE.md) / [API仕様書](docs/API_REFERENCE.md) / [データ設計書](docs/DATA_DESIGN.md) を参照。
+
+## アーキテクチャ概要
 
 ```
-Gateway (主たる呼び出し元)
-  ├─ POST /auth/register, /auth/login
-  ├─ GET/PUT /players/:playerId/*
-  └─ GET/PUT /players/:playerId/settings
-                │
-                ▼
-Account (このサービス, :9005)
-  ├─ PostgreSQL (account スキーマ所有)
-  └─ Pub/Sub subscriber
-       ├─ faction-selected  ← scenario / shop が publish
-       └─ premium-updated   ← shop が publish
+Gateway (唯一の入口)
+  └─ Account (:9005)                 ClusterIP のみ / 認証は gateway 側で完了済み
+       ├─ PostgreSQL (account スキーマ)
+       ├─ Cloud Firestore (game_config 読み取り専用)
+       └─ Pub/Sub subscriber
+            ├─ faction-selected-account-sub  ← scenario / shop が publish
+            └─ premium-updated-account-sub   ← shop が publish
 
-Battle (service-to-service)
-  ├─ POST /players/:playerId/battle-limit/increment
-  └─ POST /players/award-game-exp
+Battle → Account (service-to-service)
+  ├─ POST /internal/v1/players/:playerId/battle-limit/increment
+  └─ POST /internal/v1/players/award-game-exp
 ```
 
-- 認証はしない。Gateway が Firebase Auth 済みの playerId を forward する
-- Pub/Sub subscriber が faction-selected / premium-updated イベントを受信し、account スキーマに反映する
+account は他サービスを直接呼び出さない。状態の取り込みはすべて Pub/Sub subscribe で
+片方向に行い、`processed_events` テーブルでアプリ層の冪等性を担保する。
 
-エンドポイント一覧は [docs/API_REFERENCE.md](docs/API_REFERENCE.md) を参照。
+## ローカル開発
+
+```bash
+make db-up            # postgres:16-alpine を起動
+make run              # サーバー起動（db-up + env 一式を Makefile が注入）
+make test             # Testcontainers でテスト実行（Docker 必須）
+make test-integration # integration タグ付きテスト（Pub/Sub emulator などを要するもの）
+make db-down          # 停止
+make db-reset         # volume ごと削除して再作成
+```
 
 ## 環境変数
 
-**Secret:**
+すべて必須。未設定・不正値は起動時に即 fail する（[internal/config/config.go](internal/config/config.go) が SSoT、デフォルトへのフォールバック禁止）。
+
+Secret:
 
 | 変数名 | 説明 |
 |---|---|
-| `DATABASE_URL` | PostgreSQL 接続文字列 |
+| `DATABASE_URL` | PostgreSQL 接続文字列（pgx が解釈できる URL / libpq 形式） |
 
-**ConfigMap:**
+ConfigMap:
 
-| 変数名 | デフォルト | 説明 |
-|---|---|---|
-| `PORT` | `9005` | リッスンポート |
-| `ENV` | `dev` | `dev` / `stg` / `prod` |
-| `PUBSUB_PROJECT_ID` | (必須) | Pub/Sub Google Cloud プロジェクト |
-| `FACTION_SELECTED_SUBSCRIPTION` | `faction-selected-account-sub` | faction-selected Pub/Sub サブスクリプション名 |
-| `PREMIUM_UPDATED_SUBSCRIPTION` | `premium-updated-account-sub` | premium-updated Pub/Sub サブスクリプション名 |
+| 変数名 | 説明 |
+|---|---|
+| `PORT` | HTTP リッスンポート（1-65535） |
+| `PUBSUB_PROJECT_ID` | Pub/Sub の Google Cloud プロジェクト ID |
+| `FACTION_SELECTED_SUBSCRIPTION` | faction-selected の pull subscription 名 |
+| `PREMIUM_UPDATED_SUBSCRIPTION` | premium-updated の pull subscription 名 |
+| `FIRESTORE_PROJECT_ID` | `game_config` を読む Firestore プロジェクト ID |
+| `LOG_MODE` | `production`（Cloud Logging 互換 JSON）/ `local`（TextHandler）|
 
-`DATABASE_URL` / `PUBSUB_PROJECT_ID` が未設定なら起動時に即 fail する。
+ローカルで Pub/Sub / Firestore emulator に接続する場合は `PUBSUB_EMULATOR_HOST` / `FIRESTORE_EMULATOR_HOST` を併せて設定する（`make run` が既定値を渡す）。
 
 ## 公開パッケージ
 
-| パッケージ | パス | 用途 |
-|---|---|---|
-| Go module | `packages/api-account/` | REST 契約型 (`apiaccount.PlayerResponse` 等) |
+[packages/api-account/](packages/api-account/) に REST 契約型（`apiaccount.PlayerResponse` 等）を公開している。
+[data/models.yaml](data/models.yaml) を編集後に以下で再生成する。
 
-SSoT: `data/models.yaml` -> `python3 scripts/generate_types.py` で再生成。
+```bash
+python3 scripts/generate_types.py
+```
 
 クライアント向け TypeScript 型は `@kenyamaneko/overload-party-api-gateway` に統合済み。
