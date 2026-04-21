@@ -88,11 +88,11 @@ type SelectInitialFactionRequest struct {
 	Source    string `json:"source"`
 }
 
-// UpdateSettingsRequest is the body for PUT /internal/v1/players/:playerId/settings.
+// UpdateSettingsRequest is the body for PUT /internal/v1/players/:playerId/settings. Partial update semantics: nil fields are left unchanged (COALESCE in SQL). At least one non-nil field is required.
 type UpdateSettingsRequest struct {
-	Language    string `json:"language"`
-	BgmVolume   int64  `json:"bgm_volume"`
-	SeVolume    int64  `json:"se_volume"`
-	PushEnabled bool   `json:"push_enabled"`
+	Language    *string `json:"language,omitempty"`
+	BgmVolume   *int64  `json:"bgm_volume,omitempty"`
+	SeVolume    *int64  `json:"se_volume,omitempty"`
+	PushEnabled *bool   `json:"push_enabled,omitempty"`
 }
 

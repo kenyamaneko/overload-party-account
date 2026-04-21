@@ -39,7 +39,8 @@ func (s *UserSettingsService) Get(ctx context.Context, playerID string) (*apiacc
 	return settings, nil
 }
 
-// Update はユーザー設定を更新します。
-func (s *UserSettingsService) Update(ctx context.Context, settings *apiaccount.UserSettings) error {
-	return s.repo.Upsert(ctx, settings)
+// Update はユーザー設定を部分更新します。patch の非 nil フィールドだけが書き換わります。
+// 呼び出し元（handler）は空 patch を事前に弾く契約です。
+func (s *UserSettingsService) Update(ctx context.Context, playerID string, patch *port.UserSettingsPatch) error {
+	return s.repo.UpdatePartial(ctx, playerID, patch)
 }

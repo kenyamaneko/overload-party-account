@@ -112,7 +112,7 @@ func run() error {
 	eventRepo := postgres.NewProcessedEventRepository(pool)
 
 	authSvc := service.NewAuthService(playerRepo, userSettingsRepo, txManager)
-	playerSvc := service.NewPlayerService(playerRepo, gameConfigRepo, factionRepo)
+	playerSvc := service.NewPlayerService(playerRepo, gameConfigRepo, factionRepo, txManager)
 	factionSvc := service.NewFactionService(playerRepo, factionRepo, txManager)
 	settingsSvc := service.NewUserSettingsService(userSettingsRepo)
 

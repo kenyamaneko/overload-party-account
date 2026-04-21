@@ -5,6 +5,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/kenyamaneko/overload-party-account/internal/port"
 	"github.com/kenyamaneko/overload-party-account/internal/service"
 	apiaccount "github.com/kenyamaneko/overload-party-account/packages/api-account"
 )
@@ -35,7 +36,9 @@ func (h *UserSettingsHandler) GetSettings(c *gin.Context) {
 	c.JSON(http.StatusOK, s)
 }
 
-// UpdateSettings はプレイヤーのユーザー設定を更新します。
+// UpdateSettings はプレイヤーのユーザー設定を部分更新します。
+// PUT ですが partial update 契約（nil フィールドは現状維持）。
+// 1 つもフィールドが指定されていないリクエストは 400 で弾きます。
 func (h *UserSettingsHandler) UpdateSettings(c *gin.Context) {
 	playerID := c.Param("playerId")
 	if playerID == "" {
@@ -48,22 +51,27 @@ func (h *UserSettingsHandler) UpdateSettings(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	if req.Language == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "language is required"})
-		return
-	}
 
-	s := &apiaccount.UserSettings{
-		PlayerID:    playerID,
+	patch := &port.UserSettingsPatch{
 		Language:    req.Language,
 		BgmVolume:   req.BgmVolume,
 		SeVolume:    req.SeVolume,
 		PushEnabled: req.PushEnabled,
 	}
+	if patch.IsEmpty() {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "at least one settings field is required"})
+		return
+	}
 
-	if err := h.svc.Update(c.Request.Context(), s); err != nil {
+	if err := h.svc.Update(c.Request.Context(), playerID, patch); err != nil {
 		respondError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, s)
+
+	updated, err := h.svc.Get(c.Request.Context(), playerID)
+	if err != nil {
+		respondError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, updated)
 }

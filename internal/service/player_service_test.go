@@ -42,8 +42,8 @@ func newPlayerTestService(overrides map[string]int64) *PlayerService {
 	for k, v := range overrides {
 		defaultValues[k] = v
 	}
-	playerRepo, factionRepo, _, _ := newRealRepos()
-	return NewPlayerService(playerRepo, newFakeGameConfigRepo(defaultValues), factionRepo)
+	playerRepo, factionRepo, _, tx := newRealRepos()
+	return NewPlayerService(playerRepo, newFakeGameConfigRepo(defaultValues), factionRepo, tx)
 }
 
 func TestPlayerService_GetBattleLimit(t *testing.T) {
@@ -59,7 +59,7 @@ func TestPlayerService_GetBattleLimit(t *testing.T) {
 		wantCanBattle    bool
 	}{
 		{
-			name:             "FreePlayer_UnderLimit",
+			name:             "free プレイヤー: 上限未満なら対戦可能",
 			isPremium:        false,
 			dailyBattleCount: 3,
 			lastResetDate:    today(),
@@ -68,7 +68,7 @@ func TestPlayerService_GetBattleLimit(t *testing.T) {
 			wantCanBattle:    true,
 		},
 		{
-			name:             "FreePlayer_AtLimit",
+			name:             "free プレイヤー: 上限到達で対戦不可",
 			isPremium:        false,
 			dailyBattleCount: 10,
 			lastResetDate:    today(),
@@ -77,7 +77,7 @@ func TestPlayerService_GetBattleLimit(t *testing.T) {
 			wantCanBattle:    false,
 		},
 		{
-			name:             "PremiumPlayer",
+			name:             "premium プレイヤーは上限なしで常に対戦可能",
 			isPremium:        true,
 			dailyBattleCount: 5,
 			lastResetDate:    today(),
@@ -86,7 +86,7 @@ func TestPlayerService_GetBattleLimit(t *testing.T) {
 			wantCanBattle:    true,
 		},
 		{
-			name:             "DateReset",
+			name:             "日付が変われば free プレイヤーのカウントがリセットされる",
 			isPremium:        false,
 			dailyBattleCount: 7,
 			lastResetDate:    yesterday(),
@@ -95,7 +95,7 @@ func TestPlayerService_GetBattleLimit(t *testing.T) {
 			wantCanBattle:    true,
 		},
 		{
-			name:             "FreePlayer_OverLimit",
+			name:             "free プレイヤー: 上限超過でも対戦不可",
 			isPremium:        false,
 			dailyBattleCount: 11,
 			lastResetDate:    today(),
@@ -133,32 +133,47 @@ func TestPlayerService_GetBattleLimit_FreeLimitZero_ReturnsError(t *testing.T) {
 	assert.Contains(t, err.Error(), "game config")
 }
 
+// IncrementBattleCount の正常系仕様:
+//   - 日付が変わっていれば 1 にリセット
+//   - free プレイヤーはインクリメント後のカウントが上限内なら通る
+//   - premium プレイヤーは上限判定をスキップ（カウントは記録する）
 func TestPlayerService_IncrementBattleCount(t *testing.T) {
 	ctx := context.Background()
 
 	tests := []struct {
-		name         string
-		isPremium    bool
-		seedCount    int64
-		seedDate     civil.Date
-		wantAfterCnt int64
-		wantLimit    int64
+		name       string
+		isPremium  bool
+		seedCount  int64
+		seedDate   civil.Date
+		wantStored int64
 	}{
 		{
-			name:         "free プレイヤーは 5→6",
-			isPremium:    false,
-			seedCount:    5,
-			seedDate:     today(),
-			wantAfterCnt: 6,
-			wantLimit:    10,
+			name:       "free: 上限未満なら 1 加算される",
+			isPremium:  false,
+			seedCount:  5,
+			seedDate:   today(),
+			wantStored: 6,
 		},
 		{
-			name:         "premium プレイヤーも DB にはカウントされるが制限は -1",
-			isPremium:    true,
-			seedCount:    29,
-			seedDate:     today(),
-			wantAfterCnt: 0, // premium は GetBattleLimit で DailyBattleCount=0 を返す仕様
-			wantLimit:    -1,
+			name:       "free: ちょうど上限に達するインクリメントは通る",
+			isPremium:  false,
+			seedCount:  9,
+			seedDate:   today(),
+			wantStored: 10,
+		},
+		{
+			name:       "free: 日付が変わっていればリセットして 1 になる",
+			isPremium:  false,
+			seedCount:  9,
+			seedDate:   yesterday(),
+			wantStored: 1,
+		},
+		{
+			name:       "premium: 上限を超えていても加算できる",
+			isPremium:  true,
+			seedCount:  29,
+			seedDate:   today(),
+			wantStored: 30,
 		},
 	}
 
@@ -171,12 +186,31 @@ func TestPlayerService_IncrementBattleCount(t *testing.T) {
 			svc := newPlayerTestService(nil)
 			require.NoError(t, svc.IncrementBattleCount(ctx, testPlayerID1))
 
-			resp, err := svc.GetBattleLimit(ctx, testPlayerID1)
+			playerRepo, _, _, _ := newRealRepos()
+			got, err := playerRepo.GetDailyBattle(ctx, testPlayerID1)
 			require.NoError(t, err)
-			assert.Equal(t, tt.wantAfterCnt, resp.DailyBattleCount)
-			assert.Equal(t, tt.wantLimit, resp.DailyBattleLimit)
+			require.NotNil(t, got)
+			assert.Equal(t, tt.wantStored, got.DailyBattleCount)
 		})
 	}
+}
+
+// free プレイヤーが上限到達後にインクリメントを試みると拒否され、カウントは据え置き。
+func TestPlayerService_IncrementBattleCount_OverLimit_ReturnsError(t *testing.T) {
+	ctx := context.Background()
+	sharedPg.Truncate(t)
+	seedPlayerWithState(t, testPlayerID1, "uid-1", "Alice",
+		false, 1, 0, 10, today())
+
+	svc := newPlayerTestService(nil)
+	err := svc.IncrementBattleCount(ctx, testPlayerID1)
+	require.ErrorIs(t, err, ErrBattleLimitExceeded)
+
+	playerRepo, _, _, _ := newRealRepos()
+	got, err := playerRepo.GetDailyBattle(ctx, testPlayerID1)
+	require.NoError(t, err)
+	require.NotNil(t, got)
+	assert.Equal(t, int64(10), got.DailyBattleCount)
 }
 
 func TestPlayerService_IncrementBattleCount_NotFound(t *testing.T) {
@@ -244,7 +278,7 @@ func TestPlayerService_AwardExp(t *testing.T) {
 		wantLevel int64
 	}{
 		{
-			name:      "below threshold",
+			name:      "閾値未満なら同じレベルのまま",
 			initExp:   0,
 			initLevel: 1,
 			gain:      testExpWin,
@@ -252,7 +286,7 @@ func TestPlayerService_AwardExp(t *testing.T) {
 			wantLevel: 1,
 		},
 		{
-			name:      "exact level up",
+			name:      "閾値ちょうどでレベルアップする",
 			initExp:   levelUpThreshold - testExpWin,
 			initLevel: 1,
 			gain:      testExpWin,
@@ -260,7 +294,7 @@ func TestPlayerService_AwardExp(t *testing.T) {
 			wantLevel: 2,
 		},
 		{
-			name:      "multiple level ups",
+			name:      "一度の加算で複数レベル上がる",
 			initExp:   0,
 			initLevel: 1,
 			gain:      int64(testExpCoeff * 4 * 4),
@@ -268,7 +302,7 @@ func TestPlayerService_AwardExp(t *testing.T) {
 			wantLevel: 4,
 		},
 		{
-			name:      "zero gain is noop",
+			name:      "加算量が 0 なら何もしない",
 			initExp:   100,
 			initLevel: 1,
 			gain:      0,
@@ -276,7 +310,7 @@ func TestPlayerService_AwardExp(t *testing.T) {
 			wantLevel: 1,
 		},
 		{
-			name:      "negative gain is noop",
+			name:      "加算量が負なら何もしない",
 			initExp:   100,
 			initLevel: 1,
 			gain:      -10,
@@ -306,9 +340,9 @@ func TestPlayerService_AwardExp_MissingCoefficient_ReturnsError(t *testing.T) {
 	sharedPg.Truncate(t)
 	seedPlayer(t, testPlayerID1, "uid-1", "Alice", false)
 
-	playerRepo, factionRepo, _, _ := newRealRepos()
+	playerRepo, factionRepo, _, tx := newRealRepos()
 	// coefficient を持たない fake を渡す。production では Firestore 読み取り失敗に相当。
-	svc := NewPlayerService(playerRepo, newFakeGameConfigRepo(map[string]int64{}), factionRepo)
+	svc := NewPlayerService(playerRepo, newFakeGameConfigRepo(map[string]int64{}), factionRepo, tx)
 
 	err := svc.AwardExp(context.Background(), testPlayerID1, testExpWin)
 	require.Error(t, err)
@@ -326,21 +360,21 @@ func TestPlayerService_AwardGameExp_PvP(t *testing.T) {
 		wantP2Exp int64
 	}{
 		{
-			name:      "player1 wins",
+			name:      "プレイヤー1 が勝利",
 			winnerNum: 1,
 			reason:    "system_down",
 			wantP1Exp: testExpWin,
 			wantP2Exp: testExpLoss,
 		},
 		{
-			name:      "player2 wins",
+			name:      "プレイヤー2 が勝利",
 			winnerNum: 2,
 			reason:    "budget_zero",
 			wantP1Exp: testExpLoss,
 			wantP2Exp: testExpWin,
 		},
 		{
-			name:      "draw",
+			name:      "引き分け",
 			winnerNum: 0,
 			reason:    "draw",
 			wantP1Exp: testExpDraw,
@@ -378,19 +412,19 @@ func TestPlayerService_AwardGameExp_NPC(t *testing.T) {
 		wantP1Exp int64
 	}{
 		{
-			name:      "p1 wins",
+			name:      "プレイヤーが勝利",
 			winnerNum: 1,
 			reason:    "system_down",
 			wantP1Exp: testExpWin,
 		},
 		{
-			name:      "p1 loses",
+			name:      "プレイヤーが敗北",
 			winnerNum: 2,
 			reason:    "system_down",
 			wantP1Exp: testExpLoss,
 		},
 		{
-			name:      "draw",
+			name:      "引き分け",
 			winnerNum: 0,
 			reason:    "draw",
 			wantP1Exp: testExpDraw,
@@ -424,37 +458,37 @@ func TestComputeLevel(t *testing.T) {
 		wantLevel    int64
 	}{
 		{
-			name:         "below threshold",
+			name:         "閾値未満なら同じレベルのまま",
 			newExp:       threshold(2) - 1,
 			currentLevel: 1,
 			wantLevel:    1,
 		},
 		{
-			name:         "exact threshold",
+			name:         "閾値ちょうどでレベルアップする",
 			newExp:       threshold(2),
 			currentLevel: 1,
 			wantLevel:    2,
 		},
 		{
-			name:         "multiple level ups",
+			name:         "一度に複数レベル上がる",
 			newExp:       threshold(4),
 			currentLevel: 1,
 			wantLevel:    4,
 		},
 		{
-			name:         "stays at current",
+			name:         "次の閾値未満なら現在レベル据え置き",
 			newExp:       threshold(4) - 1,
 			currentLevel: 3,
 			wantLevel:    3,
 		},
 		{
-			name:         "level 0 corrected to 1",
+			name:         "レベル 0 は 1 に補正される",
 			newExp:       0,
 			currentLevel: 0,
 			wantLevel:    1,
 		},
 		{
-			name:         "never decreases",
+			name:         "レベルは下がらない",
 			newExp:       0,
 			currentLevel: 5,
 			wantLevel:    5,

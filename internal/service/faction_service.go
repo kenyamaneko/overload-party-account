@@ -33,8 +33,9 @@ func NewFactionService(
 	}
 }
 
-// SelectInitialFaction は player_factions に INSERT し selected_faction を更新します。
-// player_factions の複合 PK が冪等性の SSoT であり、INSERT が空なら選択済みと判断します。
+// SelectInitialFaction は初回選択を確定し、所持ファクションにも追加します。
+// 「初回選択済みか否か」の SSoT は players.selected_faction であり、NULL の間だけ成立します。
+// ショップ先行で player_factions に行があっても selected_faction が NULL なら初回選択できます。
 func (s *FactionService) SelectInitialFaction(ctx context.Context, playerID, faction string) error {
 	if playerID == "" {
 		return fmt.Errorf("%w: playerID is empty", ErrInvalidFaction)
@@ -43,25 +44,25 @@ func (s *FactionService) SelectInitialFaction(ctx context.Context, playerID, fac
 		return err
 	}
 
-	var created bool
+	var selected bool
 	if err := s.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
-		inserted, err := s.factionRepo.InsertInitial(txCtx, playerID, faction, FactionSourceInitialSelection)
+		set, err := s.playerRepo.TrySetInitialFaction(txCtx, playerID, faction)
 		if err != nil {
-			return fmt.Errorf("insert initial faction: %w", err)
+			return fmt.Errorf("try set initial faction: %w", err)
 		}
-		if !inserted {
+		if !set {
 			return nil
 		}
-		if err := s.playerRepo.UpdateFaction(txCtx, playerID, faction); err != nil {
-			return fmt.Errorf("update selected_faction: %w", err)
+		if err := s.factionRepo.AddPlayerFaction(txCtx, playerID, faction, FactionSourceInitialSelection); err != nil {
+			return fmt.Errorf("add player faction: %w", err)
 		}
-		created = true
+		selected = true
 		return nil
 	}); err != nil {
 		return err
 	}
 
-	if !created {
+	if !selected {
 		return ErrFactionAlreadySelected
 	}
 

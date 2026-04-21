@@ -17,6 +17,8 @@ import (
 var _ port.PlayerRepo = (*PlayerRepository)(nil)
 
 // PlayerRepository は PostgreSQL を使用した PlayerRepo の実装である。
+// account.players / account.player_daily_battle / account.player_progression の 3 テーブルを
+// 「プレイヤー」という 1 つのアグリゲートとして扱い、呼び出し元には物理分割を見せない。
 type PlayerRepository struct {
 	pool *pgxpool.Pool
 }
@@ -26,11 +28,17 @@ func NewPlayerRepository(pool *pgxpool.Pool) *PlayerRepository {
 	return &PlayerRepository{pool: pool}
 }
 
-// Create は account.players と account.player_daily_battle をアトミックに挿入する。
+// selectPlayerColumnsJoin は Player アグリゲートを JOIN で組み立てる SELECT 句。
+// scanPlayer の順序と揃えている。
+const selectPlayerColumnsJoin = `p.player_id, p.firebase_uid, p.username, pp.level, pp.exp,
+		p.is_premium, p.equipped_icon_no, p.selected_faction,
+		p.premium_expires_at, p.created_at, p.updated_at`
+
+// Create は players / player_daily_battle / player_progression をアトミックに挿入する。
 // context にトランザクションがあればそれに参加し、なければ独自トランザクションを使用する。
-func (r *PlayerRepository) Create(ctx context.Context, player *apiaccount.Player, dailyBattle *apiaccount.PlayerDailyBattle) error {
+func (r *PlayerRepository) Create(ctx context.Context, player *apiaccount.Player, dailyBattle *apiaccount.PlayerDailyBattle, progression *apiaccount.PlayerProgression) error {
 	if txFromContext(ctx) != nil {
-		return r.createInner(ctx, connFrom(ctx, r.pool), player, dailyBattle)
+		return r.createInner(ctx, connFrom(ctx, r.pool), player, dailyBattle, progression)
 	}
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
@@ -38,21 +46,19 @@ func (r *PlayerRepository) Create(ctx context.Context, player *apiaccount.Player
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	if err := r.createInner(ctx, tx, player, dailyBattle); err != nil {
+	if err := r.createInner(ctx, tx, player, dailyBattle, progression); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)
 }
 
-func (r *PlayerRepository) createInner(ctx context.Context, db dbtx, player *apiaccount.Player, dailyBattle *apiaccount.PlayerDailyBattle) error {
+func (r *PlayerRepository) createInner(ctx context.Context, db dbtx, player *apiaccount.Player, dailyBattle *apiaccount.PlayerDailyBattle, progression *apiaccount.PlayerProgression) error {
 	_, err := db.Exec(ctx,
-		`INSERT INTO account.players (player_id, firebase_uid, username, level, exp, is_premium, equipped_icon_no, selected_faction, premium_expires_at, created_at, updated_at)
-		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+		`INSERT INTO account.players (player_id, firebase_uid, username, is_premium, equipped_icon_no, selected_faction, premium_expires_at, created_at, updated_at)
+		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
 		player.PlayerID,
 		player.FirebaseUID,
 		player.Username,
-		player.Level,
-		player.Exp,
 		player.IsPremium,
 		player.EquippedIconNo,
 		player.SelectedFaction,
@@ -64,13 +70,23 @@ func (r *PlayerRepository) createInner(ctx context.Context, db dbtx, player *api
 		return fmt.Errorf("insert player: %w", err)
 	}
 
-	lastResetTime := civilDateToTime(dailyBattle.LastResetDate)
+	_, err = db.Exec(ctx,
+		`INSERT INTO account.player_progression (player_id, level, exp)
+		 VALUES ($1,$2,$3)`,
+		progression.PlayerID,
+		progression.Level,
+		progression.Exp,
+	)
+	if err != nil {
+		return fmt.Errorf("insert player progression: %w", err)
+	}
+
 	_, err = db.Exec(ctx,
 		`INSERT INTO account.player_daily_battle (player_id, daily_battle_count, last_reset_date)
 		 VALUES ($1,$2,$3)`,
 		dailyBattle.PlayerID,
 		dailyBattle.DailyBattleCount,
-		lastResetTime,
+		civilDateToTime(dailyBattle.LastResetDate),
 	)
 	if err != nil {
 		return fmt.Errorf("insert daily battle: %w", err)
@@ -82,8 +98,10 @@ func (r *PlayerRepository) createInner(ctx context.Context, db dbtx, player *api
 // FindByID はプレイヤー ID で検索する。該当なしは port.ErrNotFound でラップして返す。
 func (r *PlayerRepository) FindByID(ctx context.Context, playerID string) (*apiaccount.Player, error) {
 	row := connFrom(ctx, r.pool).QueryRow(ctx,
-		`SELECT player_id, firebase_uid, username, level, exp, is_premium, equipped_icon_no, selected_faction, premium_expires_at, created_at, updated_at
-		 FROM account.players WHERE player_id = $1`,
+		`SELECT `+selectPlayerColumnsJoin+`
+		 FROM account.players p
+		 JOIN account.player_progression pp ON p.player_id = pp.player_id
+		 WHERE p.player_id = $1`,
 		playerID,
 	)
 
@@ -100,8 +118,10 @@ func (r *PlayerRepository) FindByID(ctx context.Context, playerID string) (*apia
 // FindByFirebaseUID は Firebase UID で検索する。該当なしは (nil, nil) を返す。
 func (r *PlayerRepository) FindByFirebaseUID(ctx context.Context, firebaseUID string) (*apiaccount.Player, error) {
 	row := connFrom(ctx, r.pool).QueryRow(ctx,
-		`SELECT player_id, firebase_uid, username, level, exp, is_premium, equipped_icon_no, selected_faction, premium_expires_at, created_at, updated_at
-		 FROM account.players WHERE firebase_uid = $1 LIMIT 1`,
+		`SELECT `+selectPlayerColumnsJoin+`
+		 FROM account.players p
+		 JOIN account.player_progression pp ON p.player_id = pp.player_id
+		 WHERE p.firebase_uid = $1 LIMIT 1`,
 		firebaseUID,
 	)
 
@@ -133,69 +153,40 @@ func (r *PlayerRepository) GetDailyBattle(ctx context.Context, playerID string) 
 	return db, nil
 }
 
-// IncrementDailyBattle は日次バトル回数をアトミックにインクリメントする。
-// last_reset_date が今日以前ならカウントをリセットする。新しいカウントを返す。
-func (r *PlayerRepository) IncrementDailyBattle(ctx context.Context, playerID string, today civil.Date) (int64, error) {
-	if txFromContext(ctx) != nil {
-		return r.incrementDailyBattleInner(ctx, connFrom(ctx, r.pool), playerID, today)
-	}
-	tx, err := r.pool.Begin(ctx)
-	if err != nil {
-		return 0, fmt.Errorf("begin tx: %w", err)
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-
-	count, err := r.incrementDailyBattleInner(ctx, tx, playerID, today)
-	if err != nil {
-		return 0, err
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return 0, fmt.Errorf("commit tx: %w", err)
-	}
-	return count, nil
-}
-
-func (r *PlayerRepository) incrementDailyBattleInner(ctx context.Context, db dbtx, playerID string, today civil.Date) (int64, error) {
-	row := db.QueryRow(ctx,
-		`SELECT daily_battle_count, last_reset_date
-		 FROM account.player_daily_battle WHERE player_id = $1 FOR UPDATE`,
-		playerID,
-	)
-
-	var count int64
-	var lastResetTime time.Time
-	if err := row.Scan(&count, &lastResetTime); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return 0, fmt.Errorf("daily battle for player %s: %w", playerID, port.ErrNotFound)
-		}
-		return 0, fmt.Errorf("read daily battle: %w", err)
-	}
-
-	lastReset := timeToCivilDate(lastResetTime)
-	if lastReset != today {
-		count = 1
-	} else {
-		count++
-	}
-
-	todayTime := civilDateToTime(today)
-	_, err := db.Exec(ctx,
+// UpdateDailyBattleCount は count と last_reset_date を書き込むプリミティブ。
+// 日付リセット判定や上限チェックは service 層の責務で、ここでは受け取った値をそのまま反映する。
+// 行が存在しなければ port.ErrNotFound を返す（player_daily_battle は players と 1:1 で
+// Create 時に INSERT される前提）。
+func (r *PlayerRepository) UpdateDailyBattleCount(ctx context.Context, playerID string, count int64, resetDate civil.Date) error {
+	ct, err := connFrom(ctx, r.pool).Exec(ctx,
 		`UPDATE account.player_daily_battle SET daily_battle_count = $1, last_reset_date = $2 WHERE player_id = $3`,
-		count, todayTime, playerID,
+		count, civilDateToTime(resetDate), playerID,
 	)
 	if err != nil {
-		return 0, fmt.Errorf("update daily battle: %w", err)
+		return fmt.Errorf("update daily battle: %w", err)
 	}
-
-	return count, nil
+	if ct.RowsAffected() == 0 {
+		return fmt.Errorf("daily battle for player %s: %w", playerID, port.ErrNotFound)
+	}
+	return nil
 }
 
-// UpdateUsername はプレイヤー名を更新し、更新後のプレイヤーを返す。
+// UpdateUsername はプレイヤー名を更新し、更新後のアグリゲートを返す。
+// UPDATE の RETURNING は players 側の列しか返せないので、level/exp 取得のため
+// CTE + JOIN で 1 往復に収める。
 func (r *PlayerRepository) UpdateUsername(ctx context.Context, playerID string, username string) (*apiaccount.Player, error) {
 	row := connFrom(ctx, r.pool).QueryRow(ctx,
-		`UPDATE account.players SET username = $1, updated_at = NOW()
-		 WHERE player_id = $2
-		 RETURNING player_id, firebase_uid, username, level, exp, is_premium, equipped_icon_no, selected_faction, premium_expires_at, created_at, updated_at`,
+		`WITH upd AS (
+		   UPDATE account.players SET username = $1, updated_at = NOW()
+		    WHERE player_id = $2
+		    RETURNING player_id, firebase_uid, username, is_premium, equipped_icon_no,
+		              selected_faction, premium_expires_at, created_at, updated_at
+		 )
+		 SELECT upd.player_id, upd.firebase_uid, upd.username, pp.level, pp.exp,
+		        upd.is_premium, upd.equipped_icon_no, upd.selected_faction,
+		        upd.premium_expires_at, upd.created_at, upd.updated_at
+		   FROM upd
+		   JOIN account.player_progression pp ON upd.player_id = pp.player_id`,
 		username, playerID,
 	)
 
@@ -236,56 +227,93 @@ func (r *PlayerRepository) UpdateFaction(ctx context.Context, playerID, faction 
 	return nil
 }
 
-// AddExp は SELECT FOR UPDATE で経験値をアトミックに加算しレベルを再計算する。
-// computeLevel はサービス層が提供するレベル計算関数である。
-func (r *PlayerRepository) AddExp(ctx context.Context, playerID string, expGain int64, computeLevel func(newExp, currentLevel int64) int64) (*apiaccount.Player, error) {
-	if txFromContext(ctx) != nil {
-		return r.addExpInner(ctx, connFrom(ctx, r.pool), playerID, expGain, computeLevel)
-	}
-	tx, err := r.pool.Begin(ctx)
+// TrySetInitialFaction は selected_faction が NULL の行に対してのみ UPDATE する。
+// 1 行更新できた = 初回選択が成立、0 行 = 既に選択済み or プレイヤー不在。
+// 既存ショップ購入で player_factions に行があっても、selected_faction が NULL なら
+// 初回選択として成立させる（所持と初回選択は別概念）。
+func (r *PlayerRepository) TrySetInitialFaction(ctx context.Context, playerID, faction string) (bool, error) {
+	db := connFrom(ctx, r.pool)
+	ct, err := db.Exec(ctx,
+		`UPDATE account.players SET selected_faction = $1, updated_at = $2
+		 WHERE player_id = $3 AND selected_faction IS NULL`,
+		faction, time.Now(), playerID,
+	)
 	if err != nil {
-		return nil, fmt.Errorf("add exp begin tx: %w", err)
+		return false, fmt.Errorf("try set initial faction: %w", err)
 	}
-	defer func() { _ = tx.Rollback(ctx) }()
+	if ct.RowsAffected() == 1 {
+		return true, nil
+	}
 
-	p, err := r.addExpInner(ctx, tx, playerID, expGain, computeLevel)
-	if err != nil {
-		return nil, err
+	// 0 行は「既に選択済み」と「プレイヤー不在」の二通りがある。呼び出し元が 404 と 409 を
+	// 分けられるよう、ここで存在確認して区別する。
+	var exists bool
+	if err := db.QueryRow(ctx,
+		`SELECT EXISTS(SELECT 1 FROM account.players WHERE player_id = $1)`,
+		playerID,
+	).Scan(&exists); err != nil {
+		return false, fmt.Errorf("check player exists: %w", err)
 	}
-	if err := tx.Commit(ctx); err != nil {
-		return nil, fmt.Errorf("add exp commit: %w", err)
+	if !exists {
+		return false, fmt.Errorf("player %s: %w", playerID, port.ErrNotFound)
 	}
-	return p, nil
+	return false, nil
 }
 
-func (r *PlayerRepository) addExpInner(ctx context.Context, db dbtx, playerID string, expGain int64, computeLevel func(newExp, currentLevel int64) int64) (*apiaccount.Player, error) {
-	var curExp, curLevel int64
-	err := db.QueryRow(ctx,
-		`SELECT exp, level FROM account.players WHERE player_id = $1 FOR UPDATE`,
+// GetProgression は player_progression の現在値を返す。該当なしは port.ErrNotFound でラップ。
+func (r *PlayerRepository) GetProgression(ctx context.Context, playerID string) (*apiaccount.PlayerProgression, error) {
+	row := connFrom(ctx, r.pool).QueryRow(ctx,
+		`SELECT player_id, level, exp, updated_at
+		 FROM account.player_progression WHERE player_id = $1`,
 		playerID,
-	).Scan(&curExp, &curLevel)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, fmt.Errorf("player %s: %w", playerID, port.ErrNotFound)
-		}
-		return nil, fmt.Errorf("add exp select: %w", err)
-	}
-
-	newExp := curExp + expGain
-	newLevel := computeLevel(newExp, curLevel)
-
-	row := db.QueryRow(ctx,
-		`UPDATE account.players SET exp = $2, level = $3, updated_at = NOW()
-		 WHERE player_id = $1
-		 RETURNING player_id, firebase_uid, username, level, exp, is_premium, equipped_icon_no, selected_faction, premium_expires_at, created_at, updated_at`,
-		playerID, newExp, newLevel,
 	)
 
-	p, err := scanPlayer(row)
+	prog, err := scanProgression(row)
 	if err != nil {
-		return nil, fmt.Errorf("add exp update: %w", err)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, fmt.Errorf("progression for player %s: %w", playerID, port.ErrNotFound)
+		}
+		return nil, fmt.Errorf("get player progression: %w", err)
 	}
-	return p, nil
+	return prog, nil
+}
+
+// GetProgressionForUpdate は player_progression に SELECT ... FOR UPDATE で行ロックを取得する。
+// FOR UPDATE の効果はトランザクション寿命に依存するため、呼び出し側が TxRunner.RunInTx 配下で
+// 呼ぶ責務を持つ（pool 直接呼び出しでは autocommit で直ちにロックが解放される）。
+func (r *PlayerRepository) GetProgressionForUpdate(ctx context.Context, playerID string) (*apiaccount.PlayerProgression, error) {
+	row := connFrom(ctx, r.pool).QueryRow(ctx,
+		`SELECT player_id, level, exp, updated_at
+		 FROM account.player_progression WHERE player_id = $1 FOR UPDATE`,
+		playerID,
+	)
+	prog, err := scanProgression(row)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, fmt.Errorf("progression for player %s: %w", playerID, port.ErrNotFound)
+		}
+		return nil, fmt.Errorf("get progression for update: %w", err)
+	}
+	return prog, nil
+}
+
+// UpdateProgression は exp / level をそのまま書き込む純プリミティブ。
+// 加算やレベル計算は service 層の責務で、ここでは受け取った値を反映するだけ。
+func (r *PlayerRepository) UpdateProgression(ctx context.Context, playerID string, exp, level int64) (*apiaccount.PlayerProgression, error) {
+	row := connFrom(ctx, r.pool).QueryRow(ctx,
+		`UPDATE account.player_progression SET exp = $2, level = $3
+		 WHERE player_id = $1
+		 RETURNING player_id, level, exp, updated_at`,
+		playerID, exp, level,
+	)
+	prog, err := scanProgression(row)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, fmt.Errorf("progression for player %s: %w", playerID, port.ErrNotFound)
+		}
+		return nil, fmt.Errorf("update progression: %w", err)
+	}
+	return prog, nil
 }
 
 func scanPlayer(row pgx.Row) (*apiaccount.Player, error) {
@@ -303,6 +331,15 @@ func scanPlayer(row pgx.Row) (*apiaccount.Player, error) {
 		&p.CreatedAt,
 		&p.UpdatedAt,
 	)
+	if err != nil {
+		return nil, err
+	}
+	return &p, nil
+}
+
+func scanProgression(row pgx.Row) (*apiaccount.PlayerProgression, error) {
+	var p apiaccount.PlayerProgression
+	err := row.Scan(&p.PlayerID, &p.Level, &p.Exp, &p.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}

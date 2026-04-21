@@ -57,6 +57,13 @@ func (s *AuthService) Register(ctx context.Context, firebaseUID, username string
 		LastResetDate:    civil.DateOf(time.Now().UTC()),
 	}
 
+	progression := &apiaccount.PlayerProgression{
+		PlayerID:  player.PlayerID,
+		Level:     1,
+		Exp:       0,
+		UpdatedAt: now,
+	}
+
 	settings := &apiaccount.UserSettings{
 		PlayerID:    player.PlayerID,
 		Language:    model.DefaultLanguage,
@@ -67,10 +74,10 @@ func (s *AuthService) Register(ctx context.Context, firebaseUID, username string
 	}
 
 	if err := s.txRunner.RunInTx(ctx, func(ctx context.Context) error {
-		if err := s.playerRepo.Create(ctx, player, dailyBattle); err != nil {
+		if err := s.playerRepo.Create(ctx, player, dailyBattle, progression); err != nil {
 			return fmt.Errorf("create player: %w", err)
 		}
-		if err := s.userSettingsRepo.Upsert(ctx, settings); err != nil {
+		if err := s.userSettingsRepo.Insert(ctx, settings); err != nil {
 			return fmt.Errorf("create default user settings: %w", err)
 		}
 		return nil

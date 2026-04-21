@@ -15,7 +15,9 @@ type factionEntry struct {
 	source  string
 }
 
-func TestFactionRepository_AddAndGet(t *testing.T) {
+// AddPlayerFaction の契約: ON CONFLICT DO NOTHING による一意性保証と冪等性。
+// 状態確認には GetPlayerFactions を使う（独立テストで Get 側の契約は別途検証）。
+func TestFactionRepository_AddPlayerFaction(t *testing.T) {
 	repo := postgres.NewFactionRepository(sharedPg.Pool)
 	ctx := context.Background()
 
@@ -25,19 +27,14 @@ func TestFactionRepository_AddAndGet(t *testing.T) {
 		wantList []string
 	}{
 		{
-			name:     "追加なしは空配列",
-			adds:     nil,
-			wantList: []string{},
-		},
-		{
-			name: "追加 1 件",
+			name: "新規ファクションを追加する",
 			adds: []factionEntry{
 				{faction: "SHE", source: "initial_selection"},
 			},
 			wantList: []string{"SHE"},
 		},
 		{
-			name: "複数ファクション所持",
+			name: "異なるファクションを重ねて追加できる",
 			adds: []factionEntry{
 				{faction: "SHE", source: "initial_selection"},
 				{faction: "Tenki", source: "shop_purchase"},
@@ -45,7 +42,7 @@ func TestFactionRepository_AddAndGet(t *testing.T) {
 			wantList: []string{"SHE", "Tenki"},
 		},
 		{
-			name: "重複 Add は冪等 (ON CONFLICT DO NOTHING)",
+			name: "同一プレイヤー×同一ファクションの重複追加は冪等で行が増えない",
 			adds: []factionEntry{
 				{faction: "SHE", source: "initial_selection"},
 				{faction: "SHE", source: "shop_purchase"},
@@ -70,24 +67,36 @@ func TestFactionRepository_AddAndGet(t *testing.T) {
 	}
 }
 
-func TestFactionRepository_InsertInitial(t *testing.T) {
+// GetPlayerFactions の契約: プレイヤーの所持ファクションを過不足なく返す。
+// seed には AddPlayerFaction を使う（Add 側の契約は別テストで検証）。
+func TestFactionRepository_GetPlayerFactions(t *testing.T) {
 	repo := postgres.NewFactionRepository(sharedPg.Pool)
 	ctx := context.Background()
 
 	tests := []struct {
-		name        string
-		preExisting bool
-		wantCreated bool
+		name     string
+		seed     []factionEntry
+		wantList []string
 	}{
 		{
-			name:        "初回は created=true",
-			preExisting: false,
-			wantCreated: true,
+			name:     "所持なしは空配列 (新規プレイヤーの正常系)",
+			seed:     nil,
+			wantList: []string{},
 		},
 		{
-			name:        "既存なら created=false (冪等)",
-			preExisting: true,
-			wantCreated: false,
+			name: "単一ファクションを所持",
+			seed: []factionEntry{
+				{faction: "SHE", source: "initial_selection"},
+			},
+			wantList: []string{"SHE"},
+		},
+		{
+			name: "複数ファクションを所持",
+			seed: []factionEntry{
+				{faction: "SHE", source: "initial_selection"},
+				{faction: "Tenki", source: "shop_purchase"},
+			},
+			wantList: []string{"SHE", "Tenki"},
 		},
 	}
 
@@ -95,13 +104,14 @@ func TestFactionRepository_InsertInitial(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			sharedPg.Truncate(t)
 			seedPlayer(t, testPlayerID1, "uid-1", "Alice", false)
-			if tt.preExisting {
-				seedPlayerFaction(t, testPlayerID1, "SHE", "initial_selection")
+
+			for _, s := range tt.seed {
+				require.NoError(t, repo.AddPlayerFaction(ctx, testPlayerID1, s.faction, s.source))
 			}
 
-			created, err := repo.InsertInitial(ctx, testPlayerID1, "SHE", "initial_selection")
+			got, err := repo.GetPlayerFactions(ctx, testPlayerID1)
 			require.NoError(t, err)
-			assert.Equal(t, tt.wantCreated, created)
+			assert.ElementsMatch(t, tt.wantList, got)
 		})
 	}
 }

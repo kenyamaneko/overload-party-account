@@ -11,8 +11,9 @@ import (
 	apiaccount "github.com/kenyamaneko/overload-party-account/packages/api-account"
 )
 
-// seedPlayer は account.players + account.player_daily_battle の最小シードを投入する。
+// seedPlayer は account.players + player_daily_battle + player_progression の最小シードを投入する。
 // テストで頻繁に必要な「ログイン済みプレイヤー」の状態を 1 行で作る。
+// Level/Exp は Player アグリゲートに詰めて返すが、物理的には player_progression に INSERT される。
 func seedPlayer(t *testing.T, playerID, firebaseUID, username string, isPremium bool) *apiaccount.Player {
 	t.Helper()
 	now := time.Now().UTC()
@@ -26,30 +27,27 @@ func seedPlayer(t *testing.T, playerID, firebaseUID, username string, isPremium 
 		CreatedAt:   now,
 		UpdatedAt:   now,
 	}
-	_, err := sharedPg.Pool.Exec(context.Background(),
-		`INSERT INTO account.players (player_id, firebase_uid, username, level, exp, is_premium, equipped_icon_no, selected_faction, premium_expires_at, created_at, updated_at)
-		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
-		p.PlayerID, p.FirebaseUID, p.Username, p.Level, p.Exp, p.IsPremium,
+	ctx := context.Background()
+	_, err := sharedPg.Pool.Exec(ctx,
+		`INSERT INTO account.players (player_id, firebase_uid, username, is_premium, equipped_icon_no, selected_faction, premium_expires_at, created_at, updated_at)
+		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+		p.PlayerID, p.FirebaseUID, p.Username, p.IsPremium,
 		p.EquippedIconNo, p.SelectedFaction, p.PremiumExpiresAt, p.CreatedAt, p.UpdatedAt)
 	require.NoError(t, err)
 
+	_, err = sharedPg.Pool.Exec(ctx,
+		`INSERT INTO account.player_progression (player_id, level, exp)
+		 VALUES ($1, $2, $3)`,
+		p.PlayerID, p.Level, p.Exp)
+	require.NoError(t, err)
+
 	today := civil.DateOf(now)
-	_, err = sharedPg.Pool.Exec(context.Background(),
+	_, err = sharedPg.Pool.Exec(ctx,
 		`INSERT INTO account.player_daily_battle (player_id, daily_battle_count, last_reset_date)
 		 VALUES ($1, $2, $3)`,
 		p.PlayerID, 0, time.Date(today.Year, today.Month, today.Day, 0, 0, 0, 0, time.UTC))
 	require.NoError(t, err)
 	return p
-}
-
-// seedPlayerFaction は account.player_factions に 1 行追加する。
-func seedPlayerFaction(t *testing.T, playerID, faction, source string) {
-	t.Helper()
-	_, err := sharedPg.Pool.Exec(context.Background(),
-		`INSERT INTO account.player_factions (player_id, faction, source)
-		 VALUES ($1, $2, $3)`,
-		playerID, faction, source)
-	require.NoError(t, err)
 }
 
 // seedUserSettings は account.user_settings に 1 行追加する。

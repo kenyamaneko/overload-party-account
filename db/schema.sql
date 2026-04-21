@@ -39,8 +39,6 @@ CREATE TABLE account.players (
   player_id          UUID NOT NULL DEFAULT gen_random_uuid(), -- UUID
   firebase_uid       VARCHAR(128) NOT NULL,          -- Firebase Auth UID (Unique)
   username           VARCHAR(50) NOT NULL,           -- 表示名
-  level              BIGINT NOT NULL DEFAULT 1,      -- レベル (Default: 1)
-  exp                BIGINT NOT NULL DEFAULT 0,      -- 経験値 (Default: 0)
   is_premium         BOOLEAN NOT NULL,               -- 課金ステータス
   equipped_icon_no   BIGINT,                         -- 装備中アイコン番号（NULL: デフォルト）
   selected_faction   VARCHAR(20),                    -- 選択済みファクション
@@ -56,6 +54,24 @@ CREATE TRIGGER trg_players_updated_at BEFORE UPDATE ON account.players FOR EACH 
 ALTER TABLE account.players
   ADD CONSTRAINT chk_players_selected_faction
     CHECK (selected_faction IS NULL OR selected_faction IN ('SHE', 'Tenki', 'Sugar', 'Tuners', 'Neutral'));
+
+-- =============================================================================
+-- account.player_progression (child of players, 1:1)
+--
+-- level/exp は戦闘ごとに高頻度で UPDATE されるため、手動操作で更新される players
+-- のプロフィール系カラムと分離する。これにより:
+--   * players.updated_at がバトル頻度で動かず、プロフィール変更の検知に使える
+--   * 経験値加算の行ロックが players 全体に波及しない
+--   * VACUUM / MVCC のコストが players に集中しない
+-- =============================================================================
+
+CREATE TABLE account.player_progression (
+  player_id  UUID PRIMARY KEY REFERENCES account.players(player_id) ON DELETE CASCADE, -- 親テーブル参照
+  level      BIGINT NOT NULL DEFAULT 1,             -- レベル (Default: 1)
+  exp        BIGINT NOT NULL DEFAULT 0,             -- 経験値 (Default: 0)
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()     -- 更新日時
+);
+CREATE TRIGGER trg_player_progression_updated_at BEFORE UPDATE ON account.player_progression FOR EACH ROW EXECUTE FUNCTION account.update_updated_at();
 
 -- =============================================================================
 -- account.player_daily_battle (child of players, 1:1)

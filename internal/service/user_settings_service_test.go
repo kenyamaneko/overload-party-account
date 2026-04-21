@@ -9,8 +9,11 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/kenyamaneko/overload-party-account/internal/model"
-	apiaccount "github.com/kenyamaneko/overload-party-account/packages/api-account"
+	"github.com/kenyamaneko/overload-party-account/internal/port"
 )
+
+// ptr はテスト内でポインタリテラルを書きやすくするヘルパ。
+func ptr[T any](v T) *T { return &v }
 
 // newUserSettingsTestService は実 PostgreSQL repository で UserSettingsService を組む。
 func newUserSettingsTestService() *UserSettingsService {
@@ -29,14 +32,14 @@ func TestUserSettingsService_Get_Seeded(t *testing.T) {
 		seedPush bool
 	}{
 		{
-			name:     "en / push=false",
+			name:     "言語=en / プッシュ無効のシード値をそのまま返す",
 			seedLang: "en",
 			seedBgm:  20,
 			seedSe:   30,
 			seedPush: false,
 		},
 		{
-			name:     "ja / push=true",
+			name:     "言語=ja / プッシュ有効のシード値をそのまま返す",
 			seedLang: "ja",
 			seedBgm:  50,
 			seedSe:   60,
@@ -88,41 +91,39 @@ func TestUserSettingsService_Get_Unseeded_ReturnsDefaultsWithoutPersisting(t *te
 	assert.Equal(t, 0, count, "Get はデフォルト返却で永続化しない")
 }
 
+// Update は patch の非 nil フィールドだけを更新する（部分更新契約）。
+// nil フィールドは現状維持、複数指定は同時に書き換え。
 func TestUserSettingsService_Update(t *testing.T) {
 	ctx := context.Background()
 
 	tests := []struct {
 		name     string
-		preSeed  bool
-		payload  *apiaccount.UserSettings
+		patch    *port.UserSettingsPatch
 		wantLang string
 		wantBgm  int64
+		wantSe   int64
+		wantPush bool
 	}{
 		{
-			name:    "新規 INSERT (未登録プレイヤー)",
-			preSeed: false,
-			payload: &apiaccount.UserSettings{
-				PlayerID:    testPlayerID1,
-				Language:    "ja",
-				BgmVolume:   40,
-				SeVolume:    60,
-				PushEnabled: true,
-			},
-			wantLang: "ja",
-			wantBgm:  40,
+			name:     "言語だけ指定すると他の項目はシード値のまま維持される",
+			patch:    &port.UserSettingsPatch{Language: ptr("en")},
+			wantLang: "en",
+			wantBgm:  50,
+			wantSe:   50,
+			wantPush: true,
 		},
 		{
-			name:    "既存は UPDATE で上書き",
-			preSeed: true,
-			payload: &apiaccount.UserSettings{
-				PlayerID:    testPlayerID1,
-				Language:    "en",
-				BgmVolume:   90,
-				SeVolume:    80,
-				PushEnabled: false,
+			name: "全フィールド指定で一括上書きされる",
+			patch: &port.UserSettingsPatch{
+				Language:    ptr("en"),
+				BgmVolume:   ptr(int64(90)),
+				SeVolume:    ptr(int64(80)),
+				PushEnabled: ptr(false),
 			},
 			wantLang: "en",
 			wantBgm:  90,
+			wantSe:   80,
+			wantPush: false,
 		},
 	}
 
@@ -130,24 +131,36 @@ func TestUserSettingsService_Update(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			sharedPg.Truncate(t)
 			seedPlayer(t, testPlayerID1, "uid-1", "Alice", false)
-			if tt.preSeed {
-				seedUserSettings(t, testPlayerID1, "ja", 50, 50, true)
-			}
+			seedUserSettings(t, testPlayerID1, "ja", 50, 50, true)
 
 			svc := newUserSettingsTestService()
-			require.NoError(t, svc.Update(ctx, tt.payload))
+			require.NoError(t, svc.Update(ctx, testPlayerID1, tt.patch))
 
 			got, err := svc.Get(ctx, testPlayerID1)
 			require.NoError(t, err)
 			require.NotNil(t, got)
 			assert.Equal(t, tt.wantLang, got.Language)
 			assert.Equal(t, tt.wantBgm, got.BgmVolume)
+			assert.Equal(t, tt.wantSe, got.SeVolume)
+			assert.Equal(t, tt.wantPush, got.PushEnabled)
 		})
 	}
 }
 
-// Update は upsert で updated_at を現在時刻に書き換える。
-// 既存行の updated_at が必ず前進することを検証する（監査やキャッシュ無効化の基盤）。
+// user_settings 行が未登録なら Update は ErrNotFound を返す。
+// 通常は Register で Insert されているので発生しないが、契約として担保する。
+func TestUserSettingsService_Update_NotFound(t *testing.T) {
+	ctx := context.Background()
+	sharedPg.Truncate(t)
+	seedPlayer(t, testPlayerID1, "uid-1", "Alice", false)
+
+	svc := newUserSettingsTestService()
+	err := svc.Update(ctx, testPlayerID1, &port.UserSettingsPatch{Language: ptr("en")})
+	require.ErrorIs(t, err, port.ErrNotFound)
+}
+
+// 既存行の updated_at が Update で必ず前進することを検証する（監査やキャッシュ無効化の基盤）。
+// 実際の更新は BEFORE UPDATE トリガー trg_user_settings_updated_at が now() に書き換える。
 func TestUserSettingsService_Update_AdvancesUpdatedAt(t *testing.T) {
 	ctx := context.Background()
 	sharedPg.Truncate(t)
@@ -161,13 +174,7 @@ func TestUserSettingsService_Update_AdvancesUpdatedAt(t *testing.T) {
 	// updated_at 解像度が 1ms 未満の場合に同値になることを防ぐため 2ms 待つ。
 	time.Sleep(2 * time.Millisecond)
 
-	require.NoError(t, svc.Update(ctx, &apiaccount.UserSettings{
-		PlayerID:    testPlayerID1,
-		Language:    "en",
-		BgmVolume:   60,
-		SeVolume:    70,
-		PushEnabled: false,
-	}))
+	require.NoError(t, svc.Update(ctx, testPlayerID1, &port.UserSettingsPatch{Language: ptr("en")}))
 
 	after, err := svc.Get(ctx, testPlayerID1)
 	require.NoError(t, err)

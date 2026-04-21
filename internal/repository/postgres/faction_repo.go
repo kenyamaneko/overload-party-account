@@ -2,10 +2,8 @@ package postgres
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/kenyamaneko/overload-party-account/internal/port"
@@ -35,27 +33,6 @@ func (r *FactionRepository) AddPlayerFaction(ctx context.Context, playerID, fact
 		return fmt.Errorf("insert player faction: %w", err)
 	}
 	return nil
-}
-
-// InsertInitial は player_factions 行を挿入し、RETURNING で新規行かを判定する。
-// 複合 PK (player_id, faction) が一意性を保証するため、
-// ON CONFLICT DO NOTHING RETURNING で既存判定を SELECT なしで実現する。
-func (r *FactionRepository) InsertInitial(ctx context.Context, playerID, faction, source string) (bool, error) {
-	var inserted string
-	err := connFrom(ctx, r.pool).QueryRow(ctx,
-		`INSERT INTO account.player_factions (player_id, faction, source)
-		 VALUES ($1, $2, $3)
-		 ON CONFLICT (player_id, faction) DO NOTHING
-		 RETURNING player_id`,
-		playerID, faction, source,
-	).Scan(&inserted)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return false, nil
-		}
-		return false, fmt.Errorf("insert initial player faction: %w", err)
-	}
-	return true, nil
 }
 
 // GetPlayerFactions はプレイヤーの所持ファクション一覧を返す。

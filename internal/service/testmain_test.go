@@ -53,7 +53,7 @@ func (f *fakeGameConfigRepo) GetInt64(_ context.Context, key string) (int64, err
 	return 0, fmt.Errorf("game config %q: %w", key, port.ErrNotFound)
 }
 
-// seedPlayer は account.players + account.player_daily_battle の最小シードを投入する。
+// seedPlayer は account.players + player_daily_battle + player_progression の最小シードを投入する。
 // postgres 層テストの helpers_test.go と同じパターン。
 func seedPlayer(t *testing.T, playerID, firebaseUID, username string, isPremium bool) *apiaccount.Player {
 	t.Helper()
@@ -68,15 +68,21 @@ func seedPlayer(t *testing.T, playerID, firebaseUID, username string, isPremium 
 		CreatedAt:   now,
 		UpdatedAt:   now,
 	}
-	_, err := sharedPg.Pool.Exec(context.Background(),
-		`INSERT INTO account.players (player_id, firebase_uid, username, level, exp, is_premium, equipped_icon_no, selected_faction, premium_expires_at, created_at, updated_at)
-		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
-		p.PlayerID, p.FirebaseUID, p.Username, p.Level, p.Exp, p.IsPremium,
+	ctx := context.Background()
+	_, err := sharedPg.Pool.Exec(ctx,
+		`INSERT INTO account.players (player_id, firebase_uid, username, is_premium, equipped_icon_no, selected_faction, premium_expires_at, created_at, updated_at)
+		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+		p.PlayerID, p.FirebaseUID, p.Username, p.IsPremium,
 		p.EquippedIconNo, p.SelectedFaction, p.PremiumExpiresAt, p.CreatedAt, p.UpdatedAt)
 	require.NoError(t, err)
 
+	_, err = sharedPg.Pool.Exec(ctx,
+		`INSERT INTO account.player_progression (player_id, level, exp) VALUES ($1,$2,$3)`,
+		p.PlayerID, p.Level, p.Exp)
+	require.NoError(t, err)
+
 	today := civil.DateOf(now)
-	_, err = sharedPg.Pool.Exec(context.Background(),
+	_, err = sharedPg.Pool.Exec(ctx,
 		`INSERT INTO account.player_daily_battle (player_id, daily_battle_count, last_reset_date)
 		 VALUES ($1, $2, $3)`,
 		p.PlayerID, 0, time.Date(today.Year, today.Month, today.Day, 0, 0, 0, 0, time.UTC))
@@ -85,7 +91,7 @@ func seedPlayer(t *testing.T, playerID, firebaseUID, username string, isPremium 
 }
 
 // seedPlayerWithState は指定の level/exp/daily_battle 状態でシードする。
-// GetBattleLimit / AwardExp のテスト用。
+// GetBattleLimit / AwardExp のテスト用。level/exp は player_progression テーブルに入る。
 func seedPlayerWithState(t *testing.T, playerID, firebaseUID, username string, isPremium bool, level, exp int64, count int64, lastReset civil.Date) *apiaccount.Player {
 	t.Helper()
 	now := time.Now().UTC()
@@ -99,14 +105,20 @@ func seedPlayerWithState(t *testing.T, playerID, firebaseUID, username string, i
 		CreatedAt:   now,
 		UpdatedAt:   now,
 	}
-	_, err := sharedPg.Pool.Exec(context.Background(),
-		`INSERT INTO account.players (player_id, firebase_uid, username, level, exp, is_premium, equipped_icon_no, selected_faction, premium_expires_at, created_at, updated_at)
-		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
-		p.PlayerID, p.FirebaseUID, p.Username, p.Level, p.Exp, p.IsPremium,
+	ctx := context.Background()
+	_, err := sharedPg.Pool.Exec(ctx,
+		`INSERT INTO account.players (player_id, firebase_uid, username, is_premium, equipped_icon_no, selected_faction, premium_expires_at, created_at, updated_at)
+		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+		p.PlayerID, p.FirebaseUID, p.Username, p.IsPremium,
 		p.EquippedIconNo, p.SelectedFaction, p.PremiumExpiresAt, p.CreatedAt, p.UpdatedAt)
 	require.NoError(t, err)
 
-	_, err = sharedPg.Pool.Exec(context.Background(),
+	_, err = sharedPg.Pool.Exec(ctx,
+		`INSERT INTO account.player_progression (player_id, level, exp) VALUES ($1,$2,$3)`,
+		p.PlayerID, p.Level, p.Exp)
+	require.NoError(t, err)
+
+	_, err = sharedPg.Pool.Exec(ctx,
 		`INSERT INTO account.player_daily_battle (player_id, daily_battle_count, last_reset_date)
 		 VALUES ($1, $2, $3)`,
 		p.PlayerID, count,

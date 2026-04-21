@@ -94,9 +94,17 @@ func (s *FactionSelectedSubscriber) handle(ctx context.Context, msg *pubsub.Mess
 
 		// 初期選択のみ selected_faction を更新する。
 		// ショップ購入はロスターに追加するだけで、切り替えはプレイヤー操作。
+		// selected_faction が NULL のときだけ書き込む（既に選択済みなら無視）。
+		// 既に選択済みの player に scenario_initial が届くのは processed_events を迂回した
+		// 二重配信か発行側バグなので警告ログを残す。
 		if ev.Source == pubsubevents.FactionSourceScenarioInitial {
-			if err := s.playerRepo.UpdateFaction(txCtx, ev.PlayerID, ev.Faction); err != nil {
-				return fmt.Errorf("update selected_faction: %w", err)
+			set, err := s.playerRepo.TrySetInitialFaction(txCtx, ev.PlayerID, ev.Faction)
+			if err != nil {
+				return fmt.Errorf("try set initial faction: %w", err)
+			}
+			if !set {
+				slog.Warn("faction-selected subscriber: scenario_initial for already-selected player",
+					"event_id", ev.EventID, "player_id", ev.PlayerID, "faction", ev.Faction)
 			}
 		}
 		return nil

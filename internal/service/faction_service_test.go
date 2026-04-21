@@ -27,11 +27,11 @@ func TestFactionService_SelectInitialFaction_Success(t *testing.T) {
 		faction string
 	}{
 		{
-			name:    "SHE",
+			name:    "SHE を初回選択",
 			faction: "SHE",
 		},
 		{
-			name:    "Tenki",
+			name:    "Tenki を初回選択",
 			faction: "Tenki",
 		},
 	}
@@ -52,6 +52,51 @@ func TestFactionService_SelectInitialFaction_Success(t *testing.T) {
 			require.NoError(t, err)
 			require.NotNil(t, p.SelectedFaction)
 			assert.Equal(t, tt.faction, *p.SelectedFaction)
+		})
+	}
+}
+
+func TestFactionService_SelectInitialFaction_ShopPrecededSucceeds(t *testing.T) {
+	ctx := context.Background()
+
+	// 初回選択済みか否かの SSoT は players.selected_faction。ショップで先に所持していても
+	// selected_faction が NULL である限り初回選択は成立する。
+	tests := []struct {
+		name          string
+		shopFaction   string
+		initialChoice string
+		wantOwned     []string
+	}{
+		{
+			name:          "ショップで買ったのと同じファクションを初回選択",
+			shopFaction:   "SHE",
+			initialChoice: "SHE",
+			wantOwned:     []string{"SHE"},
+		},
+		{
+			name:          "ショップで買ったのと別のファクションを初回選択",
+			shopFaction:   "SHE",
+			initialChoice: "Tenki",
+			wantOwned:     []string{"SHE", "Tenki"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			svc := newFactionTestService(t, testPlayerID1)
+			playerRepo, factionRepo, _, _ := newRealRepos()
+
+			require.NoError(t, factionRepo.AddPlayerFaction(ctx, testPlayerID1, tt.shopFaction, "shop_purchase"))
+			require.NoError(t, svc.SelectInitialFaction(ctx, testPlayerID1, tt.initialChoice))
+
+			factions, err := factionRepo.GetPlayerFactions(ctx, testPlayerID1)
+			require.NoError(t, err)
+			assert.ElementsMatch(t, tt.wantOwned, factions)
+
+			p, err := playerRepo.FindByID(ctx, testPlayerID1)
+			require.NoError(t, err)
+			require.NotNil(t, p.SelectedFaction)
+			assert.Equal(t, tt.initialChoice, *p.SelectedFaction)
 		})
 	}
 }
@@ -86,7 +131,7 @@ func TestFactionService_SelectInitialFaction_InvalidFaction_ReturnsError(t *test
 		faction string
 	}{
 		{
-			name:    "Neutral は選択不可",
+			name:    "Neutral ファクションは選択不可",
 			faction: "Neutral",
 		},
 		{

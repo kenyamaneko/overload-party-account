@@ -30,6 +30,14 @@ type PlayerDailyBattle struct {
 	LastResetDate    civil.Date `json:"last_reset_date" db:"last_reset_date"`
 }
 
+// PlayerProgression is the account.player_progression row. level/exp are split from players to isolate high-frequency battle updates from the profile row.
+type PlayerProgression struct {
+	PlayerID  string    `json:"player_id" db:"player_id"`
+	Level     int64     `json:"level" db:"level"`
+	Exp       int64     `json:"exp" db:"exp"`
+	UpdatedAt time.Time `json:"updated_at" db:"updated_at"`
+}
+
 // PlayerFaction is a single row in account.player_factions.
 type PlayerFaction struct {
 	PlayerID   string    `json:"player_id" db:"player_id"`

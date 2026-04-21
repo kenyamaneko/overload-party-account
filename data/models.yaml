@@ -44,6 +44,14 @@ files:
           - {name: DailyBattleCount, type: int64, json: "daily_battle_count", db: "daily_battle_count"}
           - {name: LastResetDate, type: civil.Date, json: "last_reset_date", db: "last_reset_date"}
 
+      - name: PlayerProgression
+        comment: "PlayerProgression is the account.player_progression row. level/exp are split from players to isolate high-frequency battle updates from the profile row."
+        fields:
+          - {name: PlayerID, type: string, json: "player_id", db: "player_id"}
+          - {name: Level, type: int64, json: "level", db: "level"}
+          - {name: Exp, type: int64, json: "exp", db: "exp"}
+          - {name: UpdatedAt, type: time.Time, json: "updated_at", db: "updated_at"}
+
       - name: PlayerFaction
         comment: "PlayerFaction is a single row in account.player_factions."
         fields:
@@ -153,9 +161,9 @@ files:
           - {name: Source, type: string, json: "source"}
 
       - name: UpdateSettingsRequest
-        comment: "UpdateSettingsRequest is the body for PUT /internal/v1/players/:playerId/settings."
+        comment: "UpdateSettingsRequest is the body for PUT /internal/v1/players/:playerId/settings. Partial update semantics: nil fields are left unchanged (COALESCE in SQL). At least one non-nil field is required."
         fields:
-          - {name: Language, type: string, json: "language"}
-          - {name: BgmVolume, type: int64, json: "bgm_volume"}
-          - {name: SeVolume, type: int64, json: "se_volume"}
-          - {name: PushEnabled, type: bool, json: "push_enabled"}
+          - {name: Language, type: "*string", json: "language,omitempty"}
+          - {name: BgmVolume, type: "*int64", json: "bgm_volume,omitempty"}
+          - {name: SeVolume, type: "*int64", json: "se_volume,omitempty"}
+          - {name: PushEnabled, type: "*bool", json: "push_enabled,omitempty"}

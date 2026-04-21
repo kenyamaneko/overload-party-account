@@ -40,11 +40,19 @@ func TestPlayerRepository_Create_Then_FindByID(t *testing.T) {
 		DailyBattleCount: 0,
 		LastResetDate:    civil.DateOf(now),
 	}
-	require.NoError(t, repo.Create(ctx, p, daily))
+	prog := &apiaccount.PlayerProgression{
+		PlayerID:  p.PlayerID,
+		Level:     1,
+		Exp:       0,
+		UpdatedAt: now,
+	}
+	require.NoError(t, repo.Create(ctx, p, daily, prog))
 
 	got, err := repo.FindByID(ctx, testPlayerID1)
 	require.NoError(t, err)
 	assert.Equal(t, "Alice", got.Username)
+	assert.Equal(t, int64(1), got.Level)
+	assert.Equal(t, int64(0), got.Exp)
 }
 
 func TestPlayerRepository_FindByID_NotFound(t *testing.T) {
@@ -139,33 +147,32 @@ func TestPlayerRepository_UpdateFaction(t *testing.T) {
 	assert.Equal(t, "SHE", *got.SelectedFaction)
 }
 
-func TestPlayerRepository_IncrementDailyBattle(t *testing.T) {
+func TestPlayerRepository_TrySetInitialFaction(t *testing.T) {
 	repo := postgres.NewPlayerRepository(sharedPg.Pool)
 	ctx := context.Background()
 
-	today := civil.DateOf(time.Now().UTC())
-	yesterday := civil.Date{Year: today.Year, Month: today.Month, Day: today.Day - 1}
+	noPreSelect := func(*testing.T) {}
+	preSelectTenki := func(t *testing.T) {
+		require.NoError(t, repo.UpdateFaction(ctx, testPlayerID1, "Tenki"))
+	}
 
 	tests := []struct {
-		name      string
-		seedCount int64
-		seedDate  civil.Date
-		today     civil.Date
-		wantCount int64
+		name         string
+		preSelect    func(*testing.T)
+		wantSelected bool
+		wantStored   string
 	}{
 		{
-			name:      "同日ならインクリメント",
-			seedCount: 5,
-			seedDate:  today,
-			today:     today,
-			wantCount: 6,
+			name:         "selected_faction が NULL なら初回選択が成立",
+			preSelect:    noPreSelect,
+			wantSelected: true,
+			wantStored:   "SHE",
 		},
 		{
-			name:      "日付変われば 1 にリセット",
-			seedCount: 9,
-			seedDate:  yesterday,
-			today:     today,
-			wantCount: 1,
+			name:         "既に選択済みなら不成立で値は上書きされない",
+			preSelect:    preSelectTenki,
+			wantSelected: false,
+			wantStored:   "Tenki",
 		},
 	}
 
@@ -173,28 +180,55 @@ func TestPlayerRepository_IncrementDailyBattle(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			sharedPg.Truncate(t)
 			seedPlayer(t, testPlayerID1, "uid-1", "Alice", false)
-			// seedPlayer は LastResetDate=today でシードするので、ケースごとに上書き。
-			_, err := sharedPg.Pool.Exec(ctx,
-				`UPDATE account.player_daily_battle SET daily_battle_count = $1, last_reset_date = $2 WHERE player_id = $3`,
-				tt.seedCount,
-				time.Date(tt.seedDate.Year, tt.seedDate.Month, tt.seedDate.Day, 0, 0, 0, 0, time.UTC),
-				testPlayerID1,
-			)
-			require.NoError(t, err)
+			tt.preSelect(t)
 
-			got, err := repo.IncrementDailyBattle(ctx, testPlayerID1, tt.today)
+			selected, err := repo.TrySetInitialFaction(ctx, testPlayerID1, "SHE")
 			require.NoError(t, err)
-			assert.Equal(t, tt.wantCount, got)
+			assert.Equal(t, tt.wantSelected, selected)
+
+			got, err := repo.FindByID(ctx, testPlayerID1)
+			require.NoError(t, err)
+			require.NotNil(t, got.SelectedFaction)
+			assert.Equal(t, tt.wantStored, *got.SelectedFaction)
 		})
 	}
 }
 
-func TestPlayerRepository_IncrementDailyBattle_NotFound(t *testing.T) {
+func TestPlayerRepository_TrySetInitialFaction_NotFound(t *testing.T) {
 	repo := postgres.NewPlayerRepository(sharedPg.Pool)
 	ctx := context.Background()
 
 	sharedPg.Truncate(t)
-	_, err := repo.IncrementDailyBattle(ctx, testPlayerID1, civil.DateOf(time.Now().UTC()))
+	_, err := repo.TrySetInitialFaction(ctx, testPlayerID1, "SHE")
+	assert.ErrorIs(t, err, port.ErrNotFound)
+}
+
+// UpdateDailyBattleCount は渡された値をそのまま書き込むプリミティブ。
+// 日付リセットやインクリメントの判断は service 層の責務なのでここでは検証しない。
+func TestPlayerRepository_UpdateDailyBattleCount(t *testing.T) {
+	repo := postgres.NewPlayerRepository(sharedPg.Pool)
+	ctx := context.Background()
+
+	today := civil.DateOf(time.Now().UTC())
+
+	sharedPg.Truncate(t)
+	seedPlayer(t, testPlayerID1, "uid-1", "Alice", false)
+
+	require.NoError(t, repo.UpdateDailyBattleCount(ctx, testPlayerID1, 7, today))
+
+	got, err := repo.GetDailyBattle(ctx, testPlayerID1)
+	require.NoError(t, err)
+	require.NotNil(t, got)
+	assert.Equal(t, int64(7), got.DailyBattleCount)
+	assert.Equal(t, today, got.LastResetDate)
+}
+
+func TestPlayerRepository_UpdateDailyBattleCount_NotFound(t *testing.T) {
+	repo := postgres.NewPlayerRepository(sharedPg.Pool)
+	ctx := context.Background()
+
+	sharedPg.Truncate(t)
+	err := repo.UpdateDailyBattleCount(ctx, testPlayerID1, 1, civil.DateOf(time.Now().UTC()))
 	assert.ErrorIs(t, err, port.ErrNotFound)
 }
 
@@ -222,32 +256,66 @@ func TestPlayerRepository_GetDailyBattle_Unseeded_ReturnsNil(t *testing.T) {
 	assert.Nil(t, got)
 }
 
-func TestPlayerRepository_AddExp(t *testing.T) {
+// GetProgressionForUpdate は RunInTx 配下で現在値を返す純プリミティブ。
+// 加算・レベル計算は service 層の責務なので、repo テストは行取得とエラー伝播だけを検証する。
+func TestPlayerRepository_GetProgressionForUpdate(t *testing.T) {
+	repo := postgres.NewPlayerRepository(sharedPg.Pool)
+	txMgr := postgres.NewTxManager(sharedPg.Pool)
+	ctx := context.Background()
+
+	sharedPg.Truncate(t)
+	seedPlayer(t, testPlayerID1, "uid-1", "Alice", false)
+
+	require.NoError(t, txMgr.RunInTx(ctx, func(txCtx context.Context) error {
+		prog, err := repo.GetProgressionForUpdate(txCtx, testPlayerID1)
+		require.NoError(t, err)
+		require.NotNil(t, prog)
+		assert.Equal(t, testPlayerID1, prog.PlayerID)
+		assert.Equal(t, int64(1), prog.Level)
+		assert.Equal(t, int64(0), prog.Exp)
+		return nil
+	}))
+}
+
+func TestPlayerRepository_GetProgressionForUpdate_NotFound(t *testing.T) {
+	repo := postgres.NewPlayerRepository(sharedPg.Pool)
+	txMgr := postgres.NewTxManager(sharedPg.Pool)
+	ctx := context.Background()
+
+	sharedPg.Truncate(t)
+
+	err := txMgr.RunInTx(ctx, func(txCtx context.Context) error {
+		_, err := repo.GetProgressionForUpdate(txCtx, testPlayerID1)
+		return err
+	})
+	assert.ErrorIs(t, err, port.ErrNotFound)
+}
+
+// UpdateProgression は受け取った exp / level をそのまま書き込むプリミティブ。
+// FindByID 側にも JOIN 経由で反映されることを 1 度だけ担保する。
+func TestPlayerRepository_UpdateProgression(t *testing.T) {
 	repo := postgres.NewPlayerRepository(sharedPg.Pool)
 	ctx := context.Background()
 
 	sharedPg.Truncate(t)
 	seedPlayer(t, testPlayerID1, "uid-1", "Alice", false)
 
-	// computeLevel: exp>=100 なら level=2、それ以上は 1 増やすだけの単純な関数。
-	compute := func(newExp, curLevel int64) int64 {
-		if newExp >= 100 {
-			return 2
-		}
-		return curLevel
-	}
-
-	p, err := repo.AddExp(ctx, testPlayerID1, 150, compute)
+	prog, err := repo.UpdateProgression(ctx, testPlayerID1, 150, 2)
 	require.NoError(t, err)
-	assert.Equal(t, int64(150), p.Exp)
-	assert.Equal(t, int64(2), p.Level)
+	assert.Equal(t, int64(150), prog.Exp)
+	assert.Equal(t, int64(2), prog.Level)
+
+	got, err := repo.FindByID(ctx, testPlayerID1)
+	require.NoError(t, err)
+	assert.Equal(t, int64(150), got.Exp)
+	assert.Equal(t, int64(2), got.Level)
 }
 
-func TestPlayerRepository_AddExp_NotFound(t *testing.T) {
+func TestPlayerRepository_UpdateProgression_NotFound(t *testing.T) {
 	repo := postgres.NewPlayerRepository(sharedPg.Pool)
 	ctx := context.Background()
 
 	sharedPg.Truncate(t)
-	_, err := repo.AddExp(ctx, testPlayerID1, 10, func(newExp, cur int64) int64 { return cur })
+	_, err := repo.UpdateProgression(ctx, testPlayerID1, 10, 1)
 	assert.ErrorIs(t, err, port.ErrNotFound)
 }

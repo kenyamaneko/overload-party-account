@@ -28,11 +28,22 @@ type PlayerService struct {
 	playerRepo     port.PlayerRepo
 	gameConfigRepo port.GameConfigRepo
 	factionRepo    port.FactionRepo
+	txRunner       port.TxRunner
 }
 
 // NewPlayerService は PlayerService を生成します。
-func NewPlayerService(playerRepo port.PlayerRepo, gameConfigRepo port.GameConfigRepo, factionRepo port.FactionRepo) *PlayerService {
-	return &PlayerService{playerRepo: playerRepo, gameConfigRepo: gameConfigRepo, factionRepo: factionRepo}
+func NewPlayerService(
+	playerRepo port.PlayerRepo,
+	gameConfigRepo port.GameConfigRepo,
+	factionRepo port.FactionRepo,
+	txRunner port.TxRunner,
+) *PlayerService {
+	return &PlayerService{
+		playerRepo:     playerRepo,
+		gameConfigRepo: gameConfigRepo,
+		factionRepo:    factionRepo,
+		txRunner:       txRunner,
+	}
 }
 
 // FindByFirebaseUID は Firebase UID でプレイヤーを検索します。
@@ -120,20 +131,58 @@ func (s *PlayerService) GetBattleLimit(ctx context.Context, playerID string) (*a
 	}, nil
 }
 
-// IncrementBattleCount は日次バトル回数をインクリメントします。
-// プレミアムプレイヤーでもカウントを記録します。
+// IncrementBattleCount は日次バトル回数を 1 加算して書き込みます。
+// account が daily_battle の authoritative owner なので、上限不変条件はここで守ります。
+//
+// 仕様:
+//   - last_reset_date がゲーム日と異なる場合、カウントを 1 にリセットする
+//   - free プレイヤーは加算後のカウントが上限を超える場合 ErrBattleLimitExceeded を返す
+//   - premium プレイヤーは上限判定をスキップする（カウント自体は記録する）
+//
+// TOCTOU: GetDailyBattle と UpdateDailyBattleCount の間で別リクエストの書き込みが
+// 入る可能性はあるが、同一アカウントの並行バトルは極めて稀なエッジケースとして許容する。
 func (s *PlayerService) IncrementBattleCount(ctx context.Context, playerID string) error {
-	today := gameDay()
-
-	_, err := s.playerRepo.IncrementDailyBattle(ctx, playerID, today)
+	player, err := s.playerRepo.FindByID(ctx, playerID)
 	if err != nil {
-		return fmt.Errorf("increment daily battle: %w", err)
+		return fmt.Errorf("find player: %w", err)
 	}
 
+	db, err := s.playerRepo.GetDailyBattle(ctx, playerID)
+	if err != nil {
+		return fmt.Errorf("get daily battle: %w", err)
+	}
+	if db == nil {
+		return fmt.Errorf("daily battle for player %s: %w", playerID, port.ErrNotFound)
+	}
+
+	today := gameDay()
+	nextCount := db.DailyBattleCount + 1
+	if db.LastResetDate != today {
+		nextCount = 1
+	}
+
+	if !player.IsPremium {
+		freeLimit, err := s.gameConfigRepo.GetInt64(ctx, configKeyFreeDailyBattleLimit)
+		if err != nil {
+			return fmt.Errorf("get free battle limit: %w", err)
+		}
+		if freeLimit <= 0 {
+			return fmt.Errorf("game config %q is not set", configKeyFreeDailyBattleLimit)
+		}
+		if nextCount > freeLimit {
+			return ErrBattleLimitExceeded
+		}
+	}
+
+	if err := s.playerRepo.UpdateDailyBattleCount(ctx, playerID, nextCount, today); err != nil {
+		return fmt.Errorf("update daily battle: %w", err)
+	}
 	return nil
 }
 
 // AwardExp はプレイヤーに経験値を付与しレベルを再計算します。
+// 取得 → 計算 → 書き込み を同一トランザクションで直列化し、並行 AwardExp による
+// ロストアップデートを SELECT FOR UPDATE の行ロックで防ぎます。
 func (s *PlayerService) AwardExp(ctx context.Context, playerID string, expGain int64) error {
 	if expGain <= 0 {
 		return nil
@@ -145,10 +194,19 @@ func (s *PlayerService) AwardExp(ctx context.Context, playerID string, expGain i
 	if coeff <= 0 {
 		return fmt.Errorf("exp_formula_coefficient not configured in game_config")
 	}
-	_, err = s.playerRepo.AddExp(ctx, playerID, expGain, func(newExp, currentLevel int64) int64 {
-		return ComputeLevel(newExp, currentLevel, coeff)
+
+	return s.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
+		prog, err := s.playerRepo.GetProgressionForUpdate(txCtx, playerID)
+		if err != nil {
+			return fmt.Errorf("load progression: %w", err)
+		}
+		newExp := prog.Exp + expGain
+		newLevel := ComputeLevel(newExp, prog.Level, coeff)
+		if _, err := s.playerRepo.UpdateProgression(txCtx, playerID, newExp, newLevel); err != nil {
+			return fmt.Errorf("persist progression: %w", err)
+		}
+		return nil
 	})
-	return err
 }
 
 // ComputeLevel は経験値獲得後の新レベルを算出します。
