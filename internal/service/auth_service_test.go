@@ -17,33 +17,23 @@ func newAuthTestService() *AuthService {
 	return NewAuthService(playerRepo, userSettingsRepo, tx)
 }
 
-func TestAuthService_Register(t *testing.T) {
+func TestAuthService_Register_Success(t *testing.T) {
 	ctx := context.Background()
 
 	tests := []struct {
 		name        string
-		preRegister *struct {
-			firebaseUID string
-			username    string
-		}
 		firebaseUID string
 		username    string
-		wantErr     error
 	}{
 		{
-			name:        "新規登録は成功",
+			name:        "新規登録 1",
 			firebaseUID: "firebase-uid-1",
 			username:    "TestUser",
 		},
 		{
-			name: "同一 Firebase UID の重複登録は ErrPlayerAlreadyRegistered",
-			preRegister: &struct {
-				firebaseUID string
-				username    string
-			}{"firebase-uid-dup", "FirstUser"},
-			firebaseUID: "firebase-uid-dup",
-			username:    "SecondUser",
-			wantErr:     ErrPlayerAlreadyRegistered,
+			name:        "新規登録 2",
+			firebaseUID: "firebase-uid-2",
+			username:    "Alice",
 		},
 	}
 
@@ -52,16 +42,7 @@ func TestAuthService_Register(t *testing.T) {
 			sharedPg.Truncate(t)
 			svc := newAuthTestService()
 
-			if tt.preRegister != nil {
-				_, err := svc.Register(ctx, tt.preRegister.firebaseUID, tt.preRegister.username)
-				require.NoError(t, err)
-			}
-
 			player, err := svc.Register(ctx, tt.firebaseUID, tt.username)
-			if tt.wantErr != nil {
-				require.ErrorIs(t, err, tt.wantErr)
-				return
-			}
 			require.NoError(t, err)
 			assert.NotEmpty(t, player.PlayerID)
 			assert.Equal(t, tt.firebaseUID, player.FirebaseUID)
@@ -79,7 +60,6 @@ func TestAuthService_Register(t *testing.T) {
 			).Scan(&count))
 			assert.Equal(t, 1, count, "Register はデフォルトの user_settings を作成する")
 
-			// default 値の確認
 			var language string
 			var bgm, se int64
 			var push bool
@@ -96,10 +76,22 @@ func TestAuthService_Register(t *testing.T) {
 	}
 }
 
-func TestAuthService_RegisterThenLogin(t *testing.T) {
+func TestAuthService_Register_DuplicateFirebaseUID_ReturnsAlreadyRegistered(t *testing.T) {
+	ctx := context.Background()
 	sharedPg.Truncate(t)
 	svc := newAuthTestService()
+
+	_, err := svc.Register(ctx, "firebase-uid-dup", "FirstUser")
+	require.NoError(t, err)
+
+	_, err = svc.Register(ctx, "firebase-uid-dup", "SecondUser")
+	require.ErrorIs(t, err, ErrPlayerAlreadyRegistered)
+}
+
+func TestAuthService_Login_Success(t *testing.T) {
 	ctx := context.Background()
+	sharedPg.Truncate(t)
+	svc := newAuthTestService()
 
 	registered, err := svc.Register(ctx, "firebase-uid-login", "LoginUser")
 	require.NoError(t, err)

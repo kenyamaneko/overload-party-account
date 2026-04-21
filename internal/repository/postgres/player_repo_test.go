@@ -19,106 +19,66 @@ const (
 	testPlayerID2 = "22222222-2222-2222-2222-222222222222"
 )
 
-func TestPlayerRepository_CreateAndFindByID(t *testing.T) {
+func TestPlayerRepository_Create_Then_FindByID(t *testing.T) {
 	repo := postgres.NewPlayerRepository(sharedPg.Pool)
 	ctx := context.Background()
 
-	tests := []struct {
-		name      string
-		setup     func(t *testing.T) *apiaccount.Player
-		lookupID  string
-		wantErrIs error
-		wantName  string
-	}{
-		{
-			name: "新規作成後に同一 ID で取得できる",
-			setup: func(t *testing.T) *apiaccount.Player {
-				now := time.Now().UTC()
-				p := &apiaccount.Player{
-					PlayerID:    testPlayerID1,
-					FirebaseUID: "uid-1",
-					Username:    "Alice",
-					Level:       1,
-					Exp:         0,
-					IsPremium:   false,
-					CreatedAt:   now,
-					UpdatedAt:   now,
-				}
-				daily := &apiaccount.PlayerDailyBattle{
-					PlayerID:         p.PlayerID,
-					DailyBattleCount: 0,
-					LastResetDate:    civil.DateOf(now),
-				}
-				require.NoError(t, repo.Create(ctx, p, daily))
-				return p
-			},
-			lookupID: testPlayerID1,
-			wantName: "Alice",
-		},
-		{
-			name:      "存在しない ID は ErrNotFound",
-			setup:     func(t *testing.T) *apiaccount.Player { return nil },
-			lookupID:  testPlayerID2,
-			wantErrIs: port.ErrNotFound,
-		},
+	sharedPg.Truncate(t)
+	now := time.Now().UTC()
+	p := &apiaccount.Player{
+		PlayerID:    testPlayerID1,
+		FirebaseUID: "uid-1",
+		Username:    "Alice",
+		Level:       1,
+		Exp:         0,
+		IsPremium:   false,
+		CreatedAt:   now,
+		UpdatedAt:   now,
 	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			sharedPg.Truncate(t)
-			tt.setup(t)
-
-			got, err := repo.FindByID(ctx, tt.lookupID)
-			if tt.wantErrIs != nil {
-				assert.ErrorIs(t, err, tt.wantErrIs)
-				return
-			}
-			require.NoError(t, err)
-			assert.Equal(t, tt.wantName, got.Username)
-		})
+	daily := &apiaccount.PlayerDailyBattle{
+		PlayerID:         p.PlayerID,
+		DailyBattleCount: 0,
+		LastResetDate:    civil.DateOf(now),
 	}
+	require.NoError(t, repo.Create(ctx, p, daily))
+
+	got, err := repo.FindByID(ctx, testPlayerID1)
+	require.NoError(t, err)
+	assert.Equal(t, "Alice", got.Username)
 }
 
-func TestPlayerRepository_FindByFirebaseUID(t *testing.T) {
+func TestPlayerRepository_FindByID_NotFound(t *testing.T) {
 	repo := postgres.NewPlayerRepository(sharedPg.Pool)
 	ctx := context.Background()
 
-	tests := []struct {
-		name      string
-		seedUID   string
-		lookupUID string
-		wantNil   bool
-		wantName  string
-	}{
-		{
-			name:      "シード済み UID は取得成功",
-			seedUID:   "uid-1",
-			lookupUID: "uid-1",
-			wantName:  "Alice",
-		},
-		{
-			name:      "存在しない UID は (nil, nil)",
-			seedUID:   "uid-1",
-			lookupUID: "uid-missing",
-			wantNil:   true,
-		},
-	}
+	sharedPg.Truncate(t)
+	_, err := repo.FindByID(ctx, testPlayerID2)
+	assert.ErrorIs(t, err, port.ErrNotFound)
+}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			sharedPg.Truncate(t)
-			seedPlayer(t, testPlayerID1, tt.seedUID, "Alice", false)
+func TestPlayerRepository_FindByFirebaseUID_Seeded(t *testing.T) {
+	repo := postgres.NewPlayerRepository(sharedPg.Pool)
+	ctx := context.Background()
 
-			got, err := repo.FindByFirebaseUID(ctx, tt.lookupUID)
-			require.NoError(t, err)
-			if tt.wantNil {
-				assert.Nil(t, got)
-				return
-			}
-			require.NotNil(t, got)
-			assert.Equal(t, tt.wantName, got.Username)
-		})
-	}
+	sharedPg.Truncate(t)
+	seedPlayer(t, testPlayerID1, "uid-1", "Alice", false)
+
+	got, err := repo.FindByFirebaseUID(ctx, "uid-1")
+	require.NoError(t, err)
+	require.NotNil(t, got)
+	assert.Equal(t, "Alice", got.Username)
+}
+
+func TestPlayerRepository_FindByFirebaseUID_NotFound_ReturnsNil(t *testing.T) {
+	repo := postgres.NewPlayerRepository(sharedPg.Pool)
+	ctx := context.Background()
+
+	sharedPg.Truncate(t)
+	seedPlayer(t, testPlayerID1, "uid-1", "Alice", false)
+
+	got, err := repo.FindByFirebaseUID(ctx, "uid-missing")
+	require.NoError(t, err)
+	assert.Nil(t, got)
 }
 
 func TestPlayerRepository_UpdateUsername(t *testing.T) {
@@ -193,8 +153,20 @@ func TestPlayerRepository_IncrementDailyBattle(t *testing.T) {
 		today     civil.Date
 		wantCount int64
 	}{
-		{"同日ならインクリメント", 5, today, today, 6},
-		{"日付変われば 1 にリセット", 9, yesterday, today, 1},
+		{
+			name:      "同日ならインクリメント",
+			seedCount: 5,
+			seedDate:  today,
+			today:     today,
+			wantCount: 6,
+		},
+		{
+			name:      "日付変われば 1 にリセット",
+			seedCount: 9,
+			seedDate:  yesterday,
+			today:     today,
+			wantCount: 1,
+		},
 	}
 
 	for _, tt := range tests {
@@ -226,7 +198,7 @@ func TestPlayerRepository_IncrementDailyBattle_NotFound(t *testing.T) {
 	assert.ErrorIs(t, err, port.ErrNotFound)
 }
 
-func TestPlayerRepository_GetDailyBattle(t *testing.T) {
+func TestPlayerRepository_GetDailyBattle_Seeded(t *testing.T) {
 	repo := postgres.NewPlayerRepository(sharedPg.Pool)
 	ctx := context.Background()
 
@@ -237,11 +209,17 @@ func TestPlayerRepository_GetDailyBattle(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, got)
 	assert.Equal(t, int64(0), got.DailyBattleCount)
+}
 
-	// 未登録は (nil, nil)
-	empty, err := repo.GetDailyBattle(ctx, testPlayerID2)
+func TestPlayerRepository_GetDailyBattle_Unseeded_ReturnsNil(t *testing.T) {
+	repo := postgres.NewPlayerRepository(sharedPg.Pool)
+	ctx := context.Background()
+
+	sharedPg.Truncate(t)
+
+	got, err := repo.GetDailyBattle(ctx, testPlayerID2)
 	require.NoError(t, err)
-	assert.Nil(t, empty)
+	assert.Nil(t, got)
 }
 
 func TestPlayerRepository_AddExp(t *testing.T) {

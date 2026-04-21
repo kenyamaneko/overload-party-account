@@ -18,39 +18,29 @@ func newUserSettingsTestService() *UserSettingsService {
 	return NewUserSettingsService(userSettingsRepo)
 }
 
-func TestUserSettingsService_Get(t *testing.T) {
+func TestUserSettingsService_Get_Seeded(t *testing.T) {
 	ctx := context.Background()
 
 	tests := []struct {
-		name         string
-		seedSettings bool
-		seedLang     string
-		seedBgm      int64
-		seedSe       int64
-		seedPush     bool
-		wantLang     string
-		wantBgm      int64
-		wantSe       int64
-		wantPush     bool
+		name     string
+		seedLang string
+		seedBgm  int64
+		seedSe   int64
+		seedPush bool
 	}{
 		{
-			name:         "既存設定はそのまま返す",
-			seedSettings: true,
-			seedLang:     "en",
-			seedBgm:      20,
-			seedSe:       30,
-			seedPush:     false,
-			wantLang:     "en",
-			wantBgm:      20,
-			wantSe:       30,
-			wantPush:     false,
+			name:     "en / push=false",
+			seedLang: "en",
+			seedBgm:  20,
+			seedSe:   30,
+			seedPush: false,
 		},
 		{
-			name:     "未登録はデフォルト値を返す (DB 書き込みは行わない)",
-			wantLang: model.DefaultLanguage,
-			wantBgm:  model.DefaultBgmVolume,
-			wantSe:   model.DefaultSeVolume,
-			wantPush: model.DefaultPushEnabled,
+			name:     "ja / push=true",
+			seedLang: "ja",
+			seedBgm:  50,
+			seedSe:   60,
+			seedPush: true,
 		},
 	}
 
@@ -58,30 +48,44 @@ func TestUserSettingsService_Get(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			sharedPg.Truncate(t)
 			seedPlayer(t, testPlayerID1, "uid-1", "Alice", false)
-			if tt.seedSettings {
-				seedUserSettings(t, testPlayerID1, tt.seedLang, tt.seedBgm, tt.seedSe, tt.seedPush)
-			}
+			seedUserSettings(t, testPlayerID1, tt.seedLang, tt.seedBgm, tt.seedSe, tt.seedPush)
 
 			svc := newUserSettingsTestService()
 			got, err := svc.Get(ctx, testPlayerID1)
 			require.NoError(t, err)
 			require.NotNil(t, got)
 			assert.Equal(t, testPlayerID1, got.PlayerID)
-			assert.Equal(t, tt.wantLang, got.Language)
-			assert.Equal(t, tt.wantBgm, got.BgmVolume)
-			assert.Equal(t, tt.wantSe, got.SeVolume)
-			assert.Equal(t, tt.wantPush, got.PushEnabled)
-
-			if !tt.seedSettings {
-				// デフォルト返却時は DB に書き込まないこと（handler は明示 Update で永続化）。
-				var count int
-				require.NoError(t, sharedPg.Pool.QueryRow(ctx,
-					`SELECT COUNT(*) FROM account.user_settings WHERE player_id = $1`, testPlayerID1,
-				).Scan(&count))
-				assert.Equal(t, 0, count, "Get はデフォルト返却で永続化しない")
-			}
+			assert.Equal(t, tt.seedLang, got.Language)
+			assert.Equal(t, tt.seedBgm, got.BgmVolume)
+			assert.Equal(t, tt.seedSe, got.SeVolume)
+			assert.Equal(t, tt.seedPush, got.PushEnabled)
 		})
 	}
+}
+
+// TestUserSettingsService_Get_Unseeded_ReturnsDefaultsWithoutPersisting は
+// 未登録プレイヤーに対して Get がデフォルト値を返しつつ DB に書き込まない契約を検証する
+// （handler は明示的な Update でのみ永続化する）。
+func TestUserSettingsService_Get_Unseeded_ReturnsDefaultsWithoutPersisting(t *testing.T) {
+	ctx := context.Background()
+	sharedPg.Truncate(t)
+	seedPlayer(t, testPlayerID1, "uid-1", "Alice", false)
+
+	svc := newUserSettingsTestService()
+	got, err := svc.Get(ctx, testPlayerID1)
+	require.NoError(t, err)
+	require.NotNil(t, got)
+	assert.Equal(t, testPlayerID1, got.PlayerID)
+	assert.Equal(t, model.DefaultLanguage, got.Language)
+	assert.Equal(t, model.DefaultBgmVolume, got.BgmVolume)
+	assert.Equal(t, model.DefaultSeVolume, got.SeVolume)
+	assert.Equal(t, model.DefaultPushEnabled, got.PushEnabled)
+
+	var count int
+	require.NoError(t, sharedPg.Pool.QueryRow(ctx,
+		`SELECT COUNT(*) FROM account.user_settings WHERE player_id = $1`, testPlayerID1,
+	).Scan(&count))
+	assert.Equal(t, 0, count, "Get はデフォルト返却で永続化しない")
 }
 
 func TestUserSettingsService_Update(t *testing.T) {
@@ -95,7 +99,8 @@ func TestUserSettingsService_Update(t *testing.T) {
 		wantBgm  int64
 	}{
 		{
-			name: "新規 INSERT (未登録プレイヤー)",
+			name:    "新規 INSERT (未登録プレイヤー)",
+			preSeed: false,
 			payload: &apiaccount.UserSettings{
 				PlayerID:    testPlayerID1,
 				Language:    "ja",

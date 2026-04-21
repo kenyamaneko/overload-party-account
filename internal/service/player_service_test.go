@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"strings"
 	"testing"
 	"time"
 
@@ -61,6 +60,7 @@ func TestPlayerService_GetBattleLimit(t *testing.T) {
 	}{
 		{
 			name:             "FreePlayer_UnderLimit",
+			isPremium:        false,
 			dailyBattleCount: 3,
 			lastResetDate:    today(),
 			wantCount:        3,
@@ -69,6 +69,7 @@ func TestPlayerService_GetBattleLimit(t *testing.T) {
 		},
 		{
 			name:             "FreePlayer_AtLimit",
+			isPremium:        false,
 			dailyBattleCount: 10,
 			lastResetDate:    today(),
 			wantCount:        10,
@@ -86,6 +87,7 @@ func TestPlayerService_GetBattleLimit(t *testing.T) {
 		},
 		{
 			name:             "DateReset",
+			isPremium:        false,
 			dailyBattleCount: 7,
 			lastResetDate:    yesterday(),
 			wantCount:        0,
@@ -94,6 +96,7 @@ func TestPlayerService_GetBattleLimit(t *testing.T) {
 		},
 		{
 			name:             "FreePlayer_OverLimit",
+			isPremium:        false,
 			dailyBattleCount: 11,
 			lastResetDate:    today(),
 			wantCount:        11,
@@ -127,8 +130,7 @@ func TestPlayerService_GetBattleLimit_FreeLimitZero_ReturnsError(t *testing.T) {
 
 	_, err := svc.GetBattleLimit(context.Background(), testPlayerID1)
 	require.Error(t, err)
-	assert.True(t, strings.Contains(err.Error(), "game config"),
-		"err %v should mention game config key", err)
+	assert.Contains(t, err.Error(), "game config")
 }
 
 func TestPlayerService_IncrementBattleCount(t *testing.T) {
@@ -144,6 +146,7 @@ func TestPlayerService_IncrementBattleCount(t *testing.T) {
 	}{
 		{
 			name:         "free プレイヤーは 5→6",
+			isPremium:    false,
 			seedCount:    5,
 			seedDate:     today(),
 			wantAfterCnt: 6,
@@ -176,6 +179,14 @@ func TestPlayerService_IncrementBattleCount(t *testing.T) {
 	}
 }
 
+func TestPlayerService_IncrementBattleCount_NotFound(t *testing.T) {
+	sharedPg.Truncate(t)
+	svc := newPlayerTestService(nil)
+
+	err := svc.IncrementBattleCount(context.Background(), "99999999-9999-9999-9999-999999999999")
+	require.ErrorIs(t, err, port.ErrNotFound)
+}
+
 func TestPlayerService_GetPlayer_Success(t *testing.T) {
 	sharedPg.Truncate(t)
 	seedPlayer(t, testPlayerID1, "uid-1", "Alice", false)
@@ -193,8 +204,7 @@ func TestPlayerService_GetPlayer_NotFound_ReturnsError(t *testing.T) {
 
 	svc := newPlayerTestService(nil)
 	_, err := svc.GetPlayer(context.Background(), "99999999-9999-9999-9999-999999999999")
-	require.Error(t, err)
-	assert.ErrorIs(t, err, port.ErrNotFound)
+	require.ErrorIs(t, err, port.ErrNotFound)
 }
 
 func TestPlayerService_UpdateUsername(t *testing.T) {
@@ -218,8 +228,7 @@ func TestPlayerService_UpdateUsername_NotFound(t *testing.T) {
 	svc := newPlayerTestService(nil)
 
 	_, err := svc.UpdateUsername(context.Background(), "99999999-9999-9999-9999-999999999999", "Bob")
-	require.Error(t, err)
-	assert.ErrorIs(t, err, port.ErrNotFound)
+	require.ErrorIs(t, err, port.ErrNotFound)
 }
 
 func TestPlayerService_AwardExp(t *testing.T) {
@@ -234,11 +243,46 @@ func TestPlayerService_AwardExp(t *testing.T) {
 		wantExp   int64
 		wantLevel int64
 	}{
-		{"below threshold", 0, 1, testExpWin, testExpWin, 1},
-		{"exact level up", levelUpThreshold - testExpWin, 1, testExpWin, levelUpThreshold, 2},
-		{"multiple level ups", 0, 1, int64(testExpCoeff * 4 * 4), int64(testExpCoeff * 4 * 4), 4},
-		{"zero gain is noop", 100, 1, 0, 100, 1},
-		{"negative gain is noop", 100, 1, -10, 100, 1},
+		{
+			name:      "below threshold",
+			initExp:   0,
+			initLevel: 1,
+			gain:      testExpWin,
+			wantExp:   testExpWin,
+			wantLevel: 1,
+		},
+		{
+			name:      "exact level up",
+			initExp:   levelUpThreshold - testExpWin,
+			initLevel: 1,
+			gain:      testExpWin,
+			wantExp:   levelUpThreshold,
+			wantLevel: 2,
+		},
+		{
+			name:      "multiple level ups",
+			initExp:   0,
+			initLevel: 1,
+			gain:      int64(testExpCoeff * 4 * 4),
+			wantExp:   int64(testExpCoeff * 4 * 4),
+			wantLevel: 4,
+		},
+		{
+			name:      "zero gain is noop",
+			initExp:   100,
+			initLevel: 1,
+			gain:      0,
+			wantExp:   100,
+			wantLevel: 1,
+		},
+		{
+			name:      "negative gain is noop",
+			initExp:   100,
+			initLevel: 1,
+			gain:      -10,
+			wantExp:   100,
+			wantLevel: 1,
+		},
 	}
 
 	for _, tt := range tests {
@@ -271,24 +315,86 @@ func TestPlayerService_AwardExp_MissingCoefficient_ReturnsError(t *testing.T) {
 	assert.Contains(t, err.Error(), "exp_formula_coefficient")
 }
 
-func TestPlayerService_AwardGameExp(t *testing.T) {
+func TestPlayerService_AwardGameExp_PvP(t *testing.T) {
 	ctx := context.Background()
 
 	tests := []struct {
 		name      string
 		winnerNum int64
 		reason    string
-		matchType string
 		wantP1Exp int64
 		wantP2Exp int64
-		npcMatch  bool
 	}{
-		{"player1 wins", 1, "system_down", "pvp", testExpWin, testExpLoss, false},
-		{"player2 wins", 2, "budget_zero", "pvp", testExpLoss, testExpWin, false},
-		{"draw", 0, "draw", "pvp", testExpDraw, testExpDraw, false},
-		{"npc match p1 wins", 1, "system_down", "npc", testExpWin, 0, true},
-		{"npc match p1 loses", 2, "system_down", "npc", testExpLoss, 0, true},
-		{"npc match draw", 0, "draw", "npc", testExpDraw, 0, true},
+		{
+			name:      "player1 wins",
+			winnerNum: 1,
+			reason:    "system_down",
+			wantP1Exp: testExpWin,
+			wantP2Exp: testExpLoss,
+		},
+		{
+			name:      "player2 wins",
+			winnerNum: 2,
+			reason:    "budget_zero",
+			wantP1Exp: testExpLoss,
+			wantP2Exp: testExpWin,
+		},
+		{
+			name:      "draw",
+			winnerNum: 0,
+			reason:    "draw",
+			wantP1Exp: testExpDraw,
+			wantP2Exp: testExpDraw,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			sharedPg.Truncate(t)
+			seedPlayerWithState(t, testPlayerID1, "uid-1", "Alice", false, 1, 0, 0, today())
+			seedPlayerWithState(t, testPlayerID2, "uid-2", "Bob", false, 1, 0, 0, today())
+
+			svc := newPlayerTestService(nil)
+			require.NoError(t, svc.AwardGameExp(ctx, testPlayerID1, testPlayerID2, tt.winnerNum, tt.reason, "pvp"))
+
+			got1, err := svc.GetPlayer(ctx, testPlayerID1)
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantP1Exp, got1.Exp)
+
+			got2, err := svc.GetPlayer(ctx, testPlayerID2)
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantP2Exp, got2.Exp)
+		})
+	}
+}
+
+func TestPlayerService_AwardGameExp_NPC(t *testing.T) {
+	ctx := context.Background()
+
+	tests := []struct {
+		name      string
+		winnerNum int64
+		reason    string
+		wantP1Exp int64
+	}{
+		{
+			name:      "p1 wins",
+			winnerNum: 1,
+			reason:    "system_down",
+			wantP1Exp: testExpWin,
+		},
+		{
+			name:      "p1 loses",
+			winnerNum: 2,
+			reason:    "system_down",
+			wantP1Exp: testExpLoss,
+		},
+		{
+			name:      "draw",
+			winnerNum: 0,
+			reason:    "draw",
+			wantP1Exp: testExpDraw,
+		},
 	}
 
 	for _, tt := range tests {
@@ -296,25 +402,12 @@ func TestPlayerService_AwardGameExp(t *testing.T) {
 			sharedPg.Truncate(t)
 			seedPlayerWithState(t, testPlayerID1, "uid-1", "Alice", false, 1, 0, 0, today())
 
-			p2ID := testPlayerID2
-			if tt.npcMatch {
-				p2ID = "npc-easy"
-			} else {
-				seedPlayerWithState(t, testPlayerID2, "uid-2", "Bob", false, 1, 0, 0, today())
-			}
-
 			svc := newPlayerTestService(nil)
-			require.NoError(t, svc.AwardGameExp(ctx, testPlayerID1, p2ID, tt.winnerNum, tt.reason, tt.matchType))
+			require.NoError(t, svc.AwardGameExp(ctx, testPlayerID1, "npc-easy", tt.winnerNum, tt.reason, "npc"))
 
 			got1, err := svc.GetPlayer(ctx, testPlayerID1)
 			require.NoError(t, err)
 			assert.Equal(t, tt.wantP1Exp, got1.Exp)
-
-			if !tt.npcMatch {
-				got2, err := svc.GetPlayer(ctx, testPlayerID2)
-				require.NoError(t, err)
-				assert.Equal(t, tt.wantP2Exp, got2.Exp)
-			}
 		})
 	}
 }
@@ -330,52 +423,48 @@ func TestComputeLevel(t *testing.T) {
 		currentLevel int64
 		wantLevel    int64
 	}{
-		{"below threshold", threshold(2) - 1, 1, 1},
-		{"exact threshold", threshold(2), 1, 2},
-		{"multiple level ups", threshold(4), 1, 4},
-		{"stays at current", threshold(4) - 1, 3, 3},
-		{"level 0 corrected to 1", 0, 0, 1},
-		{"never decreases", 0, 5, 5},
+		{
+			name:         "below threshold",
+			newExp:       threshold(2) - 1,
+			currentLevel: 1,
+			wantLevel:    1,
+		},
+		{
+			name:         "exact threshold",
+			newExp:       threshold(2),
+			currentLevel: 1,
+			wantLevel:    2,
+		},
+		{
+			name:         "multiple level ups",
+			newExp:       threshold(4),
+			currentLevel: 1,
+			wantLevel:    4,
+		},
+		{
+			name:         "stays at current",
+			newExp:       threshold(4) - 1,
+			currentLevel: 3,
+			wantLevel:    3,
+		},
+		{
+			name:         "level 0 corrected to 1",
+			newExp:       0,
+			currentLevel: 0,
+			wantLevel:    1,
+		},
+		{
+			name:         "never decreases",
+			newExp:       0,
+			currentLevel: 5,
+			wantLevel:    5,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := ComputeLevel(tt.newExp, tt.currentLevel, testExpCoeff)
 			assert.Equal(t, tt.wantLevel, got)
-		})
-	}
-}
-
-func TestPlayerService_NotFound(t *testing.T) {
-	missing := "99999999-9999-9999-9999-999999999999"
-
-	tests := []struct {
-		name string
-		fn   func(svc *PlayerService) error
-	}{
-		{
-			name: "UpdateUsername_NotFound",
-			fn: func(svc *PlayerService) error {
-				_, err := svc.UpdateUsername(context.Background(), missing, "Bob")
-				return err
-			},
-		},
-		{
-			name: "IncrementBattleCount_PlayerNotFound",
-			fn: func(svc *PlayerService) error {
-				return svc.IncrementBattleCount(context.Background(), missing)
-			},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			sharedPg.Truncate(t)
-			seedPlayer(t, testPlayerID1, "uid-1", "Alice", false)
-
-			svc := newPlayerTestService(nil)
-			err := tt.fn(svc)
-			require.Error(t, err)
 		})
 	}
 }

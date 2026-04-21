@@ -23,8 +23,16 @@ func TestProcessedEventRepository_Insert(t *testing.T) {
 		preInserted bool
 		wantCreated bool
 	}{
-		{"初回は created=true", false, true},
-		{"既存 event_id は created=false (冪等ガード)", true, false},
+		{
+			name:        "初回は created=true",
+			preInserted: false,
+			wantCreated: true,
+		},
+		{
+			name:        "既存 event_id は created=false (冪等ガード)",
+			preInserted: true,
+			wantCreated: false,
+		},
 	}
 
 	for _, tt := range tests {

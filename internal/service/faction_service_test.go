@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -20,118 +19,114 @@ func newFactionTestService(t *testing.T, playerID string) *FactionService {
 	return NewFactionService(playerRepo, factionRepo, tx)
 }
 
-func TestFactionService_SelectInitialFaction(t *testing.T) {
+func TestFactionService_SelectInitialFaction_Success(t *testing.T) {
 	ctx := context.Background()
 
 	tests := []struct {
-		name          string
-		playerID      string
-		preSelect     string // 事前に InsertInitial を通す faction（空なら skip）
-		faction       string
-		wantErrIs     error
-		wantFactions  []string
-		wantSelected  *string
-		wantSkipSeed  bool // true なら seed player を行わない
-		useEmptyPID   bool // SelectInitialFaction に空の playerID を渡す
+		name    string
+		faction string
 	}{
 		{
-			name:         "初回選択は player_factions 挿入 + selected_faction 更新",
-			playerID:     testPlayerID1,
-			faction:      "SHE",
-			wantFactions: []string{"SHE"},
-			wantSelected: strPtr("SHE"),
+			name:    "SHE",
+			faction: "SHE",
 		},
 		{
-			name:         "既存選択済みは ErrFactionAlreadySelected",
-			playerID:     testPlayerID1,
-			preSelect:    "Tenki",
-			faction:      "Tenki",
-			wantErrIs:    ErrFactionAlreadySelected,
-			wantFactions: []string{"Tenki"},
-			wantSelected: strPtr("Tenki"),
-		},
-		{
-			name:         "Neutral は選択不可 (ErrInvalidFaction)",
-			playerID:     testPlayerID1,
-			faction:      "Neutral",
-			wantErrIs:    ErrInvalidFaction,
-			wantFactions: nil,
-			wantSelected: nil,
-		},
-		{
-			name:         "未知ファクションは ErrInvalidFaction",
-			playerID:     testPlayerID1,
-			faction:      "bogus",
-			wantErrIs:    ErrInvalidFaction,
-			wantFactions: nil,
-			wantSelected: nil,
-		},
-		{
-			name:         "空ファクションは ErrInvalidFaction",
-			playerID:     testPlayerID1,
-			faction:      "",
-			wantErrIs:    ErrInvalidFaction,
-			wantFactions: nil,
-			wantSelected: nil,
-		},
-		{
-			name:        "空 playerID は ErrInvalidFaction",
-			playerID:    testPlayerID1,
-			useEmptyPID: true,
-			faction:     "SHE",
-			wantErrIs:   ErrInvalidFaction,
+			name:    "Tenki",
+			faction: "Tenki",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			svc := newFactionTestService(t, tt.playerID)
+			svc := newFactionTestService(t, testPlayerID1)
 
-			if tt.preSelect != "" {
-				require.NoError(t, svc.SelectInitialFaction(ctx, tt.playerID, tt.preSelect))
-			}
+			require.NoError(t, svc.SelectInitialFaction(ctx, testPlayerID1, tt.faction))
 
-			pidArg := tt.playerID
-			if tt.useEmptyPID {
-				pidArg = ""
-			}
-			err := svc.SelectInitialFaction(ctx, pidArg, tt.faction)
+			playerRepo, factionRepo, _, _ := newRealRepos()
 
-			if tt.wantErrIs != nil {
-				require.Error(t, err)
-				assert.True(t, errors.Is(err, tt.wantErrIs),
-					"err %v should be %v", err, tt.wantErrIs)
-			} else {
-				require.NoError(t, err)
-			}
-
-			if tt.useEmptyPID {
-				// 空 playerID のケースは副作用が無いことだけを確認して終了。
-				return
-			}
-
-			// player_factions の状態
-			_, factionRepo, _, _ := newRealRepos()
-			factions, err := factionRepo.GetPlayerFactions(ctx, tt.playerID)
+			factions, err := factionRepo.GetPlayerFactions(ctx, testPlayerID1)
 			require.NoError(t, err)
-			if tt.wantFactions == nil {
-				assert.Empty(t, factions)
-			} else {
-				assert.ElementsMatch(t, tt.wantFactions, factions)
-			}
+			assert.ElementsMatch(t, []string{tt.faction}, factions)
 
-			// players.selected_faction の状態
-			playerRepo, _, _, _ := newRealRepos()
-			p, err := playerRepo.FindByID(ctx, tt.playerID)
+			p, err := playerRepo.FindByID(ctx, testPlayerID1)
 			require.NoError(t, err)
-			if tt.wantSelected == nil {
-				assert.Nil(t, p.SelectedFaction)
-			} else {
-				require.NotNil(t, p.SelectedFaction)
-				assert.Equal(t, *tt.wantSelected, *p.SelectedFaction)
-			}
+			require.NotNil(t, p.SelectedFaction)
+			assert.Equal(t, tt.faction, *p.SelectedFaction)
 		})
 	}
 }
 
-func strPtr(s string) *string { return &s }
+func TestFactionService_SelectInitialFaction_AlreadySelected_ReturnsError(t *testing.T) {
+	ctx := context.Background()
+	svc := newFactionTestService(t, testPlayerID1)
+
+	require.NoError(t, svc.SelectInitialFaction(ctx, testPlayerID1, "Tenki"))
+
+	err := svc.SelectInitialFaction(ctx, testPlayerID1, "Tenki")
+	require.ErrorIs(t, err, ErrFactionAlreadySelected)
+
+	// 二度目は副作用を起こしていない(faction 一覧・selected_faction ともに初回のまま)。
+	playerRepo, factionRepo, _, _ := newRealRepos()
+
+	factions, err := factionRepo.GetPlayerFactions(ctx, testPlayerID1)
+	require.NoError(t, err)
+	assert.ElementsMatch(t, []string{"Tenki"}, factions)
+
+	p, err := playerRepo.FindByID(ctx, testPlayerID1)
+	require.NoError(t, err)
+	require.NotNil(t, p.SelectedFaction)
+	assert.Equal(t, "Tenki", *p.SelectedFaction)
+}
+
+func TestFactionService_SelectInitialFaction_InvalidFaction_ReturnsError(t *testing.T) {
+	ctx := context.Background()
+
+	tests := []struct {
+		name    string
+		faction string
+	}{
+		{
+			name:    "Neutral は選択不可",
+			faction: "Neutral",
+		},
+		{
+			name:    "未知ファクション",
+			faction: "bogus",
+		},
+		{
+			name:    "空ファクション",
+			faction: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			svc := newFactionTestService(t, testPlayerID1)
+
+			err := svc.SelectInitialFaction(ctx, testPlayerID1, tt.faction)
+			require.ErrorIs(t, err, ErrInvalidFaction)
+
+			// 不正入力は永続化しない。
+			playerRepo, factionRepo, _, _ := newRealRepos()
+
+			factions, err := factionRepo.GetPlayerFactions(ctx, testPlayerID1)
+			require.NoError(t, err)
+			assert.Empty(t, factions)
+
+			p, err := playerRepo.FindByID(ctx, testPlayerID1)
+			require.NoError(t, err)
+			assert.Nil(t, p.SelectedFaction)
+		})
+	}
+}
+
+func TestFactionService_SelectInitialFaction_EmptyPlayerID_ReturnsError(t *testing.T) {
+	ctx := context.Background()
+	// 空 playerID は入力検証で弾かれるため、player をシードしなくても良い。
+	sharedPg.Truncate(t)
+	playerRepo, factionRepo, _, tx := newRealRepos()
+	svc := NewFactionService(playerRepo, factionRepo, tx)
+
+	err := svc.SelectInitialFaction(ctx, "", "SHE")
+	require.ErrorIs(t, err, ErrInvalidFaction)
+}

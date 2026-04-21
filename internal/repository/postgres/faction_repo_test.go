@@ -10,34 +10,45 @@ import (
 	"github.com/kenyamaneko/overload-party-account/internal/repository/postgres"
 )
 
+type factionEntry struct {
+	faction string
+	source  string
+}
+
 func TestFactionRepository_AddAndGet(t *testing.T) {
 	repo := postgres.NewFactionRepository(sharedPg.Pool)
 	ctx := context.Background()
 
 	tests := []struct {
 		name     string
-		seed     []struct{ faction, source string }
-		adds     []struct{ faction, source string }
+		adds     []factionEntry
 		wantList []string
 	}{
 		{
-			name:     "シードなし → 追加 1 件",
-			adds:     []struct{ faction, source string }{{"SHE", "initial_selection"}},
+			name:     "追加なしは空配列",
+			adds:     nil,
+			wantList: []string{},
+		},
+		{
+			name: "追加 1 件",
+			adds: []factionEntry{
+				{faction: "SHE", source: "initial_selection"},
+			},
 			wantList: []string{"SHE"},
 		},
 		{
 			name: "複数ファクション所持",
-			adds: []struct{ faction, source string }{
-				{"SHE", "initial_selection"},
-				{"Tenki", "shop_purchase"},
+			adds: []factionEntry{
+				{faction: "SHE", source: "initial_selection"},
+				{faction: "Tenki", source: "shop_purchase"},
 			},
 			wantList: []string{"SHE", "Tenki"},
 		},
 		{
 			name: "重複 Add は冪等 (ON CONFLICT DO NOTHING)",
-			adds: []struct{ faction, source string }{
-				{"SHE", "initial_selection"},
-				{"SHE", "shop_purchase"},
+			adds: []factionEntry{
+				{faction: "SHE", source: "initial_selection"},
+				{faction: "SHE", source: "shop_purchase"},
 			},
 			wantList: []string{"SHE"},
 		},
@@ -48,9 +59,6 @@ func TestFactionRepository_AddAndGet(t *testing.T) {
 			sharedPg.Truncate(t)
 			seedPlayer(t, testPlayerID1, "uid-1", "Alice", false)
 
-			for _, s := range tt.seed {
-				seedPlayerFaction(t, testPlayerID1, s.faction, s.source)
-			}
 			for _, a := range tt.adds {
 				require.NoError(t, repo.AddPlayerFaction(ctx, testPlayerID1, a.faction, a.source))
 			}
@@ -71,8 +79,16 @@ func TestFactionRepository_InsertInitial(t *testing.T) {
 		preExisting bool
 		wantCreated bool
 	}{
-		{"初回は created=true", false, true},
-		{"既存なら created=false (冪等)", true, false},
+		{
+			name:        "初回は created=true",
+			preExisting: false,
+			wantCreated: true,
+		},
+		{
+			name:        "既存なら created=false (冪等)",
+			preExisting: true,
+			wantCreated: false,
+		},
 	}
 
 	for _, tt := range tests {
@@ -88,16 +104,4 @@ func TestFactionRepository_InsertInitial(t *testing.T) {
 			assert.Equal(t, tt.wantCreated, created)
 		})
 	}
-}
-
-func TestFactionRepository_GetPlayerFactions_Empty(t *testing.T) {
-	repo := postgres.NewFactionRepository(sharedPg.Pool)
-	ctx := context.Background()
-
-	sharedPg.Truncate(t)
-	seedPlayer(t, testPlayerID1, "uid-1", "Alice", false)
-
-	got, err := repo.GetPlayerFactions(ctx, testPlayerID1)
-	require.NoError(t, err)
-	assert.Empty(t, got)
 }
