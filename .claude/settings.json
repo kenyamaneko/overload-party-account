@@ -2,10 +2,10 @@
   "permissions": {
     "allow": [
       "Bash(GOPRIVATE='github.com/kenyamaneko/*' go vet ./...)",
-      "Read(//Users/kenyamamoto/Documents/key_and_notes/overload-party/**)",
-      "Bash([ -f \"/Users/kenyamamoto/Documents/key_and_notes/overload-party/overload-party-$repo/go.mod\" ])",
-      "Bash(grep -l \"errorStatus\\\\|respondError\\\\|error.*http\\\\|StatusCode\" /Users/kenyamamoto/Documents/key_and_notes/overload-party/overload-party-gateway/internal/handler/rest/*.go)",
-      "Bash(grep -n \"errors\\\\.New\\\\|var.*Err\" /Users/kenyamamoto/Documents/key_and_notes/overload-party/overload-party-card/internal/service/*.go)",
+      "Read(//Users/kenyamamoto/workspace/key_and_notes/overload-party/**)",
+      "Bash([ -f \"/Users/kenyamamoto/workspace/key_and_notes/overload-party/overload-party-$repo/go.mod\" ])",
+      "Bash(grep -l \"errorStatus\\\\|respondError\\\\|error.*http\\\\|StatusCode\" /Users/kenyamamoto/workspace/key_and_notes/overload-party/overload-party-gateway/internal/handler/rest/*.go)",
+      "Bash(grep -n \"errors\\\\.New\\\\|var.*Err\" /Users/kenyamamoto/workspace/key_and_notes/overload-party/overload-party-card/internal/service/*.go)",
       "Bash(go build *)",
       "Bash(pip show *)",
       "Bash(echo \"exit=$?\")",
@@ -14,7 +14,7 @@
       "Bash(go vet *)",
       "Bash(python3 scripts/generate_types.py)",
       "Bash(go test *)",
-      "Bash(chmod +x /Users/kenyamamoto/Documents/key_and_notes/overload-party/overload-party-account/.github/scripts/ci/*.sh /Users/kenyamamoto/Documents/key_and_notes/overload-party/overload-party-account/.github/scripts/deploy/*.sh /Users/kenyamamoto/Documents/key_and_notes/overload-party/overload-party-account/.github/scripts/publish/*.sh /Users/kenyamamoto/Documents/key_and_notes/overload-party/overload-party-account/.github/scripts/release-tag/*.sh)",
+      "Bash(chmod +x /Users/kenyamamoto/workspace/key_and_notes/overload-party/overload-party-account/.github/scripts/ci/*.sh /Users/kenyamamoto/workspace/key_and_notes/overload-party/overload-party-account/.github/scripts/deploy/*.sh /Users/kenyamamoto/workspace/key_and_notes/overload-party/overload-party-account/.github/scripts/publish/*.sh /Users/kenyamamoto/workspace/key_and_notes/overload-party/overload-party-account/.github/scripts/release-tag/*.sh)",
       "Bash(python3 -c ' *)",
       "Bash(actionlint .github/workflows/ci.yaml .github/workflows/deploy.yaml .github/workflows/publish.yaml .github/workflows/release-tag.yaml)",
       "Bash(echo \"---exit=$?---\")",
@@ -43,7 +43,9 @@
       "Bash(echo \"revert=$?\")",
       "Bash(echo \"EXIT=$?\")",
       "Bash(tee /tmp/vet.log)",
-      "Bash(git add *)"
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)"
     ]
   }
 }
