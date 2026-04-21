@@ -98,7 +98,11 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("firestore new client: %w", err)
 	}
-	defer func() { _ = fsClient.Close() }()
+	defer func() {
+		if cerr := fsClient.Close(); cerr != nil {
+			slog.Warn("firestore client close", "error", cerr)
+		}
+	}()
 
 	txManager := postgres.NewTxManager(pool)
 	playerRepo := postgres.NewPlayerRepository(pool)
@@ -132,7 +136,11 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("faction-selected subscriber: %w", err)
 	}
-	defer func() { _ = factionSub.Close() }()
+	defer func() {
+		if cerr := factionSub.Close(); cerr != nil {
+			slog.Warn("faction-selected subscriber close", "error", cerr)
+		}
+	}()
 
 	premiumSub, err := pubsubadapter.NewPremiumUpdatedSubscriber(
 		ctx, cfg.PubsubProjectID, cfg.PremiumUpdatedSubscription,
@@ -141,9 +149,13 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("premium-updated subscriber: %w", err)
 	}
-	defer func() { _ = premiumSub.Close() }()
+	defer func() {
+		if cerr := premiumSub.Close(); cerr != nil {
+			slog.Warn("premium-updated subscriber close", "error", cerr)
+		}
+	}()
 
-	slog.Info("listening",
+	slog.Info("account starting",
 		"addr", srv.Addr,
 		"pubsub_project", cfg.PubsubProjectID,
 		"firestore_project", cfg.FirestoreProjectID,
@@ -158,7 +170,6 @@ func runHTTPAndSubscribers(ctx context.Context, srv *http.Server, factionSub, pr
 	g, gCtx := errgroup.WithContext(ctx)
 
 	g.Go(func() error {
-		slog.Info("http server starting", "addr", srv.Addr)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			return fmt.Errorf("http server: %w", err)
 		}

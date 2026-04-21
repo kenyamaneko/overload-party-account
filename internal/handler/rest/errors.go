@@ -2,6 +2,7 @@ package rest
 
 import (
 	"errors"
+	"log/slog"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -30,8 +31,19 @@ func errorStatus(err error) int {
 }
 
 // respondError は Gin context に統一フォーマットの JSON エラーを書き込む。
+// 5xx は呼び出し元（クライアント）に実体を伝搬できないため、ops 可視性のためここで
+// 構造化ログに記録する。4xx はクライアント起因なのでログしない。
 func respondError(c *gin.Context, err error) {
-	c.JSON(errorStatus(err), gin.H{"error": err.Error()})
+	status := errorStatus(err)
+	if status >= http.StatusInternalServerError {
+		slog.ErrorContext(c.Request.Context(), "handler internal error",
+			"method", c.Request.Method,
+			"path", c.FullPath(),
+			"status", status,
+			"error", err,
+		)
+	}
+	c.JSON(status, gin.H{"error": err.Error()})
 }
 
 // isNotFound は対象リソースが見つからない類のエラーか判定する。

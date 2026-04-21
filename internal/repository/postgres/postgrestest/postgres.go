@@ -10,7 +10,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -172,13 +172,14 @@ func RunMain(m *testing.M, out **Postgres, opts ...Option) int {
 
 	pg, err := Start(ctx, opts...)
 	if err != nil {
-		log.Fatalf("postgrestest.Start: %v", err)
+		slog.Error("postgrestest start", "error", err)
+		os.Exit(1)
 	}
 	*out = pg
 
 	defer func() {
 		if cerr := pg.Close(ctx); cerr != nil {
-			log.Printf("postgrestest.Close: %v", cerr)
+			slog.Warn("postgrestest close", "error", cerr)
 		}
 	}()
 
