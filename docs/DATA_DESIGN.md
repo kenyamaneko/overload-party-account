@@ -28,8 +28,6 @@ account スキーマはプレイヤーの基本情報・デイリーバトル回
 | `player_id` | UUID | No | UUID |
 | `firebase_uid` | VARCHAR(128) | No | Firebase Auth UID (Unique) |
 | `username` | VARCHAR(50) | No | 表示名 |
-| `level` | BIGINT | No | レベル (Default: 1) |
-| `exp` | BIGINT | No | 経験値 (Default: 0) |
 | `is_premium` | BOOLEAN | No | 課金ステータス |
 | `equipped_icon_no` | BIGINT | Yes | 装備中アイコン番号（NULL: デフォルト） |
 | `selected_faction` | VARCHAR(20) | Yes | 選択済みファクション |
@@ -108,7 +106,28 @@ account スキーマはプレイヤーの基本情報・デイリーバトル回
 - デフォルト値は DB 側の DEFAULT ではなくアプリ層 (`internal/model/defaults.go`) で制御する。理由は言語判定をクライアントの Accept-Language 等と揃える余地を残すため
 - 登録時（Register）に `user_settings` 行をアプリ層デフォルトで INSERT する
 
-### 5. processed_events
+### 5. player_progression
+
+レベルと経験値。players と 1:1 の子テーブル。
+
+- **PK:** `player_id` (→ `players.player_id`, ON DELETE CASCADE)
+- **TRIGGER:** `trg_player_progression_updated_at` — UPDATE 時に `updated_at` を自動更新
+
+<!-- BEGIN GENERATED: player_progression -->
+| カラム名 | 型 | Nullable | 説明 |
+|---|---|---|---|
+| `player_id` | UUID | No | 親テーブル参照 |
+| `level` | BIGINT | No | レベル (Default: 1) |
+| `exp` | BIGINT | No | 経験値 (Default: 0) |
+| `updated_at` | TIMESTAMPTZ | No | 更新日時 |
+<!-- END GENERATED: player_progression -->
+
+**設計判断:**
+- かつては `players.level` / `players.exp` として同居していたが、戦闘ごとの高頻度 UPDATE が `players.updated_at` を押し上げプロフィール変更の検知を汚染する・`players` 全体の SELECT FOR UPDATE で他 UPDATE と競合する・MVCC dead tuple が `players` に集中する、などの理由で分離した（[ARCHITECTURE.md §1.3](ARCHITECTURE.md)）
+- API レスポンスの `Player` には引き続き `level` / `exp` を含めるため、repository 層で JOIN して Player アグリゲートに詰めて返す
+- 書き込みホットパス（`AddExp`）は `player_progression` のみを触る。`players` は静かなまま
+
+### 6. processed_events
 
 Pub/Sub subscriber の冪等性を保証するアプリ層ガードテーブル。
 
@@ -135,6 +154,7 @@ Pub/Sub subscriber の冪等性を保証するアプリ層ガードテーブル�
 ```
 players (PK: player_id)
   │
+  ├── 1:1 ── player_progression  (FK: player_id, CASCADE)
   ├── 1:1 ── player_daily_battle (FK: player_id, CASCADE)
   ├── 1:N ── player_factions     (FK: player_id, CASCADE)
   └── 1:1 ── user_settings       (FK: player_id, CASCADE)

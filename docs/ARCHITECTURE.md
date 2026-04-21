@@ -13,12 +13,15 @@ account は **プレイヤーの素性（players）と周辺属性（設定・�
 | ドメイン | SSoT | account 側の扱い |
 |---|---|---|
 | プレイヤー本体 | `account.players` (account) | authoritative |
+| レベル / 経験値 | `account.player_progression` (account) | authoritative。1:1 子テーブルとして分離 |
 | ユーザー設定 | `account.user_settings` (account) | authoritative |
 | デイリーバトル回数 | `account.player_daily_battle` (account) | authoritative |
 | ファクション所有 | `account.player_factions` (account) | authoritative。shop が `shop.player_owned_factions` で同一状態の read model を持つ |
 | プレミアム状態 | `shop.subscriptions` (shop) | `players.is_premium` / `premium_expires_at` は account 側の射影 |
 | ゲームバランス定数 | Cloud Firestore `game_config` | read-only。起動時・リクエスト時に参照 |
 | ファクションマスター | `common/data/factions.yaml` | code-generate された定数を参照 |
+
+`player_progression` は `players` から切り出した 1:1 子テーブル。`level` / `exp` は戦闘ごとに高頻度更新されるため、プロフィール系の低頻度更新と物理分離する（§1.3 で詳述）。Go の repository 層では `players` + `player_progression` を JOIN で結合し、呼び出し元には「Player アグリゲート」として見せる。
 
 プレミアム状態の authoritative は shop 側のサブスクリプション契約。account は `premium-updated` イベントの subscriber として **最終的整合 (eventually consistent) な射影** を保持する。`is_premium` を参照するほぼ全ての REST レスポンスでローカル SELECT の安定性が必要なため、JOIN ではなく射影として持っている。
 
@@ -30,6 +33,23 @@ account は他サービスを直接呼び出さない（gateway / shop / scenari
 - account から外部への副作用は **REST レスポンスを返すのみ**（Pub/Sub publish しない）
 
 この非対称性は ADR-011 / ADR-014 の schema ownership 契約から来ている。account は「呼ばれるだけ」のサービスに徹するため、外部 API 呼び出しの retry / circuit breaker が実装コードに登場しない。
+
+### 1.3 `player_progression` の物理分離
+
+`level` / `exp` は `players` に並置せず、1:1 子テーブル `account.player_progression` に切り出している。動機はライフサイクルの違い:
+
+| 概念 | 更新頻度 | 更新者 |
+|---|---|---|
+| `players` のプロフィール系 (username / selected_faction / is_premium 等) | 低 | ユーザー操作 or 外部イベント |
+| `player_progression` (level / exp) | 高 | 戦闘終了ごとに毎回 |
+
+同居させていた従来実装では以下の問題があった:
+
+- `players.updated_at` がバトル頻度で動き、「プロフィール変更の検知」用途に使えない
+- 経験値加算の SELECT FOR UPDATE が `players` 全体をロックし、プロフィール更新と競合
+- 高頻度 UPDATE の dead tuple が `players` に溜まって VACUUM コスト増
+
+分離後は repository 層が JOIN で Player アグリゲートを組み立てるため、API 契約（レスポンスに level/exp を含む）は維持されている。書き込み側のホットパス（`AddExp`）は `player_progression` のみを触る。
 
 ## 2. 認証信頼境界
 
@@ -45,11 +65,12 @@ account は Firebase Auth の ID Token を検証しない。**認証は gateway 
 
 ## 3. Register フローのトランザクション設計
 
-`POST /internal/v1/auth/register` は 3 テーブルを同一トランザクションで初期化する:
+`POST /internal/v1/auth/register` は 4 テーブルを同一トランザクションで初期化する:
 
 ```
 BEGIN TX
   INSERT INTO account.players             (新規 UUID)
+  INSERT INTO account.player_progression  (player_id, level=1, exp=0)
   INSERT INTO account.player_daily_battle (player_id, count=0, last_reset_date=today)
   INSERT INTO account.user_settings       (player_id, デフォルト値)
 COMMIT
@@ -62,7 +83,7 @@ COMMIT
 - ファクション選択は UX 上「チュートリアル開始直後の選択画面」という非同期な操作で、登録と同時に決められない
 - カード配布は card サービスの責務で、account が card の内部状態を知るべきでない
 
-現在のトリガーポイントは **scenario サービスの「初期ファクション選択完了」イベント** で、account は `faction-selected` イベントを受けて `player_factions` に追加するだけ（§5.1）。`auth_service.Register` にカード付与・ファクション付与を再導入してはいけない（CLAUDE.md 禁止事項）。
+現在のトリガーポイントは **scenario サービスの「初期ファクション選択完了」イベント** で、account は `faction-selected` イベントを受けて `player_factions` に追加するだけ（§6.1）。`auth_service.Register` にカード付与・ファクション付与を再導入してはいけない（CLAUDE.md 禁止事項）。
 
 ### 3.2 重複登録は 409 で吸収
 
@@ -92,19 +113,35 @@ COMMIT
 3. 上限は Firestore `game_config.free_daily_battle_limit` から読む
 4. プレミアム会員は上限判定をスキップ（`GetBattleLimit` では `DailyBattleLimit = -1` / `CanBattle = true` を返す）
 
-`free_daily_battle_limit` が未設定（値 0）のときは `GetBattleLimit` がエラーを返す（フォールバック禁止）。Firestore 上でキーが存在しない状態は運用事故として扱う。
+`free_daily_battle_limit` が未設定（値 0）のときはエラーを返す（フォールバック禁止）。Firestore 上でキーが存在しない状態は運用事故として扱う。
 
-### 4.3 IncrementBattleCount の冪等性と並行制御
+リセット判定・上限判定は service 層（`PlayerService`）の責務で、repository 層 (`PlayerRepository.UpdateDailyBattleCount`) は計算済みのカウントと reset date を書き込むだけのプリミティブ。
 
-IncrementBattleCount は **プレミアム会員でもカウントを記録する**。上限は `GetBattleLimit` 側で判定する構造で、記録と判定を分離している（battle サービスから毎試合呼ばれる純粋な副作用）。
+### 4.3 IncrementBattleCount の上限ガード
 
-同一プレイヤーに対する並行 increment のシリアライズは `pg_player_repo.IncrementDailyBattle` 内の UPDATE の row lock に任せている。`player_daily_battle` は PK 単一行のため、デッドロックリスクは低い。
+account が `player_daily_battle` の authoritative owner であるため、上限不変条件は account 側で守る。`IncrementBattleCount` は加算後のカウントが `free_daily_battle_limit` を超える場合 `service.ErrBattleLimitExceeded` を返し、REST handler は HTTP 429 にマップする。プレミアム会員はこの判定をスキップする（カウントは記録する）。
 
-## 5. Pub/Sub subscriber
+battle サービス側が事前に `GetBattleLimit` を呼ぶのは UX のためのプリチェック（「戦う前に残り回数を表示」）であり、最終的な強制は account の書き込みパスで行う二段構え。
+
+TOCTOU（`GetDailyBattle` → `UpdateDailyBattleCount` の間に別リクエストが割り込む可能性）については、同一アカウントの並行バトルは極めて稀なエッジケースとして許容する。行ロック（SELECT FOR UPDATE）は採用しない。
+
+## 5. ユーザー設定の部分更新契約
+
+`PUT /internal/v1/players/:playerId/settings` は HTTP メソッドこそ PUT だが、**部分更新セマンティクス** を採用する。REST 慣用的には PATCH が正しいが、呼び出し元への影響を避けるため PUT のまま運用する。
+
+リクエスト body は全フィールドがポインタ型 (`*string` / `*int64` / `*bool`) で、省略（nil）は「変更なし」を意味する:
+
+- 少なくとも 1 フィールド指定していない全 nil 送信は 400
+- 指定されたフィールドだけを SQL の `COALESCE($1, language), ...` で書き換え、未指定フィールドは現状維持
+- `user_settings` 行が存在しないプレイヤーは 404（通常 Register で INSERT 済みの前提）
+
+これは「クライアントが language だけ変えるつもりで部分送信したら、送信しなかった bgm_volume がゼロ値で上書きされる」事故を避けるための設計。repo 層では `Insert`（Register 用、全フィールド必須）と `UpdatePartial`（更新用、nil は現状維持）の 2 プリミティブに分離し、Upsert のような「書いてあることを丸ごと反映」パターンは排除している。
+
+## 6. Pub/Sub subscriber
 
 account は 2 つの Pub/Sub subscription を常駐 worker として pull する。両方とも Exactly-Once Delivery を前提にしつつ、**アプリ層で `processed_events` による冪等ガード** を併用する二層防御。
 
-### 5.1 faction-selected subscriber
+### 6.1 faction-selected subscriber
 
 subscription: `faction-selected-account-sub` (`FACTION_SELECTED_SUBSCRIPTION` で上書き可)
 
@@ -128,7 +165,7 @@ COMMIT → ACK
 
 `source == shop_purchase` で `selected_faction` を更新しないのは、ショップ購入は「ロスター追加」であり、プレイヤーが能動的に切り替える前に勝手にアクティブ選択を上書きしてはいけないため。アクティブ切り替えは `PUT /players/:id/faction` の独立したエンドポイント。
 
-### 5.2 premium-updated subscriber
+### 6.2 premium-updated subscriber
 
 subscription: `premium-updated-account-sub` (`PREMIUM_UPDATED_SUBSCRIPTION` で上書き可)
 
@@ -143,7 +180,7 @@ BEGIN TX
 COMMIT → ACK
 ```
 
-### 5.3 `processed_events` による冪等性契約
+### 6.3 `processed_events` による冪等性契約
 
 - 1 行 = (`event_id`, `event_type`, `processed_at`) の 3 カラム。`event_id` が PK
 - subscriber はトランザクション冒頭で `INSERT ... ON CONFLICT DO NOTHING RETURNING event_id`
@@ -152,7 +189,7 @@ COMMIT → ACK
 
 Pub/Sub の Exactly-Once 配信がインフラ層の第一防御。`processed_events` はアプリ層の第二防御で、Exactly-Once 契約が破れた場合（再配信・観測ウィンドウ外のリトライ・メッセージの手動 replay）のセーフティネット。
 
-### 5.4 エラー時の NACK と DLQ
+### 6.4 エラー時の NACK と DLQ
 
 | 失敗種別 | 動作 |
 |---|---|
@@ -162,9 +199,9 @@ Pub/Sub の Exactly-Once 配信がインフラ層の第一防御。`processed_ev
 
 未知の `event_type` を ACK するのは、将来 publisher 側で新しいイベント種別を追加した際に account の subscriber を止めないため。既知の event_type のペイロードが壊れているケースは JSON デシリアライズ失敗側に分岐する。
 
-## 6. 経験値・レベル計算
+## 7. 経験値・レベル計算
 
-### 6.1 係数の SSoT は Firestore
+### 7.1 係数の SSoT は Firestore
 
 経験値獲得量 (`exp_win` / `exp_loss` / `exp_draw`) とレベル計算係数 (`exp_formula_coefficient`) は Firestore `game_config` から読む。DB には置かない。
 
@@ -172,7 +209,7 @@ Pub/Sub の Exactly-Once 配信がインフラ層の第一防御。`processed_ev
 
 未設定（値 0 または存在しない）は起動エラーにせず、当該リクエストをエラーにする（運用者が値を戻すまで battle 側で経験値が積めない）。
 
-### 6.2 レベル上限の「増加のみ」契約
+### 7.2 レベル上限の「増加のみ」契約
 
 `ComputeLevel` は現在レベルからの **増加のみ** 計算する。
 
@@ -180,7 +217,7 @@ Pub/Sub の Exactly-Once 配信がインフラ層の第一防御。`processed_ev
 
 係数変更の遡及はしない。運用上「プレイヤーはレベルが下がらない」という UX 契約を守るための実装上の選択。
 
-### 6.3 AwardGameExp の NPC 扱い
+### 7.3 AwardGameExp の NPC 扱い
 
 `AwardGameExp(player1, player2, winnerNum, reason, matchType)` は battle 終了時に両プレイヤーへ同時に exp を配る唯一の入口。
 
@@ -190,37 +227,38 @@ Pub/Sub の Exactly-Once 配信がインフラ層の第一防御。`processed_ev
 
 `matchType` / `reason` / `winnerNum` の定義は `overload-party-common` と `overload-party-battle` の共有定数パッケージが SSoT（リテラル禁止）。
 
-## 7. エラーハンドリング
+## 8. エラーハンドリング
 
-### 7.1 レイヤ別の責務
+### 8.1 レイヤ別の責務
 
 | 層 | 返す/扱う |
 |---|---|
 | repository | `port.ErrNotFound` と wrap された SQL エラー |
-| service | ドメインのセンチネル（`ErrPlayerNotFound` / `ErrPlayerAlreadyRegistered` / `ErrInvalidFaction` / `ErrFactionAlreadySelected`）+ wrap された下位エラー |
+| service | ドメインのセンチネル（`ErrPlayerNotFound` / `ErrPlayerAlreadyRegistered` / `ErrInvalidFaction` / `ErrFactionAlreadySelected` / `ErrBattleLimitExceeded`）+ wrap された下位エラー |
 | handler (rest) | `errors.Is` でセンチネルを分類し HTTP ステータスに変換（[internal/handler/rest/errors.go](../internal/handler/rest/errors.go)） |
 
 service 層は HTTP ステータスを知らず、handler 層は SQL を知らない。
 
-### 7.2 センチネル → HTTP ステータス
+### 8.2 センチネル → HTTP ステータス
 
 | センチネル | HTTP | 意味 |
 |---|---|---|
 | `port.ErrNotFound` / `service.ErrPlayerNotFound` | 404 | 対象プレイヤーが存在しない |
 | `service.ErrPlayerAlreadyRegistered` | 409 | 同一 firebase_uid で登録済み |
 | `service.ErrFactionAlreadySelected` | 409 | 初期ファクション選択済み（冪等な「成功扱い」のためクライアントはエラーとして表示しない） |
+| `service.ErrBattleLimitExceeded` | 429 | 当日のバトル上限に到達（free プレイヤーのみ） |
 | `service.ErrInvalidFaction` | 400 | ファクション値が `gamedesign.SelectableFactions` に含まれない |
 | その他 | 500 | wrap された下位エラー（DB 接続断等） |
 
-### 7.3 握りつぶし禁止
+### 8.3 握りつぶし禁止
 
 DB エラー・Pub/Sub デシリアライズ失敗・Firestore 読み取り失敗をログのみで握りつぶさない（CLAUDE.md 設計思想）。
 
-例外: 未知の `event_type` の ACK は「意図的な no-op」で、握りつぶしではない（§5.4）。
+例外: 未知の `event_type` の ACK は「意図的な no-op」で、握りつぶしではない（§6.4）。
 
-## 8. 運用
+## 9. 運用
 
-### 8.1 環境変数 / Secret Manager
+### 9.1 環境変数 / Secret Manager
 
 環境変数の一覧と必須条件は [internal/config/config.go](../internal/config/config.go) の `FromEnv` が SSoT（欠ければ即 fail）。運用上の注意点のみ:
 
@@ -228,15 +266,15 @@ DB エラー・Pub/Sub デシリアライズ失敗・Firestore 読み取り失�
 - `PUBSUB_PROJECT_ID` / `FIRESTORE_PROJECT_ID` は ConfigMap 経由で環境ごとに切り替え
 - `FACTION_SELECTED_SUBSCRIPTION` / `PREMIUM_UPDATED_SUBSCRIPTION` はデフォルトで本番名と一致するため通常は未設定でよい。環境分離検証時のみ上書き
 
-### 8.2 Pub/Sub トピックと subscriber
+### 9.2 Pub/Sub トピックと subscriber
 
 | トピック | 発行元 | account の subscription | account 側の副作用 |
 |---|---|---|---|
-| `faction-selected` | scenario / shop | `faction-selected-account-sub` | `player_factions` INSERT / `selected_faction` UPDATE (§5.1) |
-| `premium-updated` | shop | `premium-updated-account-sub` | `players.is_premium` / `premium_expires_at` UPDATE (§5.2) |
+| `faction-selected` | scenario / shop | `faction-selected-account-sub` | `player_factions` INSERT / `selected_faction` UPDATE (§6.1) |
+| `premium-updated` | shop | `premium-updated-account-sub` | `players.is_premium` / `premium_expires_at` UPDATE (§6.2) |
 
 account 自身はトピックを publish しない。
 
-### 8.3 Firestore の運用
+### 9.3 Firestore の運用
 
 `game_config` コレクションは運用者が手動で値を書く（コード上には生成スクリプトを持たない）。キーのリストと意味は [FEATURE_SPEC.md](FEATURE_SPEC.md) と `service/player_service.go` の定数を参照。

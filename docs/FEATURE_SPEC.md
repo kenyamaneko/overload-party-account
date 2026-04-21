@@ -38,7 +38,8 @@ account は **account スキーマの DB 行と Pub/Sub から取り込んだ状
 1. `username` が 1〜50 文字（utf-8 rune 数）であることを確認。範囲外は 400
 2. `firebase_uid` で既存プレイヤーを pre-check。存在すれば 409 (`ErrPlayerAlreadyRegistered`)
 3. 新 UUID を採番し、単一トランザクションで:
-   - `players` INSERT (level=1, exp=0, is_premium=false, selected_faction=NULL)
+   - `players` INSERT (is_premium=false, selected_faction=NULL)
+   - `player_progression` INSERT (level=1, exp=0)
    - `player_daily_battle` INSERT (count=0, last_reset_date=今日の UTC 日付)
    - `user_settings` INSERT (アプリ層デフォルト値)
 
@@ -190,7 +191,7 @@ battle サービスが試合終了時に呼ぶ唯一の経験値付与エンド�
 
 ### 7.2 `premium-updated` subscriber の冪等性
 
-[ARCHITECTURE.md §5.3](ARCHITECTURE.md) の `processed_events` 契約に従う。同一 `event_id` は重複適用しない。
+[ARCHITECTURE.md §6.3](ARCHITECTURE.md) の `processed_events` 契約に従う。同一 `event_id` は重複適用しない。
 
 ---
 
@@ -202,7 +203,16 @@ battle サービスが試合終了時に呼ぶ唯一の経験値付与エンド�
 
 ### 8.2 `PUT /internal/v1/players/:playerId/settings`
 
-`{language, bgm_volume, se_volume, push_enabled}` で UPSERT。`language` が空なら 400。
+部分更新。body の各フィールドは **ポインタ型** で、省略（nil / JSON で存在しないキー）は「変更なし」を意味する:
+
+```json
+{ "language": "en" }                       // language だけ変更、他は現状維持
+{ "bgm_volume": 0, "push_enabled": false } // 音量ミュート + 通知オフ
+```
+
+- 1 つもフィールドを指定していない空 body は 400
+- `user_settings` 行が存在しないプレイヤーは 404（通常 Register で INSERT 済み）
+- SQL は `COALESCE` ベース。詳細契約は [ARCHITECTURE.md §5](ARCHITECTURE.md)
 
 音量範囲（0-100）のバリデーションは現在 DB CHECK / アプリ層で明示的に行っていない（BIGINT として受理）。将来の要件に応じて追加する。
 
@@ -221,7 +231,7 @@ subscription: `faction-selected-account-sub`
 | scenario | `scenario_initial` | `player_factions` INSERT + `players.selected_faction` UPDATE |
 | shop | `shop_purchase` | `player_factions` INSERT のみ |
 
-詳細契約: [ARCHITECTURE.md §5.1](ARCHITECTURE.md)
+詳細契約: [ARCHITECTURE.md §6.1](ARCHITECTURE.md)
 
 ### 9.2 `premium-updated`
 
@@ -231,11 +241,11 @@ subscription: `premium-updated-account-sub`
 - 副作用: `players.is_premium` / `players.premium_expires_at` を UPDATE
 - **shop が cancel 時に publish しない契約** のため、account 側で「解約即剥奪」を観測することはない
 
-詳細契約: [ARCHITECTURE.md §5.2](ARCHITECTURE.md)
+詳細契約: [ARCHITECTURE.md §6.2](ARCHITECTURE.md)
 
 ### 9.3 冪等性
 
-両 subscriber とも `processed_events (event_id, event_type)` による ON CONFLICT DO NOTHING ガードで at-least-once を吸収する ([ARCHITECTURE.md §5.3](ARCHITECTURE.md))。
+両 subscriber とも `processed_events (event_id, event_type)` による ON CONFLICT DO NOTHING ガードで at-least-once を吸収する ([ARCHITECTURE.md §6.3](ARCHITECTURE.md))。
 
 ---
 
