@@ -18,19 +18,27 @@ func TestProcessedEventRepository_Insert(t *testing.T) {
 	repo := postgres.NewProcessedEventRepository(sharedPg.Pool)
 	ctx := context.Background()
 
+	noPreInsert := func(*testing.T) {}
+	preInsertSameEvent := func(t *testing.T) {
+		_, err := sharedPg.Pool.Exec(ctx,
+			`INSERT INTO account.processed_events (event_id, event_type) VALUES ($1, $2)`,
+			testEventID1, "faction_selected")
+		require.NoError(t, err)
+	}
+
 	tests := []struct {
 		name        string
-		preInserted bool
+		preInsert   func(*testing.T)
 		wantCreated bool
 	}{
 		{
 			name:        "初回は created=true",
-			preInserted: false,
+			preInsert:   noPreInsert,
 			wantCreated: true,
 		},
 		{
 			name:        "既存 event_id は created=false (冪等ガード)",
-			preInserted: true,
+			preInsert:   preInsertSameEvent,
 			wantCreated: false,
 		},
 	}
@@ -38,12 +46,7 @@ func TestProcessedEventRepository_Insert(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			sharedPg.Truncate(t)
-			if tt.preInserted {
-				_, err := sharedPg.Pool.Exec(ctx,
-					`INSERT INTO account.processed_events (event_id, event_type) VALUES ($1, $2)`,
-					testEventID1, "faction_selected")
-				require.NoError(t, err)
-			}
+			tt.preInsert(t)
 
 			created, err := repo.Insert(ctx, testEventID1, "faction_selected")
 			require.NoError(t, err)
