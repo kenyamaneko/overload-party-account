@@ -23,6 +23,8 @@ func errorStatus(err error) int {
 		return http.StatusNotFound
 	case isConflict(err):
 		return http.StatusConflict
+	case isTooManyRequests(err):
+		return http.StatusTooManyRequests
 	case isValidation(err):
 		return http.StatusBadRequest
 	default:
@@ -58,6 +60,12 @@ func isNotFound(err error) bool {
 func isConflict(err error) bool {
 	return errors.Is(err, service.ErrPlayerAlreadyRegistered) ||
 		errors.Is(err, service.ErrFactionAlreadySelected)
+}
+
+// isTooManyRequests はクォータ超過によるエラーか判定する。
+// daily battle limit のように「一定期間あたりの回数上限」に達した場合に使う。
+func isTooManyRequests(err error) bool {
+	return errors.Is(err, service.ErrBattleLimitExceeded)
 }
 
 // isValidation はクライアント入力の妥当性違反によるエラーか判定する。
