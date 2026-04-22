@@ -50,7 +50,7 @@ func (f *fakeOnboardingApplier) ApplyOnboardingResult(
 }
 
 // TestPlayerOnboardedSubscriber_ProcessEvent は「Pub/Sub ペイロードを Unmarshal して
-// OnboardingApplier に委譲する」という subscriber 単体の仕様 (ADR-022) を固定する。
+// OnboardingApplier に委譲する」という subscriber 単体の仕様を固定する。
 // SelectableFactions / 冪等ガード / Tx 境界などの業務不変条件は service 層の責務なので
 // ここではテストせず、返却値ごとの ACK / NACK / ログ分岐のみを確認する。
 func TestPlayerOnboardedSubscriber_ProcessEvent(t *testing.T) {
@@ -158,8 +158,11 @@ func TestPlayerOnboardedSubscriber_ProcessEvent(t *testing.T) {
 			}
 			s := &PlayerOnboardedSubscriber{applier: applier}
 
-			ack := s.processEvent(context.Background(), tt.payload)
-			assert.Equal(t, tt.wantAck, ack)
+			// api-scenario 側に test fake が未整備のため、本 subscriber は
+			// processEvent 直呼びで検証する。将来 apiscenariofake が整備
+			// されたら apishopfakeStream と同様の Start() ループ越し検証に移行する。
+			err := s.processEvent(context.Background(), tt.payload)
+			assert.Equal(t, tt.wantAck, err == nil, "ack 判定 (nil=ack, err=%v)", err)
 			assert.Equal(t, tt.wantApplierCall, applier.called)
 			if tt.assertApplier != nil {
 				tt.assertApplier(t, applier)

@@ -2,13 +2,26 @@ package pubsub
 
 import (
 	"context"
+	"encoding/json"
+	"testing"
 	"time"
 
 	"cloud.google.com/go/civil"
+	"github.com/stretchr/testify/require"
 
 	apiaccount "github.com/kenyamaneko/overload-party-account/packages/api-account"
 	"github.com/kenyamaneko/overload-party-account/internal/port"
 )
+
+// mustMarshal は json.Marshal の testing 版。event_type 欠落など、typed helper
+// (apishopfake.PublishXxx) で表現できない壊れたペイロードをケースに含めるための
+// ヘルパ。
+func mustMarshal(t *testing.T, v any) []byte {
+	t.Helper()
+	b, err := json.Marshal(v)
+	require.NoError(t, err)
+	return b
+}
 
 // fakeTxRunner はトランザクション境界を持たないパススルー実装。
 // subscriber の business logic から見た RunInTx の契約は「fn を同じ ctx で呼ぶ」だけ
