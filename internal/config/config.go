@@ -34,6 +34,8 @@ type Config struct {
 	FactionSelectedSubscription string
 	// PremiumUpdatedSubscription は premium-updated の pull subscription 名。
 	PremiumUpdatedSubscription string
+	// PlayerOnboardedSubscription は player-onboarded の pull subscription 名。
+	PlayerOnboardedSubscription string
 
 	// FirestoreProjectID は game_config の読み取り先プロジェクト ID。
 	// ローカル/CI では FIRESTORE_EMULATOR_HOST を別途設定することでエミュレーターに接続する。
@@ -51,6 +53,7 @@ func FromEnv() (*Config, error) {
 		PubsubProjectID:             os.Getenv("PUBSUB_PROJECT_ID"),
 		FactionSelectedSubscription: os.Getenv("FACTION_SELECTED_SUBSCRIPTION"),
 		PremiumUpdatedSubscription:  os.Getenv("PREMIUM_UPDATED_SUBSCRIPTION"),
+		PlayerOnboardedSubscription: os.Getenv("PLAYER_ONBOARDED_SUBSCRIPTION"),
 		FirestoreProjectID:          os.Getenv("FIRESTORE_PROJECT_ID"),
 		LogMode:                     LogMode(os.Getenv("LOG_MODE")),
 	}
@@ -79,6 +82,9 @@ func FromEnv() (*Config, error) {
 	}
 	if cfg.PremiumUpdatedSubscription == "" {
 		return nil, fmt.Errorf("config: PREMIUM_UPDATED_SUBSCRIPTION is required")
+	}
+	if cfg.PlayerOnboardedSubscription == "" {
+		return nil, fmt.Errorf("config: PLAYER_ONBOARDED_SUBSCRIPTION is required")
 	}
 	if cfg.FirestoreProjectID == "" {
 		return nil, fmt.Errorf("config: FIRESTORE_PROJECT_ID is required (game_config)")

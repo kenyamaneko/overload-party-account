@@ -139,7 +139,7 @@ TOCTOU（`GetDailyBattle` → `UpdateDailyBattleCount` の間に別リクエス�
 
 ## 6. Pub/Sub subscriber
 
-account は 2 つの Pub/Sub subscription を常駐 worker として pull する。両方とも Exactly-Once Delivery を前提にしつつ、**アプリ層で `processed_events` による冪等ガード** を併用する二層防御。
+account は 3 つの Pub/Sub subscription を常駐 worker として pull する。いずれも Exactly-Once Delivery を前提にしつつ、**アプリ層で `processed_events` による冪等ガード** を併用する二層防御。
 
 ### 6.1 faction-selected subscriber
 
@@ -180,7 +180,27 @@ BEGIN TX
 COMMIT → ACK
 ```
 
-### 6.3 `processed_events` による冪等性契約
+### 6.3 player-onboarded subscriber
+
+subscription: `player-onboarded-account-sub` (`PLAYER_ONBOARDED_SUBSCRIPTION` で上書き可)
+
+発行元: scenario のみ。scenario がオンボーディングシナリオ読了時に transactional outbox 経由で publish する（[ADR-021](../../overload-party-common/docs/adr/021-onboarding-scenario.md) §5.1）。
+
+処理（[internal/adapter/pubsub/player_onboarded_subscriber.go](../internal/adapter/pubsub/player_onboarded_subscriber.go)）:
+
+```
+BEGIN TX
+  INSERT processed_events (event_id, event_type)  ← ON CONFLICT DO NOTHING
+  IF 既存行だった: COMMIT; ACK; return
+  UPDATE players SET username = $ ← event.display_name を account の「表示名」カラムに書く
+COMMIT → ACK
+```
+
+ADR-021 §5.1 の event payload は `initial_faction_id` も含むが、account 側でこの subscriber は faction を処理しない。scenario は同じオンボーディング完了に対して `faction-selected`（source=`scenario_initial`）も独立に publish する契約であり、faction の反映は §6.1 の faction-selected subscriber が担当する。両 subscriber は互いを知らず、それぞれの `event_id` を `processed_events` に記録して冪等性を担保する。
+
+event の `display_name` は account の `players.username` カラム（コメント「表示名」）に書く。別カラム `display_name` を新設しない理由は、同一セマンティクスの列を 2 つ持たないため（SSoT 一本化）。scenario 側 payload 名 (`display_name`) と account 側カラム名 (`username`) のマッピングは subscriber handler 内に閉じる。
+
+### 6.4 `processed_events` による冪等性契約
 
 - 1 行 = (`event_id`, `event_type`, `processed_at`) の 3 カラム。`event_id` が PK
 - subscriber はトランザクション冒頭で `INSERT ... ON CONFLICT DO NOTHING RETURNING event_id`
@@ -189,7 +209,7 @@ COMMIT → ACK
 
 Pub/Sub の Exactly-Once 配信がインフラ層の第一防御。`processed_events` はアプリ層の第二防御で、Exactly-Once 契約が破れた場合（再配信・観測ウィンドウ外のリトライ・メッセージの手動 replay）のセーフティネット。
 
-### 6.4 エラー時の NACK と DLQ
+### 6.5 エラー時の NACK と DLQ
 
 | 失敗種別 | 動作 |
 |---|---|
@@ -254,7 +274,7 @@ service 層は HTTP ステータスを知らず、handler 層は SQL を知ら�
 
 DB エラー・Pub/Sub デシリアライズ失敗・Firestore 読み取り失敗をログのみで握りつぶさない（CLAUDE.md 設計思想）。
 
-例外: 未知の `event_type` の ACK は「意図的な no-op」で、握りつぶしではない（§6.4）。
+例外: 未知の `event_type` の ACK は「意図的な no-op」で、握りつぶしではない（§6.5）。
 
 ## 9. 運用
 
@@ -264,7 +284,7 @@ DB エラー・Pub/Sub デシリアライズ失敗・Firestore 読み取り失�
 
 - `DATABASE_URL` は Secret Manager 由来。k8s マニフェストにインラインしない
 - `PUBSUB_PROJECT_ID` / `FIRESTORE_PROJECT_ID` は ConfigMap 経由で環境ごとに切り替え
-- `FACTION_SELECTED_SUBSCRIPTION` / `PREMIUM_UPDATED_SUBSCRIPTION` はデフォルトで本番名と一致するため通常は未設定でよい。環境分離検証時のみ上書き
+- `FACTION_SELECTED_SUBSCRIPTION` / `PREMIUM_UPDATED_SUBSCRIPTION` / `PLAYER_ONBOARDED_SUBSCRIPTION` はデフォルトで本番名と一致するため通常は未設定でよい。環境分離検証時のみ上書き
 
 ### 9.2 Pub/Sub トピックと subscriber
 
@@ -272,6 +292,7 @@ DB エラー・Pub/Sub デシリアライズ失敗・Firestore 読み取り失�
 |---|---|---|---|
 | `faction-selected` | scenario / shop | `faction-selected-account-sub` | `player_factions` INSERT / `selected_faction` UPDATE (§6.1) |
 | `premium-updated` | shop | `premium-updated-account-sub` | `players.is_premium` / `premium_expires_at` UPDATE (§6.2) |
+| `player-onboarded` | scenario | `player-onboarded-account-sub` | `players.username` UPDATE（オンボーディングで入力された表示名を反映、§6.3） |
 
 account 自身はトピックを publish しない。
 

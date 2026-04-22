@@ -39,6 +39,7 @@ account スキーマはプレイヤーの基本情報・デイリーバトル回
 **設計判断:**
 - `is_premium` / `premium_expires_at` を players に射影で持つ理由は、ほぼ全ての REST レスポンスで課金ステータスを返す必要があり、毎回 shop を呼ぶと結合が強くなりすぎるため。shop が authoritative で、`premium-updated` Pub/Sub で最終的整合させる
 - `selected_faction` は「現在アクティブなファクション」。初回選択時に `faction-selected(source=scenario_initial)` 受信で初期値が入り、以降は `PUT /players/:id/faction` でプレイヤーが切り替える
+- `username` は「表示名」。Register 時の値を、オンボーディング完了イベント (`player-onboarded`、scenario が publish) で上書きする運用。account 側で `display_name` 列を別途設けない（同一セマンティクスの列を複数持つと SSoT が分散するため）
 - `equipped_icon_no` は shop 側の `cosmetic_items(item_type='icon', item_no=N)` を参照するが、cross-schema FK は張らない（アプリ層整合性）
 
 ### 2. player_daily_battle

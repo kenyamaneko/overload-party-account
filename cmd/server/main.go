@@ -155,18 +155,31 @@ func run() error {
 		}
 	}()
 
+	onboardedSub, err := pubsubadapter.NewPlayerOnboardedSubscriber(
+		ctx, cfg.PubsubProjectID, cfg.PlayerOnboardedSubscription,
+		playerRepo, txManager, eventRepo,
+	)
+	if err != nil {
+		return fmt.Errorf("player-onboarded subscriber: %w", err)
+	}
+	defer func() {
+		if cerr := onboardedSub.Close(); cerr != nil {
+			slog.Warn("player-onboarded subscriber close", "error", cerr)
+		}
+	}()
+
 	slog.Info("account starting",
 		"addr", srv.Addr,
 		"pubsub_project", cfg.PubsubProjectID,
 		"firestore_project", cfg.FirestoreProjectID,
 	)
 
-	return runHTTPAndSubscribers(ctx, srv, factionSub, premiumSub)
+	return runHTTPAndSubscribers(ctx, srv, factionSub, premiumSub, onboardedSub)
 }
 
-// runHTTPAndSubscribers は HTTP server と Pub/Sub subscriber 2 つを並行起動し、
+// runHTTPAndSubscribers は HTTP server と Pub/Sub subscriber 群を並行起動し、
 // どれかの失敗・シグナル到来で全体を graceful に停止する。
-func runHTTPAndSubscribers(ctx context.Context, srv *http.Server, factionSub, premiumSub subscriber) error {
+func runHTTPAndSubscribers(ctx context.Context, srv *http.Server, factionSub, premiumSub, onboardedSub subscriber) error {
 	g, gCtx := errgroup.WithContext(ctx)
 
 	g.Go(func() error {
@@ -186,6 +199,13 @@ func runHTTPAndSubscribers(ctx context.Context, srv *http.Server, factionSub, pr
 	g.Go(func() error {
 		if err := premiumSub.Start(gCtx); err != nil && gCtx.Err() == nil {
 			return fmt.Errorf("premium-updated subscriber: %w", err)
+		}
+		return nil
+	})
+
+	g.Go(func() error {
+		if err := onboardedSub.Start(gCtx); err != nil && gCtx.Err() == nil {
+			return fmt.Errorf("player-onboarded subscriber: %w", err)
 		}
 		return nil
 	})

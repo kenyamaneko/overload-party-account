@@ -149,6 +149,8 @@ github.com/kenyamaneko/overload-party-common/packages/game-design-constants v0.1
 github.com/kenyamaneko/overload-party-common/packages/game-design-constants v0.1.0/go.mod h1:4z5Ry1Y8LZQM4OKqLivo/OhVefKloLZP2vUDQ1Yo0UI=
 github.com/kenyamaneko/overload-party-common/packages/pubsub-events v0.1.0 h1:Du4JlWpUCNH4FTSdOkrldEy4Ht85hICI3IgkrjiC4rU=
 github.com/kenyamaneko/overload-party-common/packages/pubsub-events v0.1.0/go.mod h1:oDm7RoYDIXdaTLNvcN/g1ApMxNQb9DxUuh0czs5lrvM=
+github.com/kenyamaneko/overload-party-scenario/packages/api-scenario v0.1.0 h1:m0jUkrSjf3q6UDf9qViXH5+jLF4TvdRgvsgQfYXykqo=
+github.com/kenyamaneko/overload-party-scenario/packages/api-scenario v0.1.0/go.mod h1:nV0AZBdeJnJfHCtqQ1OvHjO3TMCj+V7KifBD/tx+48Y=
 github.com/klauspost/compress v1.18.5 h1:/h1gH5Ce+VWNLSWqPzOVn6XBO+vJbCNGvjoaGBFW2IE=
 github.com/klauspost/compress v1.18.5/go.mod h1:cwPg85FWrGar70rWktvGQj8/hthj3wpl0PGDogxkrSQ=
 github.com/klauspost/cpuid/v2 v2.3.0 h1:S4CRMLnYUhGeDFDqkGriYKdfoFlDnMtqTiI/sFzhA9Y=

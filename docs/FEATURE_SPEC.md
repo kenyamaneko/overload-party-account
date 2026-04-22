@@ -21,6 +21,7 @@ account は以下の機能ドメインを所有する。
 | ファクション所有 | 初期選択時の `player_factions` 挿入。`faction-selected` イベントからの同期 |
 | 経験値・レベル | `AwardGameExp` による両プレイヤー同時付与。係数変更時もレベルは下がらない |
 | プレミアムステータス | `premium-updated` イベントから `is_premium` を射影保持 |
+| 表示名の反映 | `player-onboarded` イベントから `players.username` を更新（オンボーディング完了時） |
 | ユーザー設定 | 言語・音量・通知フラグの参照/更新 |
 
 account は **account スキーマの DB 行と Pub/Sub から取り込んだ状態を唯一の真実とし**、他サービスを直接呼び出さず、自らイベントを publish もしない。
@@ -220,7 +221,7 @@ battle サービスが試合終了時に呼ぶ唯一の経験値付与エンド�
 
 ## 9. Pub/Sub subscribe
 
-publish 機能は持たない。subscribe するイベントは以下の 2 種。
+publish 機能は持たない。subscribe するイベントは以下の 3 種。
 
 ### 9.1 `faction-selected`
 
@@ -243,9 +244,19 @@ subscription: `premium-updated-account-sub`
 
 詳細契約: [ARCHITECTURE.md §6.2](ARCHITECTURE.md)
 
-### 9.3 冪等性
+### 9.3 `player-onboarded`
 
-両 subscriber とも `processed_events (event_id, event_type)` による ON CONFLICT DO NOTHING ガードで at-least-once を吸収する ([ARCHITECTURE.md §6.3](ARCHITECTURE.md))。
+subscription: `player-onboarded-account-sub`
+
+- publisher: scenario のみ（オンボーディングシナリオ読了時に transactional outbox 経由で publish、[ADR-021](../../overload-party-common/docs/adr/021-onboarding-scenario.md) §5.1）
+- 副作用: `players.username` を payload の `display_name` で UPDATE
+- event payload には `initial_faction_id` も含まれるが、account 側は本 subscriber で faction を処理しない（scenario が同じオンボーディング完了に対し `faction-selected` も独立に publish する契約）。faction 反映は §9.1 が担当し、event_id 単位で互いに冪等
+
+詳細契約: [ARCHITECTURE.md §6.3](ARCHITECTURE.md)
+
+### 9.4 冪等性
+
+全 subscriber とも `processed_events (event_id, event_type)` による ON CONFLICT DO NOTHING ガードで at-least-once を吸収する ([ARCHITECTURE.md §6.4](ARCHITECTURE.md))。
 
 ---
 

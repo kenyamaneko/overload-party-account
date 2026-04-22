@@ -15,6 +15,7 @@ var allEnvKeys = []string{
 	"PUBSUB_PROJECT_ID",
 	"FACTION_SELECTED_SUBSCRIPTION",
 	"PREMIUM_UPDATED_SUBSCRIPTION",
+	"PLAYER_ONBOARDED_SUBSCRIPTION",
 	"FIRESTORE_PROJECT_ID",
 	"LOG_MODE",
 }
@@ -48,6 +49,7 @@ var validLocalEnv = map[string]string{
 	"PUBSUB_PROJECT_ID":             "account-local",
 	"FACTION_SELECTED_SUBSCRIPTION": "faction-selected-account-sub",
 	"PREMIUM_UPDATED_SUBSCRIPTION":  "premium-updated-account-sub",
+	"PLAYER_ONBOARDED_SUBSCRIPTION": "player-onboarded-account-sub",
 	"FIRESTORE_PROJECT_ID":          "account-local",
 	"LOG_MODE":                      "local",
 }
@@ -67,6 +69,7 @@ func TestFromEnv_Success(t *testing.T) {
 				assert.Equal(t, "account-local", cfg.PubsubProjectID)
 				assert.Equal(t, "faction-selected-account-sub", cfg.FactionSelectedSubscription)
 				assert.Equal(t, "premium-updated-account-sub", cfg.PremiumUpdatedSubscription)
+				assert.Equal(t, "player-onboarded-account-sub", cfg.PlayerOnboardedSubscription)
 				assert.Equal(t, "account-local", cfg.FirestoreProjectID)
 				assert.Equal(t, LogModeLocal, cfg.LogMode)
 			},
@@ -143,6 +146,11 @@ func TestFromEnv_Errors(t *testing.T) {
 			name:    "PREMIUM_UPDATED_SUBSCRIPTION が未設定ならエラー",
 			envs:    mergeEnv(validLocalEnv, map[string]string{"PREMIUM_UPDATED_SUBSCRIPTION": ""}),
 			wantErr: "PREMIUM_UPDATED_SUBSCRIPTION is required",
+		},
+		{
+			name:    "PLAYER_ONBOARDED_SUBSCRIPTION が未設定ならエラー",
+			envs:    mergeEnv(validLocalEnv, map[string]string{"PLAYER_ONBOARDED_SUBSCRIPTION": ""}),
+			wantErr: "PLAYER_ONBOARDED_SUBSCRIPTION is required",
 		},
 		{
 			name:    "FIRESTORE_PROJECT_ID が未設定ならエラー",
