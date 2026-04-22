@@ -7,3 +7,6 @@ vendor/
 .DS_Store
 go.work
 go.work.sum
+
+# Claude Code local settings (per-developer, must not be committed)
+.claude/
