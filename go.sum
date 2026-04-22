@@ -147,8 +147,8 @@ github.com/kenyamaneko/overload-party-battle/packages/game-logic-constants-go v0
 github.com/kenyamaneko/overload-party-battle/packages/game-logic-constants-go v0.1.0/go.mod h1:p4GKIRMJjAwIIBEKFXKOBBmZPrvuTrNfEV8dzUPcF9E=
 github.com/kenyamaneko/overload-party-common/packages/game-design-constants v0.1.0 h1:1+9zGE1CWh+XkiQ0FYnNBIOXHyS9N+OjzVVvWIJRaXo=
 github.com/kenyamaneko/overload-party-common/packages/game-design-constants v0.1.0/go.mod h1:4z5Ry1Y8LZQM4OKqLivo/OhVefKloLZP2vUDQ1Yo0UI=
-github.com/kenyamaneko/overload-party-scenario/packages/api-scenario v0.1.2 h1:bZhg1j6WScq89nYPi0x3ZfOlQasH26SajnUJHE/8Mww=
-github.com/kenyamaneko/overload-party-scenario/packages/api-scenario v0.1.2/go.mod h1:nV0AZBdeJnJfHCtqQ1OvHjO3TMCj+V7KifBD/tx+48Y=
+github.com/kenyamaneko/overload-party-scenario/packages/api-scenario v0.1.3 h1:NFOU3/lR6/1y8XpIDGN/VReAx8su0TWrzJhnPtB33wA=
+github.com/kenyamaneko/overload-party-scenario/packages/api-scenario v0.1.3/go.mod h1:AauRTtb5HBZSMgEDGKH1xej12CFznB22RQPxK+rhSNA=
 github.com/kenyamaneko/overload-party-shop/packages/api-shop v0.1.7 h1:7uI08Wk8V5r/yCYky783bEgUiwh6dMgqj6zQgnJbpks=
 github.com/kenyamaneko/overload-party-shop/packages/api-shop v0.1.7/go.mod h1:wzrluzr7Ec3j6O9AphMD9rSgKfAKy2GOFrk+yDmyybA=
 github.com/klauspost/compress v1.18.5 h1:/h1gH5Ce+VWNLSWqPzOVn6XBO+vJbCNGvjoaGBFW2IE=

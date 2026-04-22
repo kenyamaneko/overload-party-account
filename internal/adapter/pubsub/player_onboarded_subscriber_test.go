@@ -2,14 +2,13 @@ package pubsub
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"testing"
 	"time"
 
 	apiscenario "github.com/kenyamaneko/overload-party-scenario/packages/api-scenario"
+	"github.com/kenyamaneko/overload-party-scenario/packages/api-scenario/apiscenariofake"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 
 	"github.com/kenyamaneko/overload-party-account/internal/port"
 )
@@ -49,124 +48,157 @@ func (f *fakeOnboardingApplier) ApplyOnboardingResult(
 	return f.returnProcessed, f.returnSelected, nil
 }
 
-// TestPlayerOnboardedSubscriber_ProcessEvent は「Pub/Sub ペイロードを Unmarshal して
-// OnboardingApplier に委譲する」という subscriber 単体の仕様を固定する。
-// SelectableFactions / 冪等ガード / Tx 境界などの業務不変条件は service 層の責務なので
-// ここではテストせず、返却値ごとの ACK / NACK / ログ分岐のみを確認する。
-func TestPlayerOnboardedSubscriber_ProcessEvent(t *testing.T) {
+// TestPlayerOnboardedSubscriber_Consumes は「Pub/Sub ペイロードを Unmarshal して
+// OnboardingApplier に委譲する」subscriber 単体の仕様を Start() → stream.Consume
+// → processEvent の経路で固定する。scenario 側の契約検証は apiscenariofake 経由で
+// scenario の publish 型をそのまま使う (scenario が schema を変えたら account
+// のテストが compile / 実行で破綻するように設計し、乖離を CI で検知する)。
+//
+// SelectableFactions / 冪等ガード / Tx 境界などの業務不変条件は service 層の
+// 責務なのでここではテストせず、返却値ごとの ACK / NACK / applier 呼び出し有無
+// のみを確認する。
+func TestPlayerOnboardedSubscriber_Consumes(t *testing.T) {
 	validEvent := apiscenario.PlayerOnboardedEvent{
-		EventType:        apiscenario.EventTypePlayerOnboarded,
-		EventID:          "11111111-1111-1111-1111-111111111111",
-		Timestamp:        time.Now().UTC(),
 		PlayerID:         "p-1",
 		DisplayName:      "name-1",
 		InitialFactionID: "SHE",
 	}
-	validPayload, err := json.Marshal(validEvent)
-	require.NoError(t, err)
+
+	publishValid := func(ctx context.Context, pub *apiscenariofake.Publisher, _ *apiscenariofake.Broker) {
+		_ = apiscenariofake.PublishPlayerOnboarded(ctx, pub, validEvent)
+	}
 
 	tests := []struct {
 		name            string
-		payload         []byte
+		publish         func(ctx context.Context, pub *apiscenariofake.Publisher, broker *apiscenariofake.Broker)
 		returnProcessed bool
 		returnSelected  bool
 		returnErr       error
 		wantAck         bool
-		wantApplierCall bool
-		// assertApplier は wantApplierCall=true のケースで委譲引数を検証する。
-		assertApplier func(t *testing.T, a *fakeOnboardingApplier)
+		assertApplier   func(t *testing.T, a *fakeOnboardingApplier)
 	}{
 		{
 			name:            "正常系: service が processed=true/selected=true を返したら ACK",
-			payload:         validPayload,
+			publish:         publishValid,
 			returnProcessed: true,
 			returnSelected:  true,
 			wantAck:         true,
-			wantApplierCall: true,
 			assertApplier: func(t *testing.T, a *fakeOnboardingApplier) {
-				assert.Equal(t, validEvent.EventID, a.gotEvent)
-				assert.Equal(t, validEvent.EventType, a.gotType)
+				assert.True(t, a.called, "applier に委譲する")
+				assert.Equal(t, apiscenario.EventTypePlayerOnboarded, a.gotType)
 				assert.Equal(t, "p-1", a.gotPlayer)
 				assert.Equal(t, "name-1", a.gotName)
 				assert.Equal(t, "SHE", a.gotFac)
+				assert.NotEmpty(t, a.gotEvent, "EventID は fake の auto-fill で埋まる")
 			},
 		},
 		{
 			name:            "冪等スキップ: service が processed=false を返したら副作用なし ACK",
-			payload:         validPayload,
+			publish:         publishValid,
 			returnProcessed: false,
 			wantAck:         true,
-			wantApplierCall: true,
+			assertApplier: func(t *testing.T, a *fakeOnboardingApplier) {
+				assert.True(t, a.called, "冪等スキップも applier を経由して判定される")
+			},
 		},
 		{
 			name:            "selected_faction 既存: processed=true/selected=false は警告ログのみで ACK",
-			payload:         validPayload,
+			publish:         publishValid,
 			returnProcessed: true,
 			returnSelected:  false,
 			wantAck:         true,
-			wantApplierCall: true,
+			assertApplier: func(t *testing.T, a *fakeOnboardingApplier) {
+				assert.True(t, a.called)
+			},
 		},
 		{
-			name:            "不正 JSON: 握りつぶさず NACK (service 未呼び出し)",
-			payload:         []byte("broken"),
-			wantAck:         false,
-			wantApplierCall: false,
+			name: "不正 JSON: 握りつぶさず NACK (applier 未呼び出し)",
+			publish: func(_ context.Context, _ *apiscenariofake.Publisher, broker *apiscenariofake.Broker) {
+				broker.Publish(apiscenario.TopicPlayerOnboarded, []byte("broken"))
+			},
+			wantAck: false,
+			assertApplier: func(t *testing.T, a *fakeOnboardingApplier) {
+				assert.False(t, a.called, "JSON parse 失敗時は applier に到達しない")
+			},
 		},
 		{
-			name: "未知 event_type: 責務外として ACK (service 未呼び出し)",
-			payload: mustMarshal(t, apiscenario.PlayerOnboardedEvent{
-				EventType: "unknown",
-				EventID:   "22222222-2222-2222-2222-222222222222",
-				PlayerID:  "p-2",
-			}),
-			wantAck:         true,
-			wantApplierCall: false,
+			name: "未知 event_type: 責務外として ACK (applier 未呼び出し)",
+			publish: func(_ context.Context, _ *apiscenariofake.Publisher, broker *apiscenariofake.Broker) {
+				broker.Publish(apiscenario.TopicPlayerOnboarded, mustMarshal(t, apiscenario.PlayerOnboardedEvent{
+					EventType: "unknown",
+					EventID:   "22222222-2222-2222-2222-222222222222",
+					PlayerID:  "p-2",
+				}))
+			},
+			wantAck: true,
+			assertApplier: func(t *testing.T, a *fakeOnboardingApplier) {
+				assert.False(t, a.called, "event_type フィルタで applier に到達しない")
+			},
 		},
 		{
-			name: "initial_faction_id 欠落: ペイロード仕様違反で NACK (service 未呼び出し)",
-			payload: mustMarshal(t, apiscenario.PlayerOnboardedEvent{
-				EventType:   apiscenario.EventTypePlayerOnboarded,
-				EventID:     "33333333-3333-3333-3333-333333333333",
-				PlayerID:    "p-3",
-				DisplayName: "x",
-			}),
-			wantAck:         false,
-			wantApplierCall: false,
+			name: "initial_faction_id 欠落: ペイロード仕様違反で NACK (applier 未呼び出し)",
+			publish: func(_ context.Context, _ *apiscenariofake.Publisher, broker *apiscenariofake.Broker) {
+				broker.Publish(apiscenario.TopicPlayerOnboarded, mustMarshal(t, apiscenario.PlayerOnboardedEvent{
+					EventType:   apiscenario.EventTypePlayerOnboarded,
+					EventID:     "33333333-3333-3333-3333-333333333333",
+					PlayerID:    "p-3",
+					DisplayName: "x",
+				}))
+			},
+			wantAck: false,
+			assertApplier: func(t *testing.T, a *fakeOnboardingApplier) {
+				assert.False(t, a.called, "必須フィールド欠落は applier より手前で弾く")
+			},
 		},
 		{
-			name:            "service 汎用エラー: NACK でリトライ",
-			payload:         validPayload,
-			returnErr:       errors.New("db error"),
-			wantAck:         false,
-			wantApplierCall: true,
+			name:      "service 汎用エラー: NACK でリトライ",
+			publish:   publishValid,
+			returnErr: errors.New("db error"),
+			wantAck:   false,
+			assertApplier: func(t *testing.T, a *fakeOnboardingApplier) {
+				assert.True(t, a.called)
+			},
 		},
 		{
-			name:            "service が ErrNotFound: publisher バグとして明示 NACK (error ログ)",
-			payload:         validPayload,
-			returnErr:       port.ErrNotFound,
-			wantAck:         false,
-			wantApplierCall: true,
+			name:      "service が ErrNotFound: publisher バグとして明示 NACK (error ログ)",
+			publish:   publishValid,
+			returnErr: port.ErrNotFound,
+			wantAck:   false,
+			assertApplier: func(t *testing.T, a *fakeOnboardingApplier) {
+				assert.True(t, a.called)
+			},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			broker := apiscenariofake.NewBroker()
+			pub := apiscenariofake.NewPublisher(broker)
+			stream := newApiscenariofakeStream(apiscenariofake.NewSubscriber(broker), apiscenario.TopicPlayerOnboarded)
+
 			applier := &fakeOnboardingApplier{
 				returnProcessed: tt.returnProcessed,
 				returnSelected:  tt.returnSelected,
 				returnErr:       tt.returnErr,
 			}
-			s := &PlayerOnboardedSubscriber{applier: applier}
+			sub := NewPlayerOnboardedSubscriber(stream, applier)
 
-			// api-scenario 側に test fake が未整備のため、本 subscriber は
-			// processEvent 直呼びで検証する。将来 apiscenariofake が整備
-			// されたら apishopfakeStream と同様の Start() ループ越し検証に移行する。
-			err := s.processEvent(context.Background(), tt.payload)
-			assert.Equal(t, tt.wantAck, err == nil, "ack 判定 (nil=ack, err=%v)", err)
-			assert.Equal(t, tt.wantApplierCall, applier.called)
-			if tt.assertApplier != nil {
-				tt.assertApplier(t, applier)
-			}
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
+			started := make(chan struct{})
+			go func() {
+				close(started)
+				_ = sub.Start(ctx)
+			}()
+			<-started
+
+			tt.publish(ctx, pub, broker)
+
+			handlerErr := stream.ExpectHandled(t, time.Second)
+			assert.Equal(t, tt.wantAck, handlerErr == nil, "ack 判定 (nil=ack, err=%v)", handlerErr)
+
+			tt.assertApplier(t, applier)
 		})
 	}
 }
