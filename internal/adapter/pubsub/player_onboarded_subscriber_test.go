@@ -174,7 +174,7 @@ func TestPlayerOnboardedSubscriber_Consumes(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			broker := apiscenariofake.NewBroker()
 			pub := apiscenariofake.NewPublisher(broker)
-			stream := newApiscenariofakeStream(apiscenariofake.NewSubscriber(broker), apiscenario.TopicPlayerOnboarded)
+			stream := apiscenariofake.NewStream(apiscenariofake.NewSubscriber(broker), apiscenario.TopicPlayerOnboarded)
 
 			applier := &fakeOnboardingApplier{
 				returnProcessed: tt.returnProcessed,

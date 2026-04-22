@@ -8,7 +8,11 @@ import "context"
 //
 // 戻り値の意味論を「error か否か」に一本化することで、adapter は
 // handler の単一戻り値を見て Ack / Nack のいずれを呼ぶかを決められる。
-type MessageHandler func(ctx context.Context, data []byte) error
+//
+// type alias として定義することで、同形シグネチャを持つ fake 側の
+// Consume メソッド (apishopfake.Stream 等) が追加 adapter なしで
+// MessageStream を直接満たせる。
+type MessageHandler = func(ctx context.Context, data []byte) error
 
 // MessageStream は Pub/Sub subscription の抽象境界。account は GCP Pub/Sub
 // SDK の型に直接依存せず、本 interface を通してメッセージを受け取る

@@ -143,7 +143,7 @@ func TestPremiumUpdatedSubscriber_Consumes(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			broker := apishopfake.NewBroker()
 			pub := apishopfake.NewPublisher(broker)
-			stream := newApishopfakeStream(apishopfake.NewSubscriber(broker), apishop.TopicPremiumUpdated)
+			stream := apishopfake.NewStream(apishopfake.NewSubscriber(broker), apishop.TopicPremiumUpdated)
 
 			playerRepo := newFakePlayerRepo()
 			playerRepo.updatePremiumErr = tt.updateErr

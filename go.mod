@@ -12,8 +12,8 @@ require (
 	github.com/kenyamaneko/overload-party-account/packages/api-account v0.0.0
 	github.com/kenyamaneko/overload-party-battle/packages/game-logic-constants-go v0.1.0
 	github.com/kenyamaneko/overload-party-common/packages/game-design-constants v0.1.0
-	github.com/kenyamaneko/overload-party-scenario/packages/api-scenario v0.1.3
-	github.com/kenyamaneko/overload-party-shop/packages/api-shop v0.1.7
+	github.com/kenyamaneko/overload-party-scenario/packages/api-scenario v0.1.5
+	github.com/kenyamaneko/overload-party-shop/packages/api-shop v0.1.8
 	github.com/stretchr/testify v1.11.1
 	github.com/testcontainers/testcontainers-go v0.42.0
 	github.com/testcontainers/testcontainers-go/modules/postgres v0.42.0
