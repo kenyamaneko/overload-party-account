@@ -147,6 +147,12 @@ func newRealRepos() (*postgres.PlayerRepository, *postgres.FactionRepository, *p
 		postgres.NewTxManager(sharedPg.Pool)
 }
 
+// newProcessedEventRepo は実 PostgreSQL の processed_events リポジトリを返す。
+// FactionService.ApplyOnboardingResult の Tx 境界テスト等で使用する。
+func newProcessedEventRepo() *postgres.ProcessedEventRepository {
+	return postgres.NewProcessedEventRepository(sharedPg.Pool)
+}
+
 // 共通テストプレイヤー ID — postgres 層テストと重複するが、
 // 別パッケージなのでここで再定義する（shop と同じ運用）。
 const (

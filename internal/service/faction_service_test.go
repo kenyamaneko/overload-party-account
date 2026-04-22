@@ -16,7 +16,8 @@ func newFactionTestService(t *testing.T, playerID string) *FactionService {
 	seedPlayer(t, playerID, "uid-"+playerID, "tester", false)
 
 	playerRepo, factionRepo, _, tx := newRealRepos()
-	return NewFactionService(playerRepo, factionRepo, tx)
+	eventRepo := newProcessedEventRepo()
+	return NewFactionService(playerRepo, factionRepo, eventRepo, tx)
 }
 
 func TestFactionService_SelectInitialFaction_Success(t *testing.T) {
@@ -86,7 +87,7 @@ func TestFactionService_SelectInitialFaction_ShopPrecededSucceeds(t *testing.T) 
 			svc := newFactionTestService(t, testPlayerID1)
 			playerRepo, factionRepo, _, _ := newRealRepos()
 
-			require.NoError(t, factionRepo.AddPlayerFaction(ctx, testPlayerID1, tt.shopFaction, "shop_purchase"))
+			require.NoError(t, factionRepo.AddPlayerFaction(ctx, testPlayerID1, tt.shopFaction, FactionSourceShopPurchase))
 			require.NoError(t, svc.SelectInitialFaction(ctx, testPlayerID1, tt.initialChoice))
 
 			factions, err := factionRepo.GetPlayerFactions(ctx, testPlayerID1)
@@ -170,7 +171,8 @@ func TestFactionService_SelectInitialFaction_EmptyPlayerID_ReturnsError(t *testi
 	// 空 playerID は入力検証で弾かれるため、player をシードしなくても良い。
 	sharedPg.Truncate(t)
 	playerRepo, factionRepo, _, tx := newRealRepos()
-	svc := NewFactionService(playerRepo, factionRepo, tx)
+	eventRepo := newProcessedEventRepo()
+	svc := NewFactionService(playerRepo, factionRepo, eventRepo, tx)
 
 	err := svc.SelectInitialFaction(ctx, "", "SHE")
 	require.ErrorIs(t, err, ErrInvalidFaction)

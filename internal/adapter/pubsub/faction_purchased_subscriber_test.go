@@ -10,6 +10,8 @@ import (
 	apishop "github.com/kenyamaneko/overload-party-shop/packages/api-shop"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/kenyamaneko/overload-party-account/internal/service"
 )
 
 // TestFactionPurchasedSubscriber_ProcessEvent は「shop 購入起因の faction ロスター
@@ -44,7 +46,7 @@ func TestFactionPurchasedSubscriber_ProcessEvent(t *testing.T) {
 				require.Len(t, factionRepo.added, 1)
 				assert.Equal(t, "p-1", factionRepo.added[0].PlayerID)
 				assert.Equal(t, "SHE", factionRepo.added[0].Faction)
-				assert.Equal(t, "shop_purchase", factionRepo.added[0].Source)
+				assert.Equal(t, service.FactionSourceShopPurchase, factionRepo.added[0].Source)
 			},
 		},
 		{

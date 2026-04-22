@@ -16,6 +16,7 @@ import (
 	apishop "github.com/kenyamaneko/overload-party-shop/packages/api-shop"
 
 	"github.com/kenyamaneko/overload-party-account/internal/port"
+	"github.com/kenyamaneko/overload-party-account/internal/service"
 )
 
 // FactionPurchasedSubscriber は faction-purchased-account-sub からイベントを取得し、
@@ -96,8 +97,8 @@ func (s *FactionPurchasedSubscriber) processEvent(ctx context.Context, data []by
 			return nil // idempotent ack
 		}
 
-		// shop 購入起因のみを扱う契約なので player_factions.source は shop_purchase 固定。
-		if err := s.factionRepo.AddPlayerFaction(txCtx, ev.PlayerID, ev.Faction, "shop_purchase"); err != nil {
+		// shop 購入起因のみを扱う契約なので player_factions.source は FactionSourceShopPurchase 固定。
+		if err := s.factionRepo.AddPlayerFaction(txCtx, ev.PlayerID, ev.Faction, service.FactionSourceShopPurchase); err != nil {
 			return fmt.Errorf("add player_faction: %w", err)
 		}
 		return nil

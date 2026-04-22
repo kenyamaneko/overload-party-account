@@ -113,7 +113,7 @@ func run() error {
 
 	authSvc := service.NewAuthService(playerRepo, userSettingsRepo, txManager)
 	playerSvc := service.NewPlayerService(playerRepo, gameConfigRepo, factionRepo, txManager)
-	factionSvc := service.NewFactionService(playerRepo, factionRepo, txManager)
+	factionSvc := service.NewFactionService(playerRepo, factionRepo, eventRepo, txManager)
 	settingsSvc := service.NewUserSettingsService(userSettingsRepo)
 
 	authH := rest.NewAuthHandler(authSvc)
@@ -157,7 +157,7 @@ func run() error {
 
 	onboardedSub, err := pubsubadapter.NewPlayerOnboardedSubscriber(
 		ctx, cfg.PubsubProjectID, cfg.PlayerOnboardedSubscription,
-		playerRepo, factionRepo, txManager, eventRepo,
+		factionSvc,
 	)
 	if err != nil {
 		return fmt.Errorf("player-onboarded subscriber: %w", err)

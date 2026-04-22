@@ -10,11 +10,49 @@ import (
 	apiscenario "github.com/kenyamaneko/overload-party-scenario/packages/api-scenario"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/kenyamaneko/overload-party-account/internal/port"
 )
 
-// TestPlayerOnboardedSubscriber_ProcessEvent は「onboarding 完了イベント 1 本で
-// 表示名更新 + 初期ファクション ロスター追加 + selected_faction 確定を同一
-// トランザクションで行い、event_id で冪等化する」という仕様 (ADR-022) を固定する。
+// fakeOnboardingApplier は OnboardingApplier を満たす最小スタブ。
+// subscriber は「service 層にイベント内容を正しく委譲し、戻り値に応じて
+// ACK / NACK / 警告ログ分岐だけを行う」契約なので、service 内部の Tx / repo
+// 挙動はここで抽象化する (subscriber テストで repo fake を直接触らない)。
+type fakeOnboardingApplier struct {
+	// returnProcessed / returnSelected は Apply の戻り値を制御する。
+	returnProcessed bool
+	returnSelected  bool
+	// returnErr を設定すると Apply が常にこのエラーを返す。
+	returnErr error
+
+	called    bool
+	gotEvent  string
+	gotType   string
+	gotPlayer string
+	gotName   string
+	gotFac    string
+}
+
+func (f *fakeOnboardingApplier) ApplyOnboardingResult(
+	_ context.Context,
+	eventID, eventType, playerID, displayName, initialFactionID string,
+) (bool, bool, error) {
+	f.called = true
+	f.gotEvent = eventID
+	f.gotType = eventType
+	f.gotPlayer = playerID
+	f.gotName = displayName
+	f.gotFac = initialFactionID
+	if f.returnErr != nil {
+		return false, false, f.returnErr
+	}
+	return f.returnProcessed, f.returnSelected, nil
+}
+
+// TestPlayerOnboardedSubscriber_ProcessEvent は「Pub/Sub ペイロードを Unmarshal して
+// OnboardingApplier に委譲する」という subscriber 単体の仕様 (ADR-022) を固定する。
+// SelectableFactions / 冪等ガード / Tx 境界などの業務不変条件は service 層の責務なので
+// ここではテストせず、返却値ごとの ACK / NACK / ログ分岐のみを確認する。
 func TestPlayerOnboardedSubscriber_ProcessEvent(t *testing.T) {
 	validEvent := apiscenario.PlayerOnboardedEvent{
 		EventType:        apiscenario.EventTypePlayerOnboarded,
@@ -30,138 +68,101 @@ func TestPlayerOnboardedSubscriber_ProcessEvent(t *testing.T) {
 	tests := []struct {
 		name            string
 		payload         []byte
-		seedProcessed   map[string]string
-		seedSelected    bool
-		updateUsernameE error
-		addErr          error
-		trySetErr       error
-		insertErr       error
+		returnProcessed bool
+		returnSelected  bool
+		returnErr       error
 		wantAck         bool
-		assertFn        func(t *testing.T, player *fakePlayerRepo, faction *fakeFactionRepo)
+		wantApplierCall bool
+		// assertApplier は wantApplierCall=true のケースで委譲引数を検証する。
+		assertApplier func(t *testing.T, a *fakeOnboardingApplier)
 	}{
 		{
-			name:    "正常系: username/player_factions/selected_faction を全て反映して ACK",
-			payload: validPayload,
-			wantAck: true,
-			assertFn: func(t *testing.T, player *fakePlayerRepo, faction *fakeFactionRepo) {
-				assert.Equal(t, "name-1", player.usernames["p-1"])
-				require.Len(t, faction.added, 1)
-				assert.Equal(t, "initial_selection", faction.added[0].Source)
-				assert.Equal(t, "SHE", faction.added[0].Faction)
-				assert.Equal(t, "SHE", player.selectedFaction["p-1"])
+			name:            "正常系: service が processed=true/selected=true を返したら ACK",
+			payload:         validPayload,
+			returnProcessed: true,
+			returnSelected:  true,
+			wantAck:         true,
+			wantApplierCall: true,
+			assertApplier: func(t *testing.T, a *fakeOnboardingApplier) {
+				assert.Equal(t, validEvent.EventID, a.gotEvent)
+				assert.Equal(t, validEvent.EventType, a.gotType)
+				assert.Equal(t, "p-1", a.gotPlayer)
+				assert.Equal(t, "name-1", a.gotName)
+				assert.Equal(t, "SHE", a.gotFac)
 			},
 		},
 		{
-			name:          "冪等: 同一 event_id が processed_events にあれば副作用を起こさず ACK",
-			payload:       validPayload,
-			seedProcessed: map[string]string{validEvent.EventID: validEvent.EventType},
-			wantAck:       true,
-			assertFn: func(t *testing.T, player *fakePlayerRepo, faction *fakeFactionRepo) {
-				assert.Empty(t, player.usernames)
-				assert.Empty(t, faction.added)
-				assert.Empty(t, player.selectedFaction)
-			},
+			name:            "冪等スキップ: service が processed=false を返したら副作用なし ACK",
+			payload:         validPayload,
+			returnProcessed: false,
+			wantAck:         true,
+			wantApplierCall: true,
 		},
 		{
-			name:         "既に selected_faction が埋まっているケース: username/player_factions は通し、selected_faction 書き込みはスキップされる (set=false)",
-			payload:      validPayload,
-			seedSelected: true,
-			wantAck:      true,
-			assertFn: func(t *testing.T, player *fakePlayerRepo, faction *fakeFactionRepo) {
-				assert.Equal(t, "name-1", player.usernames["p-1"])
-				require.Len(t, faction.added, 1)
-				// selected_faction は書き換わらない。seedSelected=true により
-				// TrySetInitialFaction が set=false を返す経路に入る。
-				assert.NotContains(t, player.selectedFaction, "p-1")
-			},
+			name:            "selected_faction 既存: processed=true/selected=false は警告ログのみで ACK",
+			payload:         validPayload,
+			returnProcessed: true,
+			returnSelected:  false,
+			wantAck:         true,
+			wantApplierCall: true,
 		},
 		{
-			name:    "不正 JSON: 握りつぶさず NACK",
-			payload: []byte("broken"),
-			wantAck: false,
-			assertFn: func(t *testing.T, player *fakePlayerRepo, faction *fakeFactionRepo) {
-				assert.Empty(t, player.usernames)
-				assert.Empty(t, faction.added)
-			},
+			name:            "不正 JSON: 握りつぶさず NACK (service 未呼び出し)",
+			payload:         []byte("broken"),
+			wantAck:         false,
+			wantApplierCall: false,
 		},
 		{
-			name: "未知 event_type: 責務外として ACK",
+			name: "未知 event_type: 責務外として ACK (service 未呼び出し)",
 			payload: mustMarshal(t, apiscenario.PlayerOnboardedEvent{
 				EventType: "unknown",
 				EventID:   "22222222-2222-2222-2222-222222222222",
 				PlayerID:  "p-2",
 			}),
-			wantAck: true,
-			assertFn: func(t *testing.T, player *fakePlayerRepo, faction *fakeFactionRepo) {
-				assert.Empty(t, player.usernames)
-				assert.Empty(t, faction.added)
-			},
+			wantAck:         true,
+			wantApplierCall: false,
 		},
 		{
-			name: "initial_faction_id 欠落: ペイロード仕様違反で NACK",
+			name: "initial_faction_id 欠落: ペイロード仕様違反で NACK (service 未呼び出し)",
 			payload: mustMarshal(t, apiscenario.PlayerOnboardedEvent{
 				EventType:   apiscenario.EventTypePlayerOnboarded,
 				EventID:     "33333333-3333-3333-3333-333333333333",
 				PlayerID:    "p-3",
 				DisplayName: "x",
 			}),
-			wantAck: false,
-			assertFn: func(t *testing.T, player *fakePlayerRepo, faction *fakeFactionRepo) {
-				assert.Empty(t, player.usernames)
-				assert.Empty(t, faction.added)
-			},
-		},
-		{
-			name:            "UpdateUsername 失敗: NACK でリトライ",
-			payload:         validPayload,
-			updateUsernameE: errors.New("db error"),
 			wantAck:         false,
+			wantApplierCall: false,
 		},
 		{
-			name:    "AddPlayerFaction 失敗: NACK でリトライ",
-			payload: validPayload,
-			addErr:  errors.New("fk violation"),
-			wantAck: false,
+			name:            "service 汎用エラー: NACK でリトライ",
+			payload:         validPayload,
+			returnErr:       errors.New("db error"),
+			wantAck:         false,
+			wantApplierCall: true,
 		},
 		{
-			name:      "TrySetInitialFaction 失敗: NACK でリトライ",
-			payload:   validPayload,
-			trySetErr: errors.New("db error"),
-			wantAck:   false,
-		},
-		{
-			name:      "processed_events INSERT 失敗: NACK でリトライ",
-			payload:   validPayload,
-			insertErr: errors.New("db unavailable"),
-			wantAck:   false,
+			name:            "service が ErrNotFound: publisher バグとして明示 NACK (error ログ)",
+			payload:         validPayload,
+			returnErr:       port.ErrNotFound,
+			wantAck:         false,
+			wantApplierCall: true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			playerRepo := newFakePlayerRepo()
-			playerRepo.updateUsernameErr = tt.updateUsernameE
-			playerRepo.trySetFactionErr = tt.trySetErr
-			if tt.seedSelected {
-				playerRepo.selectedInitiallyFilled["p-1"] = true
+			applier := &fakeOnboardingApplier{
+				returnProcessed: tt.returnProcessed,
+				returnSelected:  tt.returnSelected,
+				returnErr:       tt.returnErr,
 			}
-			factionRepo := &fakeFactionRepo{addErr: tt.addErr}
-			eventRepo := newFakeProcessedEventRepo()
-			eventRepo.insertErr = tt.insertErr
-			for k, v := range tt.seedProcessed {
-				eventRepo.seen[k] = v
-			}
+			s := &PlayerOnboardedSubscriber{applier: applier}
 
-			s := &PlayerOnboardedSubscriber{
-				playerRepo:  playerRepo,
-				factionRepo: factionRepo,
-				txRunner:    fakeTxRunner{},
-				eventRepo:   eventRepo,
-			}
 			ack := s.processEvent(context.Background(), tt.payload)
 			assert.Equal(t, tt.wantAck, ack)
-			if tt.assertFn != nil {
-				tt.assertFn(t, playerRepo, factionRepo)
+			assert.Equal(t, tt.wantApplierCall, applier.called)
+			if tt.assertApplier != nil {
+				tt.assertApplier(t, applier)
 			}
 		})
 	}

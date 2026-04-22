@@ -125,7 +125,7 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
-// Local dev replace (ADR-022 で上流タグ (api-scenario v0.1.1 / api-shop v0.1.5) が
-// まだ push されていない期間の暫定。CI / タグ発行後に削除する。
+// Local dev replace (上流タグ発行前の暫定。go.mod の require バージョンは
+// タグ push を前提に記載しており、タグ発行後に本 replace を削除する)。
 replace github.com/kenyamaneko/overload-party-scenario/packages/api-scenario => ../overload-party-scenario/packages/api-scenario
 replace github.com/kenyamaneko/overload-party-shop/packages/api-shop => ../overload-party-shop/packages/api-shop

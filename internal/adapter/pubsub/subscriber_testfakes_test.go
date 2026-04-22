@@ -75,19 +75,15 @@ func (r *fakeFactionRepo) GetPlayerFactions(_ context.Context, playerID string) 
 	return out, nil
 }
 
-// fakePlayerRepo は player_onboarded / premium_updated subscriber が使う
-// UpdateUsername / UpdatePremium / TrySetInitialFaction だけを実装する。
-// 他のメソッドは呼ばれない前提でゼロ値 (not implemented) にしておく。
+// fakePlayerRepo は premium_updated subscriber 等、port.PlayerRepo を要求する
+// subscriber 用の最小実装。onboarded subscriber は service.FactionService を
+// 経由して repo に触れるため、fakePlayerRepo は参照されない。
+// 将来 premium_updated のテストを書く際に使えるよう骨格だけ残す。
 type fakePlayerRepo struct {
-	usernames          map[string]string
-	selectedFaction    map[string]string
-	premium            map[string]premiumState
-	updateUsernameErr  error
-	updatePremiumErr   error
-	trySetFactionErr   error
-	// selectedInitiallyFilled が true の playerID については TrySetInitialFaction
-	// が set=false を返し、「既に選択済み」経路を発火できる。
-	selectedInitiallyFilled map[string]bool
+	usernames         map[string]string
+	premium           map[string]premiumState
+	updateUsernameErr error
+	updatePremiumErr  error
 }
 
 type premiumState struct {
@@ -97,10 +93,8 @@ type premiumState struct {
 
 func newFakePlayerRepo() *fakePlayerRepo {
 	return &fakePlayerRepo{
-		usernames:               map[string]string{},
-		selectedFaction:         map[string]string{},
-		premium:                 map[string]premiumState{},
-		selectedInitiallyFilled: map[string]bool{},
+		usernames: map[string]string{},
+		premium:   map[string]premiumState{},
 	}
 }
 
@@ -136,16 +130,8 @@ func (r *fakePlayerRepo) UpdatePremium(_ context.Context, playerID string, isPre
 func (r *fakePlayerRepo) UpdateFaction(_ context.Context, _, _ string) error {
 	panic("not implemented in test")
 }
-func (r *fakePlayerRepo) TrySetInitialFaction(_ context.Context, playerID, faction string) (bool, error) {
-	if r.trySetFactionErr != nil {
-		return false, r.trySetFactionErr
-	}
-	if r.selectedInitiallyFilled[playerID] {
-		return false, nil
-	}
-	r.selectedFaction[playerID] = faction
-	r.selectedInitiallyFilled[playerID] = true
-	return true, nil
+func (r *fakePlayerRepo) TrySetInitialFaction(_ context.Context, _, _ string) (bool, error) {
+	panic("not implemented in test")
 }
 func (r *fakePlayerRepo) GetProgression(_ context.Context, _ string) (*apiaccount.PlayerProgression, error) {
 	panic("not implemented in test")
