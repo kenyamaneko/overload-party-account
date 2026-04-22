@@ -13,7 +13,7 @@ var allEnvKeys = []string{
 	"PORT",
 	"DATABASE_URL",
 	"PUBSUB_PROJECT_ID",
-	"FACTION_SELECTED_SUBSCRIPTION",
+	"FACTION_PURCHASED_SUBSCRIPTION",
 	"PREMIUM_UPDATED_SUBSCRIPTION",
 	"PLAYER_ONBOARDED_SUBSCRIPTION",
 	"FIRESTORE_PROJECT_ID",
@@ -44,14 +44,14 @@ func mergeEnv(maps ...map[string]string) map[string]string {
 // CLAUDE.md「デフォルト値へのフォールバックを行わない」方針により、全必須 env を
 // 明示的に供給する。各ケースはこれを baseline に override を重ねる。
 var validLocalEnv = map[string]string{
-	"PORT":                          "9005",
-	"DATABASE_URL":                  "postgres://account:account@localhost:5432/account?sslmode=disable",
-	"PUBSUB_PROJECT_ID":             "account-local",
-	"FACTION_SELECTED_SUBSCRIPTION": "faction-selected-account-sub",
-	"PREMIUM_UPDATED_SUBSCRIPTION":  "premium-updated-account-sub",
-	"PLAYER_ONBOARDED_SUBSCRIPTION": "player-onboarded-account-sub",
-	"FIRESTORE_PROJECT_ID":          "account-local",
-	"LOG_MODE":                      "local",
+	"PORT":                           "9005",
+	"DATABASE_URL":                   "postgres://account:account@localhost:5432/account?sslmode=disable",
+	"PUBSUB_PROJECT_ID":              "account-local",
+	"FACTION_PURCHASED_SUBSCRIPTION": "faction-purchased-account-sub",
+	"PREMIUM_UPDATED_SUBSCRIPTION":   "premium-updated-account-sub",
+	"PLAYER_ONBOARDED_SUBSCRIPTION":  "player-onboarded-account-sub",
+	"FIRESTORE_PROJECT_ID":           "account-local",
+	"LOG_MODE":                       "local",
 }
 
 func TestFromEnv_Success(t *testing.T) {
@@ -67,7 +67,7 @@ func TestFromEnv_Success(t *testing.T) {
 				assert.Equal(t, 9005, cfg.Port)
 				assert.Equal(t, "postgres://account:account@localhost:5432/account?sslmode=disable", cfg.DatabaseURL)
 				assert.Equal(t, "account-local", cfg.PubsubProjectID)
-				assert.Equal(t, "faction-selected-account-sub", cfg.FactionSelectedSubscription)
+				assert.Equal(t, "faction-purchased-account-sub", cfg.FactionPurchasedSubscription)
 				assert.Equal(t, "premium-updated-account-sub", cfg.PremiumUpdatedSubscription)
 				assert.Equal(t, "player-onboarded-account-sub", cfg.PlayerOnboardedSubscription)
 				assert.Equal(t, "account-local", cfg.FirestoreProjectID)
@@ -138,9 +138,9 @@ func TestFromEnv_Errors(t *testing.T) {
 			wantErr: "PUBSUB_PROJECT_ID is required",
 		},
 		{
-			name:    "FACTION_SELECTED_SUBSCRIPTION が未設定ならエラー",
-			envs:    mergeEnv(validLocalEnv, map[string]string{"FACTION_SELECTED_SUBSCRIPTION": ""}),
-			wantErr: "FACTION_SELECTED_SUBSCRIPTION is required",
+			name:    "FACTION_PURCHASED_SUBSCRIPTION が未設定ならエラー",
+			envs:    mergeEnv(validLocalEnv, map[string]string{"FACTION_PURCHASED_SUBSCRIPTION": ""}),
+			wantErr: "FACTION_PURCHASED_SUBSCRIPTION is required",
 		},
 		{
 			name:    "PREMIUM_UPDATED_SUBSCRIPTION が未設定ならエラー",

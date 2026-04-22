@@ -28,10 +28,10 @@ type Config struct {
 	// DatabaseURL は PostgreSQL 接続文字列（pgx が解釈可能な URL 形式 or libpq 形式）。
 	DatabaseURL string
 
-	// PubsubProjectID は account が subscribe する Pub/Sub topic を保有する GCP project ID。
+	// PubsubProjectID は account が subscribe する Pub/Sub topic を保有する Google Cloud project ID。
 	PubsubProjectID string
-	// FactionSelectedSubscription は faction-selected の pull subscription 名。
-	FactionSelectedSubscription string
+	// FactionPurchasedSubscription は faction-purchased の pull subscription 名。
+	FactionPurchasedSubscription string
 	// PremiumUpdatedSubscription は premium-updated の pull subscription 名。
 	PremiumUpdatedSubscription string
 	// PlayerOnboardedSubscription は player-onboarded の pull subscription 名。
@@ -49,13 +49,13 @@ type Config struct {
 // 未設定・未定義値は起動時に fail する（デフォルトへのフォールバック禁止）。
 func FromEnv() (*Config, error) {
 	cfg := &Config{
-		DatabaseURL:                 os.Getenv("DATABASE_URL"),
-		PubsubProjectID:             os.Getenv("PUBSUB_PROJECT_ID"),
-		FactionSelectedSubscription: os.Getenv("FACTION_SELECTED_SUBSCRIPTION"),
-		PremiumUpdatedSubscription:  os.Getenv("PREMIUM_UPDATED_SUBSCRIPTION"),
-		PlayerOnboardedSubscription: os.Getenv("PLAYER_ONBOARDED_SUBSCRIPTION"),
-		FirestoreProjectID:          os.Getenv("FIRESTORE_PROJECT_ID"),
-		LogMode:                     LogMode(os.Getenv("LOG_MODE")),
+		DatabaseURL:                  os.Getenv("DATABASE_URL"),
+		PubsubProjectID:              os.Getenv("PUBSUB_PROJECT_ID"),
+		FactionPurchasedSubscription: os.Getenv("FACTION_PURCHASED_SUBSCRIPTION"),
+		PremiumUpdatedSubscription:   os.Getenv("PREMIUM_UPDATED_SUBSCRIPTION"),
+		PlayerOnboardedSubscription:  os.Getenv("PLAYER_ONBOARDED_SUBSCRIPTION"),
+		FirestoreProjectID:           os.Getenv("FIRESTORE_PROJECT_ID"),
+		LogMode:                      LogMode(os.Getenv("LOG_MODE")),
 	}
 
 	rawPort := os.Getenv("PORT")
@@ -75,10 +75,10 @@ func FromEnv() (*Config, error) {
 		return nil, fmt.Errorf("config: DATABASE_URL is required")
 	}
 	if cfg.PubsubProjectID == "" {
-		return nil, fmt.Errorf("config: PUBSUB_PROJECT_ID is required (account subscribes to faction-selected / premium-updated)")
+		return nil, fmt.Errorf("config: PUBSUB_PROJECT_ID is required (account subscribes to faction-purchased / premium-updated / player-onboarded)")
 	}
-	if cfg.FactionSelectedSubscription == "" {
-		return nil, fmt.Errorf("config: FACTION_SELECTED_SUBSCRIPTION is required")
+	if cfg.FactionPurchasedSubscription == "" {
+		return nil, fmt.Errorf("config: FACTION_PURCHASED_SUBSCRIPTION is required")
 	}
 	if cfg.PremiumUpdatedSubscription == "" {
 		return nil, fmt.Errorf("config: PREMIUM_UPDATED_SUBSCRIPTION is required")

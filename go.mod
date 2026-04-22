@@ -12,8 +12,8 @@ require (
 	github.com/kenyamaneko/overload-party-account/packages/api-account v0.0.0
 	github.com/kenyamaneko/overload-party-battle/packages/game-logic-constants-go v0.1.0
 	github.com/kenyamaneko/overload-party-common/packages/game-design-constants v0.1.0
-	github.com/kenyamaneko/overload-party-common/packages/pubsub-events v0.1.0
-	github.com/kenyamaneko/overload-party-scenario/packages/api-scenario v0.1.0
+	github.com/kenyamaneko/overload-party-scenario/packages/api-scenario v0.1.1
+	github.com/kenyamaneko/overload-party-shop/packages/api-shop v0.1.5
 	github.com/stretchr/testify v1.11.1
 	github.com/testcontainers/testcontainers-go v0.42.0
 	github.com/testcontainers/testcontainers-go/modules/postgres v0.42.0
@@ -124,3 +124,8 @@ require (
 	google.golang.org/protobuf v1.36.10 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
+
+// Local dev replace (ADR-022 で上流タグ (api-scenario v0.1.1 / api-shop v0.1.5) が
+// まだ push されていない期間の暫定。CI / タグ発行後に削除する。
+replace github.com/kenyamaneko/overload-party-scenario/packages/api-scenario => ../overload-party-scenario/packages/api-scenario
+replace github.com/kenyamaneko/overload-party-shop/packages/api-shop => ../overload-party-shop/packages/api-shop

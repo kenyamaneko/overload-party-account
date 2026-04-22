@@ -9,7 +9,7 @@ import (
 
 	"cloud.google.com/go/pubsub/v2"
 
-	pubsubevents "github.com/kenyamaneko/overload-party-common/packages/pubsub-events"
+	apishop "github.com/kenyamaneko/overload-party-shop/packages/api-shop"
 
 	"github.com/kenyamaneko/overload-party-account/internal/port"
 )
@@ -58,16 +58,25 @@ func (s *PremiumUpdatedSubscriber) Start(ctx context.Context) error {
 func (s *PremiumUpdatedSubscriber) Close() error { return s.client.Close() }
 
 func (s *PremiumUpdatedSubscriber) handle(ctx context.Context, msg *pubsub.Message) {
-	var ev pubsubevents.PremiumUpdatedEvent
-	if err := json.Unmarshal(msg.Data, &ev); err != nil {
-		slog.Error("premium-updated subscriber: bad payload (nack)", "error", err)
-		msg.Nack()
-		return
-	}
-	if ev.EventType != pubsubevents.EventTypePremiumUpdated {
-		slog.Warn("premium-updated subscriber: unknown event_type, acking", "event_type", ev.EventType)
+	if ack := s.processEvent(ctx, msg.Data); ack {
 		msg.Ack()
-		return
+	} else {
+		msg.Nack()
+	}
+}
+
+// processEvent は Pub/Sub ペイロードを処理し、ack すべきか (true) / nack すべきか
+// (false) を返す。*pubsub.Message への依存を handle に閉じ込めるため、ビジネス
+// ロジックはこちらに集約する。
+func (s *PremiumUpdatedSubscriber) processEvent(ctx context.Context, data []byte) (ack bool) {
+	var ev apishop.PremiumUpdatedEvent
+	if err := json.Unmarshal(data, &ev); err != nil {
+		slog.Error("premium-updated subscriber: bad payload (nack)", "error", err)
+		return false
+	}
+	if ev.EventType != apishop.EventTypePremiumUpdated {
+		slog.Warn("premium-updated subscriber: unknown event_type, acking", "event_type", ev.EventType)
+		return true
 	}
 
 	if err := s.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
@@ -85,8 +94,7 @@ func (s *PremiumUpdatedSubscriber) handle(ctx context.Context, msg *pubsub.Messa
 	}); err != nil {
 		slog.Error("premium-updated subscriber: handler failed",
 			"event_id", ev.EventID, "player_id", ev.PlayerID, "error", err)
-		msg.Nack()
-		return
+		return false
 	}
-	msg.Ack()
+	return true
 }

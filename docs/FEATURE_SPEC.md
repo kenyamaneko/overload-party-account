@@ -18,7 +18,7 @@ account は以下の機能ドメインを所有する。
 | プレイヤー登録・ログイン | Firebase UID と player_id の紐付け。初期行の作成（players / player_daily_battle / user_settings） |
 | プレイヤー情報の参照・更新 | プレイヤー名・選択ファクション・装備アイコンの参照/更新。レベル進捗の算出 |
 | デイリーバトル制限 | JST 05:00 境界の制限回数管理。increment は冪等 |
-| ファクション所有 | 初期選択時の `player_factions` 挿入。`faction-selected` イベントからの同期 |
+| ファクション所有 | onboarding 完了時の初期 faction 登録（`player-onboarded` イベント）と shop 購入時の追加（`faction-purchased` イベント）を `player_factions` に射影 |
 | 経験値・レベル | `AwardGameExp` による両プレイヤー同時付与。係数変更時もレベルは下がらない |
 | プレミアムステータス | `premium-updated` イベントから `is_premium` を射影保持 |
 | 表示名の反映 | `player-onboarded` イベントから `players.username` を更新（オンボーディング完了時） |
@@ -138,7 +138,7 @@ battle サービスが試合開始時に呼ぶ。
 
 ### 5.2 ファクション付与 (`POST /internal/v1/players/:playerId/factions`)
 
-運用・バックオフィス用途の直接付与。`{faction, source}` を受け取り `AddPlayerFaction` を呼ぶ。通常運用では使わず、`faction-selected` subscriber が主経路。
+運用・バックオフィス用途の直接付与。`{faction, source}` を受け取り `AddPlayerFaction` を呼ぶ。通常運用では使わず、onboarding は `player-onboarded` subscriber、shop 購入は `faction-purchased` subscriber が主経路。
 
 ### 5.3 アクティブ選択の切り替え (`PUT /internal/v1/players/:playerId/faction`)
 
@@ -223,14 +223,15 @@ battle サービスが試合終了時に呼ぶ唯一の経験値付与エンド�
 
 publish 機能は持たない。subscribe するイベントは以下の 3 種。
 
-### 9.1 `faction-selected`
+### 9.1 `faction-purchased`
 
-subscription: `faction-selected-account-sub`
+subscription: `faction-purchased-account-sub`
 
-| publisher | source | account の副作用 |
-|---|---|---|
-| scenario | `scenario_initial` | `player_factions` INSERT + `players.selected_faction` UPDATE |
-| shop | `shop_purchase` | `player_factions` INSERT のみ |
+| publisher | account の副作用 |
+|---|---|
+| shop | `player_factions` INSERT のみ（`source = shop_purchase` 固定、`selected_faction` は変更しない） |
+
+ADR-022 により、かつて `faction-selected` topic が担っていた 2 業務事実（scenario 初期選択 / shop 購入）は業務事実単位で分解された。scenario 初期選択は §9.3 `player-onboarded` に統合され、本 topic は shop 購入のみを扱う。
 
 詳細契約: [ARCHITECTURE.md §6.1](ARCHITECTURE.md)
 
@@ -248,9 +249,13 @@ subscription: `premium-updated-account-sub`
 
 subscription: `player-onboarded-account-sub`
 
-- publisher: scenario のみ（オンボーディングシナリオ読了時に transactional outbox 経由で publish、[ADR-021](../../overload-party-common/docs/adr/021-onboarding-scenario.md) §5.1）
-- 副作用: `players.username` を payload の `display_name` で UPDATE
-- event payload には `initial_faction_id` も含まれるが、account 側は本 subscriber で faction を処理しない（scenario が同じオンボーディング完了に対し `faction-selected` も独立に publish する契約）。faction 反映は §9.1 が担当し、event_id 単位で互いに冪等
+- publisher: scenario のみ（オンボーディングシナリオ読了時に transactional outbox 経由で publish、[ADR-021](../../overload-party-common/docs/adr/021-onboarding-scenario.md) §5.1、ADR-022 で 1 イベント設計に縮退）
+- 副作用:
+  - `players.username` を payload の `display_name` で UPDATE
+  - `player_factions` に `initial_faction_id` を `source = initial_selection` で INSERT（冪等）
+  - `players.selected_faction` が NULL の場合のみ `initial_faction_id` を UPDATE
+
+ADR-022 により、かつて `faction-selected(source=scenario_initial)` が担っていた初期 faction ロスター追加 + `selected_faction` 確定の副作用は本 subscriber に統合されている。
 
 詳細契約: [ARCHITECTURE.md §6.3](ARCHITECTURE.md)
 

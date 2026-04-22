@@ -12,8 +12,9 @@ Gateway (唯一の入口)
        ├─ PostgreSQL (account スキーマ)
        ├─ Cloud Firestore (game_config 読み取り専用)
        └─ Pub/Sub subscriber
-            ├─ faction-selected-account-sub  ← scenario / shop が publish
-            └─ premium-updated-account-sub   ← shop が publish
+            ├─ faction-purchased-account-sub ← shop が publish
+            ├─ premium-updated-account-sub   ← shop が publish
+            └─ player-onboarded-account-sub  ← scenario が publish
 
 Battle → Account (service-to-service)
   ├─ POST /internal/v1/players/:playerId/battle-limit/increment
@@ -50,8 +51,9 @@ ConfigMap:
 |---|---|
 | `PORT` | HTTP リッスンポート（1-65535） |
 | `PUBSUB_PROJECT_ID` | Pub/Sub の Google Cloud プロジェクト ID |
-| `FACTION_SELECTED_SUBSCRIPTION` | faction-selected の pull subscription 名 |
+| `FACTION_PURCHASED_SUBSCRIPTION` | faction-purchased の pull subscription 名 |
 | `PREMIUM_UPDATED_SUBSCRIPTION` | premium-updated の pull subscription 名 |
+| `PLAYER_ONBOARDED_SUBSCRIPTION` | player-onboarded の pull subscription 名 |
 | `FIRESTORE_PROJECT_ID` | `game_config` を読む Firestore プロジェクト ID |
 | `LOG_MODE` | `production`（Cloud Logging 互換 JSON）/ `local`（TextHandler）|
 

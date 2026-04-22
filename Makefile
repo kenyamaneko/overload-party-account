@@ -35,8 +35,9 @@ run: db-up ## Run account server locally against compose Postgres (local env 込
 	DATABASE_URL="postgres://account:account@localhost:5432/account?sslmode=disable" \
 	PUBSUB_PROJECT_ID=account-local \
 	FIRESTORE_PROJECT_ID=account-local \
-	FACTION_SELECTED_SUBSCRIPTION=faction-selected-account-sub \
+	FACTION_PURCHASED_SUBSCRIPTION=faction-purchased-account-sub \
 	PREMIUM_UPDATED_SUBSCRIPTION=premium-updated-account-sub \
+	PLAYER_ONBOARDED_SUBSCRIPTION=player-onboarded-account-sub \
 	LOG_MODE=local \
 	PUBSUB_EMULATOR_HOST=localhost:8085 \
 	FIRESTORE_EMULATOR_HOST=localhost:9041 \

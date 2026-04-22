@@ -83,7 +83,7 @@ COMMIT
 - ファクション選択は UX 上「チュートリアル開始直後の選択画面」という非同期な操作で、登録と同時に決められない
 - カード配布は card サービスの責務で、account が card の内部状態を知るべきでない
 
-現在のトリガーポイントは **scenario サービスの「初期ファクション選択完了」イベント** で、account は `faction-selected` イベントを受けて `player_factions` に追加するだけ（§6.1）。`auth_service.Register` にカード付与・ファクション付与を再導入してはいけない（CLAUDE.md 禁止事項）。
+現在のトリガーポイントは **scenario サービスの「オンボーディング完了」イベント** で、account は `player-onboarded` イベントを受けて `player_factions` に追加するだけ（§6.3）。`auth_service.Register` にカード付与・ファクション付与を再導入してはいけない（CLAUDE.md 禁止事項）。
 
 ### 3.2 重複登録は 409 で吸収
 
@@ -141,29 +141,29 @@ TOCTOU（`GetDailyBattle` → `UpdateDailyBattleCount` の間に別リクエス�
 
 account は 3 つの Pub/Sub subscription を常駐 worker として pull する。いずれも Exactly-Once Delivery を前提にしつつ、**アプリ層で `processed_events` による冪等ガード** を併用する二層防御。
 
-### 6.1 faction-selected subscriber
+### 6.1 faction-purchased subscriber
 
-subscription: `faction-selected-account-sub` (`FACTION_SELECTED_SUBSCRIPTION` で上書き可)
+subscription: `faction-purchased-account-sub` (`FACTION_PURCHASED_SUBSCRIPTION` で上書き可)
 
-発行元と `source`:
+発行元: shop のみ。shop 購入時のみ発火する単一業務事実イベント（ADR-022）。
 
-| publisher | source | 副作用 |
-|---|---|---|
-| scenario | `scenario_initial` | `player_factions` INSERT + `players.selected_faction` UPDATE |
-| shop | `shop_purchase` | `player_factions` INSERT のみ（selected_faction は変更しない） |
+| publisher | 副作用 |
+|---|---|
+| shop | `player_factions` INSERT のみ（`source = shop_purchase` 固定、selected_faction は変更しない） |
 
-処理（[internal/adapter/pubsub/faction_selected_subscriber.go](../internal/adapter/pubsub/faction_selected_subscriber.go)）:
+処理（[internal/adapter/pubsub/faction_purchased_subscriber.go](../internal/adapter/pubsub/faction_purchased_subscriber.go)）:
 
 ```
 BEGIN TX
   INSERT processed_events (event_id, event_type)  ← ON CONFLICT DO NOTHING
   IF 既存行だった: COMMIT; ACK; return
-  INSERT player_factions (player_id, faction, source)
-  IF source == scenario_initial: UPDATE players SET selected_faction = ...
+  INSERT player_factions (player_id, faction, source=shop_purchase)
 COMMIT → ACK
 ```
 
-`source == shop_purchase` で `selected_faction` を更新しないのは、ショップ購入は「ロスター追加」であり、プレイヤーが能動的に切り替える前に勝手にアクティブ選択を上書きしてはいけないため。アクティブ切り替えは `PUT /players/:id/faction` の独立したエンドポイント。
+ショップ購入で `selected_faction` を更新しないのは、購入は「ロスター追加」であり、プレイヤーが能動的に切り替える前に勝手にアクティブ選択を上書きしてはいけないため。アクティブ切り替えは `PUT /players/:id/faction` の独立したエンドポイント。
+
+scenario 起因の初期 faction 確定（かつて `faction-selected(source=scenario_initial)` が担っていた）は `player-onboarded` subscriber に統合された（§6.3）。
 
 ### 6.2 premium-updated subscriber
 
@@ -184,7 +184,7 @@ COMMIT → ACK
 
 subscription: `player-onboarded-account-sub` (`PLAYER_ONBOARDED_SUBSCRIPTION` で上書き可)
 
-発行元: scenario のみ。scenario がオンボーディングシナリオ読了時に transactional outbox 経由で publish する（[ADR-021](../../overload-party-common/docs/adr/021-onboarding-scenario.md) §5.1）。
+発行元: scenario のみ。scenario がオンボーディングシナリオ読了時に transactional outbox 経由で publish する（[ADR-021](../../overload-party-common/docs/adr/021-onboarding-scenario.md) §5.1、[ADR-022](../../overload-party-common/docs/adr/022-faction-selected-decomposition.md) で 1 イベント設計に縮退）。
 
 処理（[internal/adapter/pubsub/player_onboarded_subscriber.go](../internal/adapter/pubsub/player_onboarded_subscriber.go)）:
 
@@ -193,10 +193,12 @@ BEGIN TX
   INSERT processed_events (event_id, event_type)  ← ON CONFLICT DO NOTHING
   IF 既存行だった: COMMIT; ACK; return
   UPDATE players SET username = $ ← event.display_name を account の「表示名」カラムに書く
+  INSERT player_factions (player_id, faction=initial_faction_id, source=initial_selection)
+  IF players.selected_faction IS NULL: UPDATE players SET selected_faction = initial_faction_id
 COMMIT → ACK
 ```
 
-ADR-021 §5.1 の event payload は `initial_faction_id` も含むが、account 側でこの subscriber は faction を処理しない。scenario は同じオンボーディング完了に対して `faction-selected`（source=`scenario_initial`）も独立に publish する契約であり、faction の反映は §6.1 の faction-selected subscriber が担当する。両 subscriber は互いを知らず、それぞれの `event_id` を `processed_events` に記録して冪等性を担保する。
+ADR-022 により、初期 faction のロスター追加 + `selected_faction` 確定の副作用はこの subscriber に統合された（かつて `faction-selected(source=scenario_initial)` が担っていた）。2 イベント待ち合わせの冪等配線は廃止され、`PlayerOnboardedEvent` 1 本の `event_id` で identity + 初期 faction を同一トランザクションで反映する。
 
 event の `display_name` は account の `players.username` カラム（コメント「表示名」）に書く。別カラム `display_name` を新設しない理由は、同一セマンティクスの列を 2 つ持たないため（SSoT 一本化）。scenario 側 payload 名 (`display_name`) と account 側カラム名 (`username`) のマッピングは subscriber handler 内に閉じる。
 
@@ -284,15 +286,15 @@ DB エラー・Pub/Sub デシリアライズ失敗・Firestore 読み取り失�
 
 - `DATABASE_URL` は Secret Manager 由来。k8s マニフェストにインラインしない
 - `PUBSUB_PROJECT_ID` / `FIRESTORE_PROJECT_ID` は ConfigMap 経由で環境ごとに切り替え
-- `FACTION_SELECTED_SUBSCRIPTION` / `PREMIUM_UPDATED_SUBSCRIPTION` / `PLAYER_ONBOARDED_SUBSCRIPTION` はデフォルトで本番名と一致するため通常は未設定でよい。環境分離検証時のみ上書き
+- `FACTION_PURCHASED_SUBSCRIPTION` / `PREMIUM_UPDATED_SUBSCRIPTION` / `PLAYER_ONBOARDED_SUBSCRIPTION` はデフォルトで本番名と一致するため通常は未設定でよい。環境分離検証時のみ上書き
 
 ### 9.2 Pub/Sub トピックと subscriber
 
 | トピック | 発行元 | account の subscription | account 側の副作用 |
 |---|---|---|---|
-| `faction-selected` | scenario / shop | `faction-selected-account-sub` | `player_factions` INSERT / `selected_faction` UPDATE (§6.1) |
+| `faction-purchased` | shop | `faction-purchased-account-sub` | `player_factions` INSERT（`source = shop_purchase`、§6.1） |
 | `premium-updated` | shop | `premium-updated-account-sub` | `players.is_premium` / `premium_expires_at` UPDATE (§6.2) |
-| `player-onboarded` | scenario | `player-onboarded-account-sub` | `players.username` UPDATE（オンボーディングで入力された表示名を反映、§6.3） |
+| `player-onboarded` | scenario | `player-onboarded-account-sub` | `players.username` UPDATE + `player_factions` INSERT（`source = initial_selection`）+ `selected_faction` UPDATE（NULL 時のみ）、§6.3 |
 
 account 自身はトピックを publish しない。
 

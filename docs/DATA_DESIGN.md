@@ -38,7 +38,7 @@ account スキーマはプレイヤーの基本情報・デイリーバトル回
 
 **設計判断:**
 - `is_premium` / `premium_expires_at` を players に射影で持つ理由は、ほぼ全ての REST レスポンスで課金ステータスを返す必要があり、毎回 shop を呼ぶと結合が強くなりすぎるため。shop が authoritative で、`premium-updated` Pub/Sub で最終的整合させる
-- `selected_faction` は「現在アクティブなファクション」。初回選択時に `faction-selected(source=scenario_initial)` 受信で初期値が入り、以降は `PUT /players/:id/faction` でプレイヤーが切り替える
+- `selected_faction` は「現在アクティブなファクション」。オンボーディング完了時に `player-onboarded` イベント受信で初期値が入り（ADR-022 により `faction-selected` 経由ではなく `player-onboarded` に統合済み）、以降は `PUT /players/:id/faction` でプレイヤーが切り替える
 - `username` は「表示名」。Register 時の値を、オンボーディング完了イベント (`player-onboarded`、scenario が publish) で上書きする運用。account 側で `display_name` 列を別途設けない（同一セマンティクスの列を複数持つと SSoT が分散するため）
 - `equipped_icon_no` は shop 側の `cosmetic_items(item_type='icon', item_no=N)` を参照するが、cross-schema FK は張らない（アプリ層整合性）
 
@@ -81,7 +81,7 @@ account スキーマはプレイヤーの基本情報・デイリーバトル回
 
 **設計判断:**
 - `players.selected_faction` は「今アクティブなファクション」、`player_factions` は「所持している全ファクション」。両者は責務が違うため分離している
-- 書き込み経路は 2 つ: `faction-selected` subscriber（scenario / shop が publish）と初期選択の REST (`POST /players/:id/factions/select`、ただし実体は scenario に移行済み）
+- 書き込み経路は 2 つ: `player-onboarded` subscriber（scenario が publish、initial_selection）と `faction-purchased` subscriber（shop が publish、shop_purchase）。運用 REST (`POST /players/:id/factions`) は直接付与用のバックアップ経路
 - 複合 PK `(player_id, faction)` が冪等性のキー。`INSERT ... ON CONFLICT DO NOTHING` で重複適用を排除する
 - `factions` リファレンステーブルは存在しない。ファクションマスターの SSoT は `common/data/factions.yaml` から code-generate された定数で、DB 側では CHECK 制約で enum を表現する
 
@@ -139,7 +139,7 @@ Pub/Sub subscriber の冪等性を保証するアプリ層ガードテーブル�
 | カラム名 | 型 | Nullable | 説明 |
 |---|---|---|---|
 | `event_id` | UUID | No | Pub/Sub EventID (publisher 生成の UUIDv4) |
-| `event_type` | TEXT | No | イベント種別 (faction_selected / premium_updated) |
+| `event_type` | TEXT | No | イベント種別 (faction_purchased / premium_updated / player_onboarded) |
 | `processed_at` | TIMESTAMPTZ | No | 処理日時 |
 <!-- END GENERATED: processed_events -->
 

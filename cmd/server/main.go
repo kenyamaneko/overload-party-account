@@ -129,16 +129,16 @@ func run() error {
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
-	factionSub, err := pubsubadapter.NewFactionSelectedSubscriber(
-		ctx, cfg.PubsubProjectID, cfg.FactionSelectedSubscription,
-		playerRepo, factionRepo, txManager, eventRepo,
+	factionSub, err := pubsubadapter.NewFactionPurchasedSubscriber(
+		ctx, cfg.PubsubProjectID, cfg.FactionPurchasedSubscription,
+		factionRepo, txManager, eventRepo,
 	)
 	if err != nil {
-		return fmt.Errorf("faction-selected subscriber: %w", err)
+		return fmt.Errorf("faction-purchased subscriber: %w", err)
 	}
 	defer func() {
 		if cerr := factionSub.Close(); cerr != nil {
-			slog.Warn("faction-selected subscriber close", "error", cerr)
+			slog.Warn("faction-purchased subscriber close", "error", cerr)
 		}
 	}()
 
@@ -157,7 +157,7 @@ func run() error {
 
 	onboardedSub, err := pubsubadapter.NewPlayerOnboardedSubscriber(
 		ctx, cfg.PubsubProjectID, cfg.PlayerOnboardedSubscription,
-		playerRepo, txManager, eventRepo,
+		playerRepo, factionRepo, txManager, eventRepo,
 	)
 	if err != nil {
 		return fmt.Errorf("player-onboarded subscriber: %w", err)
@@ -191,7 +191,7 @@ func runHTTPAndSubscribers(ctx context.Context, srv *http.Server, factionSub, pr
 
 	g.Go(func() error {
 		if err := factionSub.Start(gCtx); err != nil && gCtx.Err() == nil {
-			return fmt.Errorf("faction-selected subscriber: %w", err)
+			return fmt.Errorf("faction-purchased subscriber: %w", err)
 		}
 		return nil
 	})
