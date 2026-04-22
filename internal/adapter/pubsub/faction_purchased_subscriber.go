@@ -7,11 +7,8 @@ package pubsub
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log/slog"
-
-	"cloud.google.com/go/pubsub/v2"
 
 	apishop "github.com/kenyamaneko/overload-party-shop/packages/api-shop"
 
@@ -19,73 +16,54 @@ import (
 	"github.com/kenyamaneko/overload-party-account/internal/service"
 )
 
-// FactionPurchasedSubscriber は faction-purchased-account-sub からイベントを取得し、
+// FactionPurchasedSubscriber は faction-purchased subscription からイベントを取得し、
 // player_factions への INSERT を行います。
 //
 // ショップ購入は「ロスターへの追加」のみを意味し、players.selected_faction は
-// 変更しない (ADR-022)。アクティブ切り替えは PUT /players/:id/faction の
-// 独立した REST で行う。
+// 変更しない。アクティブ切り替えは PUT /players/:id/faction の独立した REST で行う。
 type FactionPurchasedSubscriber struct {
-	client      *pubsub.Client
-	subscriber  *pubsub.Subscriber
+	stream      port.MessageStream
 	factionRepo port.FactionRepo
 	txRunner    port.TxRunner
 	eventRepo   port.ProcessedEventRepo
 }
 
 // NewFactionPurchasedSubscriber は FactionPurchasedSubscriber を生成します。
+// subscription 接続は stream に委ねるため、本コンストラクタでは GCP SDK に
+// 触れない (クリーンアーキテクチャの依存方向遵守)。
 func NewFactionPurchasedSubscriber(
-	ctx context.Context,
-	projectID, subscriptionID string,
+	stream port.MessageStream,
 	factionRepo port.FactionRepo,
 	txRunner port.TxRunner,
 	eventRepo port.ProcessedEventRepo,
-) (*FactionPurchasedSubscriber, error) {
-	if projectID == "" || subscriptionID == "" {
-		return nil, errors.New("faction-purchased subscriber: projectID and subscriptionID are required")
-	}
-	client, err := pubsub.NewClient(ctx, projectID)
-	if err != nil {
-		return nil, fmt.Errorf("faction-purchased subscriber: new client: %w", err)
-	}
+) *FactionPurchasedSubscriber {
 	return &FactionPurchasedSubscriber{
-		client:      client,
-		subscriber:  client.Subscriber(subscriptionID),
+		stream:      stream,
 		factionRepo: factionRepo,
 		txRunner:    txRunner,
 		eventRepo:   eventRepo,
-	}, nil
-}
-
-// Start は ctx がキャンセルされるか Receive がエラーを返すまでブロックします。
-func (s *FactionPurchasedSubscriber) Start(ctx context.Context) error {
-	slog.Info("faction-purchased subscriber: pulling", "subscription", s.subscriber.ID())
-	return s.subscriber.Receive(ctx, s.handle)
-}
-
-// Close は Pub/Sub クライアントを閉じます。
-func (s *FactionPurchasedSubscriber) Close() error { return s.client.Close() }
-
-func (s *FactionPurchasedSubscriber) handle(ctx context.Context, msg *pubsub.Message) {
-	if ack := s.processEvent(ctx, msg.Data); ack {
-		msg.Ack()
-	} else {
-		msg.Nack()
 	}
 }
 
-// processEvent は Pub/Sub ペイロードを処理し、ack すべきか (true) / nack すべきか
-// (false) を返す。*pubsub.Message への依存を handle に閉じ込めるため、ビジネス
-// ロジックはこちらに集約する。
-func (s *FactionPurchasedSubscriber) processEvent(ctx context.Context, data []byte) (ack bool) {
+// Start は ctx がキャンセルされるか stream がエラーを返すまでブロックします。
+func (s *FactionPurchasedSubscriber) Start(ctx context.Context) error {
+	slog.Info("faction-purchased subscriber: consuming")
+	return s.stream.Consume(ctx, s.processEvent)
+}
+
+// processEvent は 1 イベントを処理する。戻り値 nil = ack、非 nil = nack。
+//
+// bad payload / handler 失敗は nack で再配信させる。unknown event_type は
+// 責務外として ack し、pub/sub に次のメッセージを渡す。
+func (s *FactionPurchasedSubscriber) processEvent(ctx context.Context, data []byte) error {
 	var ev apishop.FactionPurchasedEvent
 	if err := json.Unmarshal(data, &ev); err != nil {
 		slog.Error("faction-purchased subscriber: bad payload (nack)", "error", err)
-		return false
+		return fmt.Errorf("faction-purchased: bad payload: %w", err)
 	}
 	if ev.EventType != apishop.EventTypeFactionPurchased {
 		slog.Warn("faction-purchased subscriber: unknown event_type, acking", "event_type", ev.EventType)
-		return true
+		return nil
 	}
 
 	if err := s.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
@@ -105,7 +83,7 @@ func (s *FactionPurchasedSubscriber) processEvent(ctx context.Context, data []by
 	}); err != nil {
 		slog.Error("faction-purchased subscriber: handler failed",
 			"event_id", ev.EventID, "player_id", ev.PlayerID, "error", err)
-		return false
+		return fmt.Errorf("faction-purchased: handler failed: %w", err)
 	}
-	return true
+	return nil
 }

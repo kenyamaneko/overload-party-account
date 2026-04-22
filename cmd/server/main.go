@@ -129,44 +129,39 @@ func run() error {
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
-	factionSub, err := pubsubadapter.NewFactionPurchasedSubscriber(
-		ctx, cfg.PubsubProjectID, cfg.FactionPurchasedSubscription,
-		factionRepo, txManager, eventRepo,
-	)
+	factionStream, err := pubsubadapter.NewGCPMessageStream(ctx, cfg.PubsubProjectID, cfg.FactionPurchasedSubscription)
 	if err != nil {
-		return fmt.Errorf("faction-purchased subscriber: %w", err)
+		return fmt.Errorf("faction-purchased stream: %w", err)
 	}
 	defer func() {
-		if cerr := factionSub.Close(); cerr != nil {
-			slog.Warn("faction-purchased subscriber close", "error", cerr)
+		if cerr := factionStream.Close(); cerr != nil {
+			slog.Warn("faction-purchased stream close", "error", cerr)
 		}
 	}()
 
-	premiumSub, err := pubsubadapter.NewPremiumUpdatedSubscriber(
-		ctx, cfg.PubsubProjectID, cfg.PremiumUpdatedSubscription,
-		playerRepo, txManager, eventRepo,
-	)
+	premiumStream, err := pubsubadapter.NewGCPMessageStream(ctx, cfg.PubsubProjectID, cfg.PremiumUpdatedSubscription)
 	if err != nil {
-		return fmt.Errorf("premium-updated subscriber: %w", err)
+		return fmt.Errorf("premium-updated stream: %w", err)
 	}
 	defer func() {
-		if cerr := premiumSub.Close(); cerr != nil {
-			slog.Warn("premium-updated subscriber close", "error", cerr)
+		if cerr := premiumStream.Close(); cerr != nil {
+			slog.Warn("premium-updated stream close", "error", cerr)
 		}
 	}()
 
-	onboardedSub, err := pubsubadapter.NewPlayerOnboardedSubscriber(
-		ctx, cfg.PubsubProjectID, cfg.PlayerOnboardedSubscription,
-		factionSvc,
-	)
+	onboardedStream, err := pubsubadapter.NewGCPMessageStream(ctx, cfg.PubsubProjectID, cfg.PlayerOnboardedSubscription)
 	if err != nil {
-		return fmt.Errorf("player-onboarded subscriber: %w", err)
+		return fmt.Errorf("player-onboarded stream: %w", err)
 	}
 	defer func() {
-		if cerr := onboardedSub.Close(); cerr != nil {
-			slog.Warn("player-onboarded subscriber close", "error", cerr)
+		if cerr := onboardedStream.Close(); cerr != nil {
+			slog.Warn("player-onboarded stream close", "error", cerr)
 		}
 	}()
+
+	factionSub := pubsubadapter.NewFactionPurchasedSubscriber(factionStream, factionRepo, txManager, eventRepo)
+	premiumSub := pubsubadapter.NewPremiumUpdatedSubscriber(premiumStream, playerRepo, txManager, eventRepo)
+	onboardedSub := pubsubadapter.NewPlayerOnboardedSubscriber(onboardedStream, factionSvc)
 
 	slog.Info("account starting",
 		"addr", srv.Addr,

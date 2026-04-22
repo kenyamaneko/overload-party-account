@@ -7,8 +7,6 @@ import (
 	"fmt"
 	"log/slog"
 
-	"cloud.google.com/go/pubsub/v2"
-
 	apiscenario "github.com/kenyamaneko/overload-party-scenario/packages/api-scenario"
 
 	"github.com/kenyamaneko/overload-party-account/internal/port"
@@ -29,15 +27,13 @@ type OnboardingApplier interface {
 	) (processed, selected bool, err error)
 }
 
-// PlayerOnboardedSubscriber は player-onboarded-account-sub からイベントを取得し、
+// PlayerOnboardedSubscriber は player-onboarded subscription からイベントを取得し、
 // オンボーディング完了時の identity (表示名) と初期 faction 所持 / 選択を
 // 単一トランザクションで反映します。
 //
-// ADR-022 により FactionSelectedEvent (scenario_initial) が廃止されたため、
-// かつて faction-selected subscriber が担っていた initial_selection 相当の
-// 副作用 (player_factions INSERT + players.selected_faction UPDATE) は
-// 本 subscriber に統合されています。shop 購入起因のロスター追加は
-// FactionPurchasedSubscriber が別系統で処理します。
+// 本 subscriber は initial_selection 相当の副作用 (player_factions INSERT +
+// players.selected_faction UPDATE) も担っており、shop 購入起因のロスター追加
+// (FactionPurchasedSubscriber) とは別系統として同時並行で走ります。
 //
 // subscriber 自身は Unmarshal + OnboardingApplier への委譲のみを行い、
 // SelectableFactions 検証・冪等ガード・同一 Tx 反映は service 層に任せます。
@@ -47,66 +43,37 @@ type OnboardingApplier interface {
 // DB は「表示名」= username という既存契約のため、列名は変更せず
 // subscriber handler 内でマッピングを閉じています (ARCHITECTURE.md §6.3)。
 type PlayerOnboardedSubscriber struct {
-	client     *pubsub.Client
-	subscriber *pubsub.Subscriber
-	applier    OnboardingApplier
+	stream  port.MessageStream
+	applier OnboardingApplier
 }
 
 // NewPlayerOnboardedSubscriber は PlayerOnboardedSubscriber を生成します。
 // applier は service.FactionService (または OnboardingApplier を満たす fake) を渡す想定です。
-func NewPlayerOnboardedSubscriber(
-	ctx context.Context,
-	projectID, subscriptionID string,
-	applier OnboardingApplier,
-) (*PlayerOnboardedSubscriber, error) {
-	if projectID == "" || subscriptionID == "" {
-		return nil, errors.New("player-onboarded subscriber: projectID and subscriptionID are required")
-	}
-	client, err := pubsub.NewClient(ctx, projectID)
-	if err != nil {
-		return nil, fmt.Errorf("player-onboarded subscriber: new client: %w", err)
-	}
-	return &PlayerOnboardedSubscriber{
-		client:     client,
-		subscriber: client.Subscriber(subscriptionID),
-		applier:    applier,
-	}, nil
+func NewPlayerOnboardedSubscriber(stream port.MessageStream, applier OnboardingApplier) *PlayerOnboardedSubscriber {
+	return &PlayerOnboardedSubscriber{stream: stream, applier: applier}
 }
 
-// Start は ctx がキャンセルされるか Receive がエラーを返すまでブロックします。
+// Start は ctx がキャンセルされるか stream がエラーを返すまでブロックします。
 func (s *PlayerOnboardedSubscriber) Start(ctx context.Context) error {
-	slog.Info("player-onboarded subscriber: pulling", "subscription", s.subscriber.ID())
-	return s.subscriber.Receive(ctx, s.handle)
+	slog.Info("player-onboarded subscriber: consuming")
+	return s.stream.Consume(ctx, s.processEvent)
 }
 
-// Close は Pub/Sub クライアントを閉じます。
-func (s *PlayerOnboardedSubscriber) Close() error { return s.client.Close() }
-
-func (s *PlayerOnboardedSubscriber) handle(ctx context.Context, msg *pubsub.Message) {
-	if ack := s.processEvent(ctx, msg.Data); ack {
-		msg.Ack()
-	} else {
-		msg.Nack()
-	}
-}
-
-// processEvent は Pub/Sub ペイロードを処理し、ack すべきか (true) / nack すべきか
-// (false) を返す。*pubsub.Message への依存を handle に閉じ込めるため、
-// 事前バリデーションと service 呼び出しはこちらに集約する。
-func (s *PlayerOnboardedSubscriber) processEvent(ctx context.Context, data []byte) (ack bool) {
+// processEvent は 1 イベントを処理する。戻り値 nil = ack、非 nil = nack。
+func (s *PlayerOnboardedSubscriber) processEvent(ctx context.Context, data []byte) error {
 	var ev apiscenario.PlayerOnboardedEvent
 	if err := json.Unmarshal(data, &ev); err != nil {
 		slog.Error("player-onboarded subscriber: bad payload (nack)", "error", err)
-		return false
+		return fmt.Errorf("player-onboarded: bad payload: %w", err)
 	}
 	if ev.EventType != apiscenario.EventTypePlayerOnboarded {
 		slog.Warn("player-onboarded subscriber: unknown event_type, acking", "event_type", ev.EventType)
-		return true
+		return nil
 	}
 	if ev.InitialFactionID == "" {
 		slog.Error("player-onboarded subscriber: missing initial_faction_id (nack)",
 			"event_id", ev.EventID, "player_id", ev.PlayerID)
-		return false
+		return fmt.Errorf("player-onboarded: missing initial_faction_id")
 	}
 
 	processed, selected, err := s.applier.ApplyOnboardingResult(
@@ -126,15 +93,15 @@ func (s *PlayerOnboardedSubscriber) processEvent(ctx context.Context, data []byt
 				"player_id", ev.PlayerID,
 				"error", err,
 			)
-			return false
+			return fmt.Errorf("player-onboarded: player not found: %w", err)
 		}
 		slog.Error("player-onboarded subscriber: apply onboarding failed",
 			"event_id", ev.EventID, "player_id", ev.PlayerID, "error", err)
-		return false
+		return fmt.Errorf("player-onboarded: apply onboarding: %w", err)
 	}
 	if !processed {
 		// 冪等スキップ (processed_events に既存)。副作用なしで ACK。
-		return true
+		return nil
 	}
 	if !selected {
 		// selected_faction は既に埋まっていた。username / player_factions は反映済み。
@@ -142,5 +109,5 @@ func (s *PlayerOnboardedSubscriber) processEvent(ctx context.Context, data []byt
 		slog.Warn("player-onboarded subscriber: selected_faction already set",
 			"event_id", ev.EventID, "player_id", ev.PlayerID, "faction", ev.InitialFactionID)
 	}
-	return true
+	return nil
 }
