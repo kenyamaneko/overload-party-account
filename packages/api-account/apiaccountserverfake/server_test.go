@@ -3,7 +3,6 @@ package apiaccountserverfake_test
 import (
 	"bytes"
 	"encoding/json"
-	"io"
 	"net/http"
 	"testing"
 
@@ -20,24 +19,24 @@ func TestServer_DefaultResponses(t *testing.T) {
 		name       string
 		method     string
 		path       string
-		reqBody    string
+		reqBody    []byte
 		wantStatus int
 	}{
-		{name: "Register 既定は 201", method: http.MethodPost, path: "/internal/v1/auth/register", reqBody: `{}`, wantStatus: http.StatusCreated},
-		{name: "Login 既定は 200", method: http.MethodPost, path: "/internal/v1/auth/login", reqBody: `{}`, wantStatus: http.StatusOK},
-		{name: "FindByFirebaseUID 既定は 200", method: http.MethodGet, path: "/internal/v1/players/by-firebase-uid/uid-1", wantStatus: http.StatusOK},
-		{name: "GetPlayer 既定は 200", method: http.MethodGet, path: "/internal/v1/players/p-1", wantStatus: http.StatusOK},
-		{name: "UpdateName 既定は 200", method: http.MethodPut, path: "/internal/v1/players/p-1/name", reqBody: `{}`, wantStatus: http.StatusOK},
-		{name: "GetBattleLimit 既定は 200", method: http.MethodGet, path: "/internal/v1/players/p-1/battle-limit", wantStatus: http.StatusOK},
-		{name: "IncrementBattleCount 既定は 204", method: http.MethodPost, path: "/internal/v1/players/p-1/battle-limit/increment", wantStatus: http.StatusNoContent},
-		{name: "UpdatePremium 既定は 204", method: http.MethodPut, path: "/internal/v1/players/p-1/premium", reqBody: `{}`, wantStatus: http.StatusNoContent},
-		{name: "UpdateFaction 既定は 204", method: http.MethodPut, path: "/internal/v1/players/p-1/faction", reqBody: `{}`, wantStatus: http.StatusNoContent},
-		{name: "GrantFaction 既定は 204", method: http.MethodPost, path: "/internal/v1/players/p-1/factions", reqBody: `{}`, wantStatus: http.StatusNoContent},
-		{name: "ListFactions 既定は 200", method: http.MethodGet, path: "/internal/v1/players/p-1/factions", wantStatus: http.StatusOK},
-		{name: "AddExp 既定は 204", method: http.MethodPost, path: "/internal/v1/players/p-1/exp", reqBody: `{}`, wantStatus: http.StatusNoContent},
-		{name: "AwardGameExp 既定は 204", method: http.MethodPost, path: "/internal/v1/players/award-game-exp", reqBody: `{}`, wantStatus: http.StatusNoContent},
-		{name: "GetSettings 既定は 200", method: http.MethodGet, path: "/internal/v1/players/p-1/settings", wantStatus: http.StatusOK},
-		{name: "UpdateSettings 既定は 200", method: http.MethodPut, path: "/internal/v1/players/p-1/settings", reqBody: `{}`, wantStatus: http.StatusOK},
+		{name: "Register 既定は 201", method: http.MethodPost, path: "/internal/v1/auth/register", reqBody: []byte(`{}`), wantStatus: http.StatusCreated},
+		{name: "Login 既定は 200", method: http.MethodPost, path: "/internal/v1/auth/login", reqBody: []byte(`{}`), wantStatus: http.StatusOK},
+		{name: "FindByFirebaseUID 既定は 200", method: http.MethodGet, path: "/internal/v1/players/by-firebase-uid/uid-1", reqBody: nil, wantStatus: http.StatusOK},
+		{name: "GetPlayer 既定は 200", method: http.MethodGet, path: "/internal/v1/players/p-1", reqBody: nil, wantStatus: http.StatusOK},
+		{name: "UpdateName 既定は 200", method: http.MethodPut, path: "/internal/v1/players/p-1/name", reqBody: []byte(`{}`), wantStatus: http.StatusOK},
+		{name: "GetBattleLimit 既定は 200", method: http.MethodGet, path: "/internal/v1/players/p-1/battle-limit", reqBody: nil, wantStatus: http.StatusOK},
+		{name: "IncrementBattleCount 既定は 204", method: http.MethodPost, path: "/internal/v1/players/p-1/battle-limit/increment", reqBody: nil, wantStatus: http.StatusNoContent},
+		{name: "UpdatePremium 既定は 204", method: http.MethodPut, path: "/internal/v1/players/p-1/premium", reqBody: []byte(`{}`), wantStatus: http.StatusNoContent},
+		{name: "UpdateFaction 既定は 204", method: http.MethodPut, path: "/internal/v1/players/p-1/faction", reqBody: []byte(`{}`), wantStatus: http.StatusNoContent},
+		{name: "GrantFaction 既定は 204", method: http.MethodPost, path: "/internal/v1/players/p-1/factions", reqBody: []byte(`{}`), wantStatus: http.StatusNoContent},
+		{name: "ListFactions 既定は 200", method: http.MethodGet, path: "/internal/v1/players/p-1/factions", reqBody: nil, wantStatus: http.StatusOK},
+		{name: "AddExp 既定は 204", method: http.MethodPost, path: "/internal/v1/players/p-1/exp", reqBody: []byte(`{}`), wantStatus: http.StatusNoContent},
+		{name: "AwardGameExp 既定は 204", method: http.MethodPost, path: "/internal/v1/players/award-game-exp", reqBody: []byte(`{}`), wantStatus: http.StatusNoContent},
+		{name: "GetSettings 既定は 200", method: http.MethodGet, path: "/internal/v1/players/p-1/settings", reqBody: nil, wantStatus: http.StatusOK},
+		{name: "UpdateSettings 既定は 200", method: http.MethodPut, path: "/internal/v1/players/p-1/settings", reqBody: []byte(`{}`), wantStatus: http.StatusOK},
 	}
 
 	for _, tt := range tests {
@@ -45,11 +44,7 @@ func TestServer_DefaultResponses(t *testing.T) {
 			srv := apiaccountserverfake.NewServer()
 			defer srv.Close()
 
-			var body io.Reader
-			if tt.reqBody != "" {
-				body = bytes.NewReader([]byte(tt.reqBody))
-			}
-			req, _ := http.NewRequest(tt.method, srv.URL()+tt.path, body)
+			req, _ := http.NewRequest(tt.method, srv.URL()+tt.path, bytes.NewReader(tt.reqBody))
 			req.Header.Set("Content-Type", "application/json")
 			resp, err := http.DefaultClient.Do(req)
 			require.NoError(t, err)
