@@ -15,8 +15,8 @@ import (
 // newAuthTestService は実 PostgreSQL repository + TxManager を束ねて
 // AuthService を返す。DB の truncate は呼び出し側（各 Test が sharedPg.Truncate）で行う。
 func newAuthTestService() *AuthService {
-	playerRepo, _, userSettingsRepo, tx := newRealRepos()
-	return NewAuthService(playerRepo, userSettingsRepo, tx)
+	playerRepo, _, playerSettingsRepo, tx := newRealRepos()
+	return NewAuthService(playerRepo, playerSettingsRepo, tx)
 }
 
 func TestAuthService_Register_Success(t *testing.T) {

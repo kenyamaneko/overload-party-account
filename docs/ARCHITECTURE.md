@@ -14,7 +14,7 @@ account は **プレイヤーの素性（players）と周辺属性（設定・�
 |---|---|---|
 | プレイヤー本体 | `account.players` (account) | authoritative |
 | レベル / 経験値 | `account.player_progression` (account) | authoritative。1:1 子テーブルとして分離 |
-| ユーザー設定 | `account.user_settings` (account) | authoritative |
+| プレイヤー設定 | `account.player_settings` (account) | authoritative |
 | デイリーバトル回数 | `account.player_daily_battle` (account) | authoritative |
 | ファクション所有 | `account.player_factions` (account) | authoritative。shop が `shop.player_owned_factions` で同一状態の read model を持つ |
 | プレミアム状態 | `shop.subscriptions` (shop) | `players.is_premium` / `premium_expires_at` は account 側の射影 |
@@ -40,7 +40,7 @@ account は他サービスを直接呼び出さない（gateway / shop / scenari
 
 | 概念 | 更新頻度 | 更新者 |
 |---|---|---|
-| `players` のプロフィール系 (username / selected_faction / is_premium 等) | 低 | ユーザー操作 or 外部イベント |
+| `players` のプロフィール系 (name / selected_faction / is_premium 等) | 低 | ユーザー操作 or 外部イベント |
 | `player_progression` (level / exp) | 高 | 戦闘終了ごとに毎回 |
 
 同居させていた従来実装では以下の問題があった:
@@ -72,7 +72,7 @@ BEGIN TX
   INSERT INTO account.players             (新規 UUID)
   INSERT INTO account.player_progression  (player_id, level=1, exp=0)
   INSERT INTO account.player_daily_battle (player_id, count=0, last_reset_date=today)
-  INSERT INTO account.user_settings       (player_id, デフォルト値)
+  INSERT INTO account.player_settings       (player_id, デフォルト値)
 COMMIT
 ```
 
@@ -133,7 +133,7 @@ TOCTOU（`GetDailyBattle` → `UpdateDailyBattleCount` の間に別リクエス�
 
 - 少なくとも 1 フィールド指定していない全 nil 送信は 400
 - 指定されたフィールドだけを SQL の `COALESCE($1, language), ...` で書き換え、未指定フィールドは現状維持
-- `user_settings` 行が存在しないプレイヤーは 404（通常 Register で INSERT 済みの前提）
+- `player_settings` 行が存在しないプレイヤーは 404（通常 Register で INSERT 済みの前提）
 
 これは「クライアントが language だけ変えるつもりで部分送信したら、送信しなかった bgm_volume がゼロ値で上書きされる」事故を避けるための設計。repo 層では `Insert`（Register 用、全フィールド必須）と `UpdatePartial`（更新用、nil は現状維持）の 2 プリミティブに分離し、Upsert のような「書いてあることを丸ごと反映」パターンは排除している。
 
@@ -192,7 +192,7 @@ subscription: `player-onboarded-account-sub` (`PLAYER_ONBOARDED_SUBSCRIPTION` �
 BEGIN TX
   INSERT processed_events (event_id, event_type)  ← ON CONFLICT DO NOTHING
   IF 既存行だった: COMMIT; ACK; return
-  UPDATE players SET username = $ ← event.display_name を account の「表示名」カラムに書く
+  UPDATE players SET name = $ ← event.display_name を account の「表示名」カラムに書く
   INSERT player_factions (player_id, faction=initial_faction_id, source=initial_selection)
   IF players.selected_faction IS NULL: UPDATE players SET selected_faction = initial_faction_id
 COMMIT → ACK
@@ -200,7 +200,7 @@ COMMIT → ACK
 
 ADR-022 により、初期 faction のロスター追加 + `selected_faction` 確定の副作用はこの subscriber に統合された（かつて `faction-selected(source=scenario_initial)` が担っていた）。2 イベント待ち合わせの冪等配線は廃止され、`PlayerOnboardedEvent` 1 本の `event_id` で identity + 初期 faction を同一トランザクションで反映する。
 
-event の `display_name` は account の `players.username` カラム（コメント「表示名」）に書く。別カラム `display_name` を新設しない理由は、同一セマンティクスの列を 2 つ持たないため（SSoT 一本化）。scenario 側 payload 名 (`display_name`) と account 側カラム名 (`username`) のマッピングは subscriber handler 内に閉じる。
+event の `display_name` は account の `players.name` カラム（コメント「表示名」）に書く。別カラム `display_name` を新設しない理由は、同一セマンティクスの列を 2 つ持たないため（SSoT 一本化）。scenario 側 payload 名 (`display_name`) と account 側カラム名 (`name`) のマッピングは subscriber handler 内に閉じる。
 
 ### 6.4 `processed_events` による冪等性契約
 
@@ -294,7 +294,7 @@ DB エラー・Pub/Sub デシリアライズ失敗・Firestore 読み取り失�
 |---|---|---|---|
 | `faction-purchased` | shop | `faction-purchased-account-sub` | `player_factions` INSERT（`source = shop_purchase`、§6.1） |
 | `premium-updated` | shop | `premium-updated-account-sub` | `players.is_premium` / `premium_expires_at` UPDATE (§6.2) |
-| `player-onboarded` | scenario | `player-onboarded-account-sub` | `players.username` UPDATE + `player_factions` INSERT（`source = initial_selection`）+ `selected_faction` UPDATE（NULL 時のみ）、§6.3 |
+| `player-onboarded` | scenario | `player-onboarded-account-sub` | `players.name` UPDATE + `player_factions` INSERT（`source = initial_selection`）+ `selected_faction` UPDATE（NULL 時のみ）、§6.3 |
 
 account 自身はトピックを publish しない。
 

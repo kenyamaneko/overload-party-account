@@ -143,8 +143,8 @@ endpoint_groups:
 
       - method: GET
         path: /players/{playerId}/settings
-        summary: ユーザー設定を返す
-        response_type: UserSettings
+        summary: プレイヤー設定を返す
+        response_type: PlayerSettings
         errors:
           - {status: 400, description: playerId が空}
           - {status: 404, description: プレイヤーが存在しない}
@@ -152,9 +152,9 @@ endpoint_groups:
 
       - method: PUT
         path: /players/{playerId}/settings
-        summary: ユーザー設定を更新する
+        summary: プレイヤー設定を更新する
         request_type: UpdateSettingsRequest
-        response_type: UserSettings
+        response_type: PlayerSettings
         errors:
           - {status: 400, description: playerId が空 / language が空}
           - {status: 404, description: プレイヤーが存在しない}

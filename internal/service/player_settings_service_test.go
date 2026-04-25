@@ -19,8 +19,8 @@ func ptr[T any](v T) *T { return &v }
 
 // newPlayerSettingsTestService は実 PostgreSQL repository で PlayerSettingsService を組む。
 func newPlayerSettingsTestService() *PlayerSettingsService {
-	_, _, userSettingsRepo, _ := newRealRepos()
-	return NewPlayerSettingsService(userSettingsRepo)
+	_, _, playerSettingsRepo, _ := newRealRepos()
+	return NewPlayerSettingsService(playerSettingsRepo)
 }
 
 func TestPlayerSettingsService_Get_Seeded(t *testing.T) {

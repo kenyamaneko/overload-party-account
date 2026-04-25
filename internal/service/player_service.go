@@ -80,6 +80,10 @@ func (s *PlayerService) ListFactions(ctx context.Context, playerID string) ([]st
 // repo の write プリミティブは name のみを書き、ここで FindByID して
 // サーバー側で組み立てた最新の Player をクライアントに返す
 // (「server を信じる」原則。クライアントに整合の責任を押し付けない)。
+//
+// UPDATE と FindByID は別操作 (TX で囲っていない)。同一プレイヤーが
+// 100ms 程度の間に名前変更を多重に投げる挙動は実用上想定しないため、
+// read-after-write の整合性は許容する。問題が出たら txRunner で囲む。
 func (s *PlayerService) UpdateName(ctx context.Context, playerID string, name string) (*apiaccount.Player, error) {
 	if err := s.playerRepo.UpdateName(ctx, playerID, name); err != nil {
 		return nil, fmt.Errorf("update name: %w", err)

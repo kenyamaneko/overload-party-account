@@ -9,16 +9,16 @@
 
 ### `POST /internal/v1/auth/register`
 
-新規プレイヤーを登録する（gateway が Firebase UID + username を中継）
+新規プレイヤーを登録する（gateway が Firebase UID + name を中継）
 
-> 成功時 201 Created。username は 1〜50 文字
+> 成功時 201 Created。name は 1〜50 文字
 
 #### リクエスト
 
 | フィールド | 型 | JSON | 説明 |
 |---|---|---|---|
 | `FirebaseUID` | `string` | `firebase_uid` |  |
-| `Username` | `string` | `username` |  |
+| `Name` | `string` | `name` |  |
 
 #### レスポンス
 
@@ -26,7 +26,7 @@
 |---|---|---|---|
 | `PlayerID` | `string` | `player_id` |  |
 | `FirebaseUID` | `string` | `firebase_uid` |  |
-| `Username` | `string` | `username` |  |
+| `Name` | `string` | `name` |  |
 | `Level` | `int64` | `level` |  |
 | `Exp` | `int64` | `exp` |  |
 | `IsPremium` | `bool` | `is_premium` |  |
@@ -42,7 +42,7 @@
 
 | ステータス | 説明 |
 |---|---|
-| 400 | firebase_uid が空 / username が 1〜50 文字範囲外 |
+| 400 | firebase_uid が空 / name が 1〜50 文字範囲外 |
 | 409 | 同一 firebase_uid で既に登録済み |
 | 500 | DB 接続エラー |
 
@@ -64,7 +64,7 @@ Firebase UID でログイン（プレイヤー情報を返す）
 |---|---|---|---|
 | `PlayerID` | `string` | `player_id` |  |
 | `FirebaseUID` | `string` | `firebase_uid` |  |
-| `Username` | `string` | `username` |  |
+| `Name` | `string` | `name` |  |
 | `Level` | `int64` | `level` |  |
 | `Exp` | `int64` | `exp` |  |
 | `IsPremium` | `bool` | `is_premium` |  |
@@ -96,7 +96,7 @@ Firebase UID からプレイヤーを検索する
 |---|---|---|---|
 | `PlayerID` | `string` | `player_id` |  |
 | `FirebaseUID` | `string` | `firebase_uid` |  |
-| `Username` | `string` | `username` |  |
+| `Name` | `string` | `name` |  |
 | `Level` | `int64` | `level` |  |
 | `Exp` | `int64` | `exp` |  |
 | `IsPremium` | `bool` | `is_premium` |  |
@@ -154,7 +154,7 @@ Firebase UID からプレイヤーを検索する
 |---|---|---|---|
 | `PlayerID` | `string` | `player_id` |  |
 | `FirebaseUID` | `string` | `firebase_uid` |  |
-| `Username` | `string` | `username` |  |
+| `Name` | `string` | `name` |  |
 | `Level` | `int64` | `level` |  |
 | `Exp` | `int64` | `exp` |  |
 | `IsPremium` | `bool` | `is_premium` |  |
@@ -192,7 +192,7 @@ Firebase UID からプレイヤーを検索する
 |---|---|---|---|
 | `PlayerID` | `string` | `player_id` |  |
 | `FirebaseUID` | `string` | `firebase_uid` |  |
-| `Username` | `string` | `username` |  |
+| `Name` | `string` | `name` |  |
 | `Level` | `int64` | `level` |  |
 | `Exp` | `int64` | `exp` |  |
 | `IsPremium` | `bool` | `is_premium` |  |
@@ -388,7 +388,7 @@ Firebase UID からプレイヤーを検索する
 
 ### `GET /internal/v1/players/{playerId}/settings`
 
-ユーザー設定を返す
+プレイヤー設定を返す
 
 #### レスポンス
 
@@ -413,7 +413,7 @@ Firebase UID からプレイヤーを検索する
 
 ### `PUT /internal/v1/players/{playerId}/settings`
 
-ユーザー設定を更新する
+プレイヤー設定を更新する
 
 #### リクエスト
 
