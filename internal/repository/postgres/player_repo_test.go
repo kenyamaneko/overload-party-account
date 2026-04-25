@@ -98,9 +98,7 @@ func TestPlayerRepository_UpdateUsername(t *testing.T) {
 	sharedPg.Truncate(t)
 	seedPlayer(t, testPlayerID1, "uid-1", "Alice", false)
 
-	updated, err := repo.UpdateUsername(ctx, testPlayerID1, "Bob")
-	require.NoError(t, err)
-	assert.Equal(t, "Bob", updated.Username)
+	require.NoError(t, repo.UpdateUsername(ctx, testPlayerID1, "Bob"))
 
 	// 永続化を確認
 	got, err := repo.FindByID(ctx, testPlayerID1)
@@ -113,7 +111,7 @@ func TestPlayerRepository_UpdateUsername_NotFound(t *testing.T) {
 	ctx := context.Background()
 
 	sharedPg.Truncate(t)
-	_, err := repo.UpdateUsername(ctx, testPlayerID1, "Bob")
+	err := repo.UpdateUsername(ctx, testPlayerID1, "Bob")
 	assert.ErrorIs(t, err, port.ErrNotFound)
 }
 

@@ -171,33 +171,21 @@ func (r *PlayerRepository) UpdateDailyBattleCount(ctx context.Context, playerID 
 	return nil
 }
 
-// UpdateUsername はプレイヤー名を更新し、更新後のアグリゲートを返す。
-// UPDATE の RETURNING は players 側の列しか返せないので、level/exp 取得のため
-// CTE + JOIN で 1 往復に収める。
-func (r *PlayerRepository) UpdateUsername(ctx context.Context, playerID string, username string) (*apiaccount.Player, error) {
-	row := connFrom(ctx, r.pool).QueryRow(ctx,
-		`WITH upd AS (
-		   UPDATE account.players SET username = $1, updated_at = NOW()
-		    WHERE player_id = $2
-		    RETURNING player_id, firebase_uid, username, is_premium, equipped_icon_no,
-		              selected_faction, premium_expires_at, created_at, updated_at
-		 )
-		 SELECT upd.player_id, upd.firebase_uid, upd.username, pp.level, pp.exp,
-		        upd.is_premium, upd.equipped_icon_no, upd.selected_faction,
-		        upd.premium_expires_at, upd.created_at, upd.updated_at
-		   FROM upd
-		   JOIN account.player_progression pp ON upd.player_id = pp.player_id`,
+// UpdateUsername はプレイヤー名を更新する純プリミティブ。
+// 更新後のアグリゲート再取得は service 層が FindByID で行う責務とし、
+// repo は単一テーブルへの書き込みだけを担う。行が無ければ port.ErrNotFound を返す。
+func (r *PlayerRepository) UpdateUsername(ctx context.Context, playerID string, username string) error {
+	ct, err := connFrom(ctx, r.pool).Exec(ctx,
+		`UPDATE account.players SET username = $1, updated_at = NOW() WHERE player_id = $2`,
 		username, playerID,
 	)
-
-	p, err := scanPlayer(row)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, fmt.Errorf("player %s: %w", playerID, port.ErrNotFound)
-		}
-		return nil, fmt.Errorf("update username: %w", err)
+		return fmt.Errorf("update username: %w", err)
 	}
-	return p, nil
+	if ct.RowsAffected() == 0 {
+		return fmt.Errorf("player %s: %w", playerID, port.ErrNotFound)
+	}
+	return nil
 }
 
 // UpdatePremium はプレミアムステータスを更新する。

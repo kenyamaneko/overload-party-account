@@ -126,12 +126,12 @@ func (r *fakePlayerRepo) GetDailyBattle(_ context.Context, _ string) (*apiaccoun
 func (r *fakePlayerRepo) UpdateDailyBattleCount(_ context.Context, _ string, _ int64, _ civil.Date) error {
 	panic("not implemented in test")
 }
-func (r *fakePlayerRepo) UpdateUsername(_ context.Context, playerID, username string) (*apiaccount.Player, error) {
+func (r *fakePlayerRepo) UpdateUsername(_ context.Context, playerID, username string) error {
 	if r.updateUsernameErr != nil {
-		return nil, r.updateUsernameErr
+		return r.updateUsernameErr
 	}
 	r.usernames[playerID] = username
-	return &apiaccount.Player{}, nil
+	return nil
 }
 func (r *fakePlayerRepo) UpdatePremium(_ context.Context, playerID string, isPremium bool, expiresAt *time.Time) error {
 	if r.updatePremiumErr != nil {

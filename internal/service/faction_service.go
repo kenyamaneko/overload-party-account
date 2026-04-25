@@ -117,10 +117,9 @@ func (s *FactionService) ApplyOnboardingResult(
 		}
 		processed = true
 
-		// UpdateUsername は *Player を返すが subscriber 側は不要なので破棄する。
 		// player が存在しない場合は port.ErrNotFound が返り、呼び出し側 (subscriber) が
 		// publisher バグとして DLQ 相当の明示ハンドリングを行う。
-		if _, err := s.playerRepo.UpdateUsername(txCtx, playerID, displayName); err != nil {
+		if err := s.playerRepo.UpdateUsername(txCtx, playerID, displayName); err != nil {
 			return fmt.Errorf("update username: %w", err)
 		}
 		set, err := s.writeInitialFactionTx(txCtx, playerID, initialFactionID)

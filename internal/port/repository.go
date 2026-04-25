@@ -23,7 +23,9 @@ type PlayerRepo interface {
 	// UpdateDailyBattleCount は count と last_reset_date を書き込む純粋なプリミティブです。
 	// 日付リセットや上限判定などのドメインルールは service 層で解決してから呼び出します。
 	UpdateDailyBattleCount(ctx context.Context, playerID string, count int64, resetDate civil.Date) error
-	UpdateUsername(ctx context.Context, playerID string, username string) (*apiaccount.Player, error)
+	// UpdateUsername は username のみを更新する純プリミティブです。
+	// 行が存在しない場合は ErrNotFound を返します。
+	UpdateUsername(ctx context.Context, playerID string, username string) error
 	UpdatePremium(ctx context.Context, playerID string, isPremium bool, expiresAt *time.Time) error
 	UpdateFaction(ctx context.Context, playerID, faction string) error
 	// TrySetInitialFaction は selected_faction が NULL の場合のみ faction を書き込みます。
