@@ -28,12 +28,12 @@ type PlayerRepo interface {
 	UpdateName(ctx context.Context, playerID string, name string) error
 	UpdatePremium(ctx context.Context, playerID string, isPremium bool, expiresAt *time.Time) error
 	UpdateFaction(ctx context.Context, playerID, faction string) error
-	// TrySetInitialFaction は selected_faction が NULL の場合のみ faction を書き込みます。
-	// 「初回選択済みか否か」の SSoT は players.selected_faction なので、ここで原子的に判定します。
-	// selected=true なら今回のコールで初回選択が成立。selected=false は既に選択済み（ショップ購入
-	// などで player_factions に行があっても、selected_faction が NULL なら初回選択可能）。
-	// プレイヤー自体が存在しない場合は ErrNotFound を返します。
-	TrySetInitialFaction(ctx context.Context, playerID, faction string) (selected bool, err error)
+	// SetSelectedFactionIfNull は selected_faction が NULL の場合のみ faction を書き込みます。
+	// 戻り値は「行が更新されたか」のみで、未更新の理由 (既に選択済み / プレイヤー不在) は
+	// 識別しません。識別が必要な場合は呼び出し元が Exists と組み合わせて判断します。
+	SetSelectedFactionIfNull(ctx context.Context, playerID, faction string) (set bool, err error)
+	// Exists は player_id に対応する行の存在のみを確認する純プリミティブです。
+	Exists(ctx context.Context, playerID string) (bool, error)
 	// GetProgression は account.player_progression の現在値を返します。行が無ければ ErrNotFound。
 	GetProgression(ctx context.Context, playerID string) (*apiaccount.PlayerProgression, error)
 	// GetProgressionForUpdate は SELECT ... FOR UPDATE で行ロックを取得して progression を返します。

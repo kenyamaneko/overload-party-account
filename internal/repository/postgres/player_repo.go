@@ -215,37 +215,31 @@ func (r *PlayerRepository) UpdateFaction(ctx context.Context, playerID, faction 
 	return nil
 }
 
-// TrySetInitialFaction は selected_faction が NULL の行に対してのみ UPDATE する。
-// 1 行更新できた = 初回選択が成立、0 行 = 既に選択済み or プレイヤー不在。
-// 既存ショップ購入で player_factions に行があっても、selected_faction が NULL なら
-// 初回選択として成立させる（所持と初回選択は別概念）。
-func (r *PlayerRepository) TrySetInitialFaction(ctx context.Context, playerID, faction string) (bool, error) {
-	db := connFrom(ctx, r.pool)
-	ct, err := db.Exec(ctx,
+// SetSelectedFactionIfNull は selected_faction が NULL の行に対してのみ UPDATE する。
+// 戻り値は「行が更新されたか」のみで、未更新の理由 (既に選択済み / プレイヤー不在) の
+// 識別は行わない。識別は呼び出し元 (service) が Exists と組み合わせて判断する。
+func (r *PlayerRepository) SetSelectedFactionIfNull(ctx context.Context, playerID, faction string) (bool, error) {
+	ct, err := connFrom(ctx, r.pool).Exec(ctx,
 		`UPDATE account.players SET selected_faction = $1, updated_at = $2
 		 WHERE player_id = $3 AND selected_faction IS NULL`,
 		faction, time.Now(), playerID,
 	)
 	if err != nil {
-		return false, fmt.Errorf("try set initial faction: %w", err)
+		return false, fmt.Errorf("set selected faction if null: %w", err)
 	}
-	if ct.RowsAffected() == 1 {
-		return true, nil
-	}
+	return ct.RowsAffected() == 1, nil
+}
 
-	// 0 行は「既に選択済み」と「プレイヤー不在」の二通りがある。呼び出し元が 404 と 409 を
-	// 分けられるよう、ここで存在確認して区別する。
+// Exists は player_id に対応する行の存在のみを確認する純プリミティブ。
+func (r *PlayerRepository) Exists(ctx context.Context, playerID string) (bool, error) {
 	var exists bool
-	if err := db.QueryRow(ctx,
+	if err := connFrom(ctx, r.pool).QueryRow(ctx,
 		`SELECT EXISTS(SELECT 1 FROM account.players WHERE player_id = $1)`,
 		playerID,
 	).Scan(&exists); err != nil {
 		return false, fmt.Errorf("check player exists: %w", err)
 	}
-	if !exists {
-		return false, fmt.Errorf("player %s: %w", playerID, port.ErrNotFound)
-	}
-	return false, nil
+	return exists, nil
 }
 
 // GetProgression は player_progression の現在値を返す。該当なしは port.ErrNotFound でラップ。

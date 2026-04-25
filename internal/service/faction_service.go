@@ -137,17 +137,31 @@ func (s *FactionService) ApplyOnboardingResult(
 // writeInitialFactionTx は「selected_faction が NULL のときだけ書き込み、成立したら
 // player_factions にも initial_selection で 1 行追加する」共通ロジックを
 // トランザクション内で実行します。呼び出し側は必ず TxRunner.RunInTx 配下で呼ぶこと。
-// selected=false は既に選択済み (or ショップ先行で player_factions 行があっても
-// selected_faction が埋まっていたケース) を意味します。
+//
+// 戻り値:
+//   - selected=true: 今回のコールで初回選択が成立し player_factions にも反映済み
+//   - selected=false, err=nil: 既に選択済み (ショップ先行で player_factions 行があっても
+//     selected_faction が埋まっていたケースを含む)
+//   - err=ErrNotFound: プレイヤー自体が存在しない
+//
+// 「未更新の理由が既選択かプレイヤー不在か」のドメイン判断は service 層の責務として
+// ここで行う。repo は SetSelectedFactionIfNull / Exists の純プリミティブのみ提供する。
 func (s *FactionService) writeInitialFactionTx(
 	txCtx context.Context,
 	playerID, faction string,
 ) (selected bool, err error) {
-	set, err := s.playerRepo.TrySetInitialFaction(txCtx, playerID, faction)
+	set, err := s.playerRepo.SetSelectedFactionIfNull(txCtx, playerID, faction)
 	if err != nil {
-		return false, fmt.Errorf("try set initial faction: %w", err)
+		return false, fmt.Errorf("set selected faction: %w", err)
 	}
 	if !set {
+		exists, err := s.playerRepo.Exists(txCtx, playerID)
+		if err != nil {
+			return false, fmt.Errorf("check player exists: %w", err)
+		}
+		if !exists {
+			return false, fmt.Errorf("player %s: %w", playerID, port.ErrNotFound)
+		}
 		return false, nil
 	}
 	// AddPlayerFaction は (player_id, faction) 複合 PK に対する

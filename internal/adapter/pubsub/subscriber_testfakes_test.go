@@ -143,7 +143,10 @@ func (r *fakePlayerRepo) UpdatePremium(_ context.Context, playerID string, isPre
 func (r *fakePlayerRepo) UpdateFaction(_ context.Context, _, _ string) error {
 	panic("not implemented in test")
 }
-func (r *fakePlayerRepo) TrySetInitialFaction(_ context.Context, _, _ string) (bool, error) {
+func (r *fakePlayerRepo) SetSelectedFactionIfNull(_ context.Context, _, _ string) (bool, error) {
+	panic("not implemented in test")
+}
+func (r *fakePlayerRepo) Exists(_ context.Context, _ string) (bool, error) {
 	panic("not implemented in test")
 }
 func (r *fakePlayerRepo) GetProgression(_ context.Context, _ string) (*apiaccount.PlayerProgression, error) {

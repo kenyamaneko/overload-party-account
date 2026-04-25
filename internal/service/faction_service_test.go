@@ -8,6 +8,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/kenyamaneko/overload-party-account/internal/port"
 )
 
 // newFactionTestService は実 DB に playerID をシードし、実 repository で
@@ -178,4 +180,17 @@ func TestFactionService_SelectInitialFaction_EmptyPlayerID_ReturnsError(t *testi
 
 	err := svc.SelectInitialFaction(ctx, "", "SHE")
 	require.ErrorIs(t, err, ErrInvalidFaction)
+}
+
+// プレイヤーが存在しない場合は ErrNotFound を返す。
+// repo 層は「行が更新されたか」しか返さないため、service が Exists で識別する責務を持つ。
+func TestFactionService_SelectInitialFaction_PlayerNotFound_ReturnsErrNotFound(t *testing.T) {
+	ctx := context.Background()
+	sharedPg.Truncate(t)
+	playerRepo, factionRepo, _, tx := newRealRepos()
+	eventRepo := newProcessedEventRepo()
+	svc := NewFactionService(playerRepo, factionRepo, eventRepo, tx)
+
+	err := svc.SelectInitialFaction(ctx, "99999999-9999-9999-9999-999999999999", "SHE")
+	require.ErrorIs(t, err, port.ErrNotFound)
 }

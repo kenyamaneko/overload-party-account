@@ -147,7 +147,10 @@ func TestPlayerRepository_UpdateFaction(t *testing.T) {
 	assert.Equal(t, "SHE", *got.SelectedFaction)
 }
 
-func TestPlayerRepository_TrySetInitialFaction(t *testing.T) {
+// SetSelectedFactionIfNull は selected_faction が NULL のときだけ書き込む純プリミティブ。
+// 「未更新の理由が既選択かプレイヤー不在か」の識別は repo の責務外なので、ここでは
+// 「行が更新されたか」のみを検証する。プレイヤー不在ケースも 0 行扱い。
+func TestPlayerRepository_SetSelectedFactionIfNull(t *testing.T) {
 	repo := postgres.NewPlayerRepository(sharedPg.Pool)
 	ctx := context.Background()
 
@@ -155,53 +158,89 @@ func TestPlayerRepository_TrySetInitialFaction(t *testing.T) {
 	preSelectTenki := func(t *testing.T) {
 		require.NoError(t, repo.UpdateFaction(ctx, testPlayerID1, "Tenki"))
 	}
+	skipSeed := func(*testing.T) {}
 
 	tests := []struct {
-		name         string
-		preSelect    func(*testing.T)
-		wantSelected bool
-		wantStored   string
+		name       string
+		seed       bool
+		preSelect  func(*testing.T)
+		wantSet    bool
+		wantStored *string
 	}{
 		{
-			name:         "selected_faction が NULL なら初回選択が成立",
-			preSelect:    noPreSelect,
-			wantSelected: true,
-			wantStored:   "SHE",
+			name:       "selected_faction が NULL なら更新成立",
+			seed:       true,
+			preSelect:  noPreSelect,
+			wantSet:    true,
+			wantStored: ptrStr("SHE"),
 		},
 		{
-			name:         "既に選択済みなら不成立で値は上書きされない",
-			preSelect:    preSelectTenki,
-			wantSelected: false,
-			wantStored:   "Tenki",
+			name:       "既に選択済みなら更新不成立で値は上書きされない",
+			seed:       true,
+			preSelect:  preSelectTenki,
+			wantSet:    false,
+			wantStored: ptrStr("Tenki"),
+		},
+		{
+			name:       "プレイヤー不在も更新不成立 (NotFound 判定は service 層)",
+			seed:       false,
+			preSelect:  skipSeed,
+			wantSet:    false,
+			wantStored: nil,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			sharedPg.Truncate(t)
-			seedPlayer(t, testPlayerID1, "uid-1", "Alice", false)
-			tt.preSelect(t)
+			if tt.seed {
+				seedPlayer(t, testPlayerID1, "uid-1", "Alice", false)
+				tt.preSelect(t)
+			}
 
-			selected, err := repo.TrySetInitialFaction(ctx, testPlayerID1, "SHE")
+			set, err := repo.SetSelectedFactionIfNull(ctx, testPlayerID1, "SHE")
 			require.NoError(t, err)
-			assert.Equal(t, tt.wantSelected, selected)
+			assert.Equal(t, tt.wantSet, set)
 
-			got, err := repo.FindByID(ctx, testPlayerID1)
-			require.NoError(t, err)
-			require.NotNil(t, got.SelectedFaction)
-			assert.Equal(t, tt.wantStored, *got.SelectedFaction)
+			if tt.seed {
+				got, err := repo.FindByID(ctx, testPlayerID1)
+				require.NoError(t, err)
+				require.NotNil(t, got.SelectedFaction)
+				assert.Equal(t, *tt.wantStored, *got.SelectedFaction)
+			}
 		})
 	}
 }
 
-func TestPlayerRepository_TrySetInitialFaction_NotFound(t *testing.T) {
+// Exists は player_id 行の存在確認のみを行う純プリミティブ。
+func TestPlayerRepository_Exists(t *testing.T) {
 	repo := postgres.NewPlayerRepository(sharedPg.Pool)
 	ctx := context.Background()
 
-	sharedPg.Truncate(t)
-	_, err := repo.TrySetInitialFaction(ctx, testPlayerID1, "SHE")
-	assert.ErrorIs(t, err, port.ErrNotFound)
+	tests := []struct {
+		name string
+		seed bool
+		want bool
+	}{
+		{name: "シード済みなら true", seed: true, want: true},
+		{name: "未シードなら false (エラーではない)", seed: false, want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			sharedPg.Truncate(t)
+			if tt.seed {
+				seedPlayer(t, testPlayerID1, "uid-1", "Alice", false)
+			}
+
+			got, err := repo.Exists(ctx, testPlayerID1)
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, got)
+		})
+	}
 }
+
+func ptrStr(s string) *string { return &s }
 
 // UpdateDailyBattleCount は渡された値をそのまま書き込むプリミティブ。
 // 日付リセットやインクリメントの判断は service 層の責務なのでここでは検証しない。
