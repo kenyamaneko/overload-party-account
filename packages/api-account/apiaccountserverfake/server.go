@@ -75,10 +75,10 @@ type Server struct {
 	// AwardGameExpFn: POST /internal/v1/players/award-game-exp。既定は 204 No Content。
 	AwardGameExpFn func(req apiaccount.AwardGameExpRequest) (int, any)
 
-	// GetSettingsFn: GET /internal/v1/players/{playerID}/settings。既定は 200 + 空 UserSettings。
+	// GetSettingsFn: GET /internal/v1/players/{playerID}/settings。既定は 200 + 空 PlayerSettings。
 	GetSettingsFn func(playerID string) (int, any)
 
-	// UpdateSettingsFn: PUT /internal/v1/players/{playerID}/settings。既定は 200 + 空 UserSettings。
+	// UpdateSettingsFn: PUT /internal/v1/players/{playerID}/settings。既定は 200 + 空 PlayerSettings。
 	UpdateSettingsFn func(playerID string, req apiaccount.UpdateSettingsRequest) (int, any)
 }
 
@@ -355,7 +355,7 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, _ *http.Request, playe
 	fn := s.GetSettingsFn
 	s.mu.Unlock()
 	if fn == nil {
-		writeJSON(w, http.StatusOK, apiaccount.UserSettings{})
+		writeJSON(w, http.StatusOK, apiaccount.PlayerSettings{})
 		return
 	}
 	status, body := fn(playerID)
@@ -369,7 +369,7 @@ func (s *Server) handleUpdateSettings(w http.ResponseWriter, r *http.Request, pl
 	fn := s.UpdateSettingsFn
 	s.mu.Unlock()
 	if fn == nil {
-		writeJSON(w, http.StatusOK, apiaccount.UserSettings{})
+		writeJSON(w, http.StatusOK, apiaccount.PlayerSettings{})
 		return
 	}
 	status, body := fn(playerID, req)

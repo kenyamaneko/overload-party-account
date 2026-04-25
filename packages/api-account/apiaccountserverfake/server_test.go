@@ -67,11 +67,11 @@ func TestServer_RegisterFn_RoundTrip(t *testing.T) {
 		return http.StatusCreated, apiaccount.Player{
 			PlayerID:    "p-new",
 			FirebaseUID: req.FirebaseUID,
-			Username:    req.Username,
+			Name:        req.Name,
 		}
 	}
 
-	reqBody, _ := json.Marshal(apiaccount.RegisterRequest{FirebaseUID: "uid-42", Username: "alice"})
+	reqBody, _ := json.Marshal(apiaccount.RegisterRequest{FirebaseUID: "uid-42", Name: "alice"})
 	req, _ := http.NewRequest(http.MethodPost, srv.URL()+"/internal/v1/auth/register", bytes.NewReader(reqBody))
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := http.DefaultClient.Do(req)
@@ -80,12 +80,12 @@ func TestServer_RegisterFn_RoundTrip(t *testing.T) {
 
 	assert.Equal(t, http.StatusCreated, resp.StatusCode)
 	assert.Equal(t, "uid-42", gotReq.FirebaseUID)
-	assert.Equal(t, "alice", gotReq.Username)
+	assert.Equal(t, "alice", gotReq.Name)
 
 	var decoded apiaccount.Player
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&decoded))
 	assert.Equal(t, "p-new", decoded.PlayerID)
-	assert.Equal(t, "alice", decoded.Username)
+	assert.Equal(t, "alice", decoded.Name)
 }
 
 // RegisterFn で 409 Conflict を擬似できる (既存プレイヤー衝突シナリオ)。
@@ -120,7 +120,7 @@ func TestServer_PathVariables_ExtractPlayerID(t *testing.T) {
 	srv.UpdateNameFn = func(playerID string, req apiaccount.UpdateNameRequest) (int, any) {
 		gotPlayerID = playerID
 		gotReq = req
-		return http.StatusOK, apiaccount.Player{PlayerID: playerID, Username: req.Name}
+		return http.StatusOK, apiaccount.Player{PlayerID: playerID, Name: req.Name}
 	}
 
 	reqBody := []byte(`{"name":"bob"}`)

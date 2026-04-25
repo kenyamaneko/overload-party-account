@@ -1,7 +1,7 @@
 # SSoT for account-owned types.
 #
 # The account service is the owner of player / player_daily_battle /
-# player_factions / user_settings. This file drives scripts/generate_types.py
+# player_factions / player_settings. This file drives scripts/generate_types.py
 # to emit Go code into packages/api-account/*_gen.go, which gateway (and other
 # services) go-get as a published contract.
 #
@@ -27,7 +27,7 @@ files:
         fields:
           - {name: PlayerID, type: string, json: "player_id", db: "player_id"}
           - {name: FirebaseUID, type: string, json: "firebase_uid", db: "firebase_uid"}
-          - {name: Username, type: string, json: "username", db: "username"}
+          - {name: Name, type: string, json: "name", db: "name"}
           - {name: Level, type: int64, json: "level", db: "level"}
           - {name: Exp, type: int64, json: "exp", db: "exp"}
           - {name: IsPremium, type: bool, json: "is_premium", db: "is_premium"}
@@ -60,8 +60,8 @@ files:
           - {name: Source, type: string, json: "source", db: "source"}
           - {name: AcquiredAt, type: time.Time, json: "acquired_at", db: "acquired_at"}
 
-      - name: UserSettings
-        comment: "UserSettings is the account.user_settings row."
+      - name: PlayerSettings
+        comment: "PlayerSettings is the account.player_settings row."
         fields:
           - {name: PlayerID, type: string, json: "player_id", db: "player_id"}
           - {name: Language, type: string, json: "language", db: "language"}
@@ -82,7 +82,7 @@ files:
         fields:
           - {name: PlayerID, type: string, json: "player_id"}
           - {name: FirebaseUID, type: string, json: "firebase_uid"}
-          - {name: Username, type: string, json: "username"}
+          - {name: Name, type: string, json: "name"}
           - {name: Level, type: int64, json: "level"}
           - {name: Exp, type: int64, json: "exp"}
           - {name: IsPremium, type: bool, json: "is_premium"}
@@ -108,10 +108,10 @@ files:
 
       # ── Requests ──
       - name: RegisterRequest
-        comment: "RegisterRequest is the body for POST /internal/v1/auth/register. The internal RPC form carries firebase_uid explicitly; the public-facing form (client → gateway) only has username — gateway forwards the Firebase-verified UID."
+        comment: "RegisterRequest is the body for POST /internal/v1/auth/register. The internal RPC form carries firebase_uid explicitly; the public-facing form (client → gateway) only has name — gateway forwards the Firebase-verified UID."
         fields:
           - {name: FirebaseUID, type: string, json: "firebase_uid"}
-          - {name: Username, type: string, json: "username"}
+          - {name: Name, type: string, json: "name"}
 
       - name: LoginRequest
         comment: "LoginRequest is the body for POST /internal/v1/auth/login."

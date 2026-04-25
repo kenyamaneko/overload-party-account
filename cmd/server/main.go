@@ -106,20 +106,20 @@ func run() error {
 
 	txManager := postgres.NewTxManager(pool)
 	playerRepo := postgres.NewPlayerRepository(pool)
-	userSettingsRepo := postgres.NewUserSettingsRepository(pool)
+	playerSettingsRepo := postgres.NewPlayerSettingsRepository(pool)
 	gameConfigRepo := accountfirestore.NewGameConfigRepository(fsClient)
 	factionRepo := postgres.NewFactionRepository(pool)
 	eventRepo := postgres.NewProcessedEventRepository(pool)
 
-	authSvc := service.NewAuthService(playerRepo, userSettingsRepo, txManager)
+	authSvc := service.NewAuthService(playerRepo, playerSettingsRepo, txManager)
 	playerSvc := service.NewPlayerService(playerRepo, gameConfigRepo, factionRepo, txManager)
 	factionSvc := service.NewFactionService(playerRepo, factionRepo, eventRepo, txManager)
-	settingsSvc := service.NewUserSettingsService(userSettingsRepo)
+	settingsSvc := service.NewPlayerSettingsService(playerSettingsRepo)
 
 	authH := rest.NewAuthHandler(authSvc)
 	playerH := rest.NewPlayerHandler(playerSvc)
 	factionH := rest.NewFactionHandler(factionSvc)
-	settingsH := rest.NewUserSettingsHandler(settingsSvc)
+	settingsH := rest.NewPlayerSettingsHandler(settingsSvc)
 
 	r := router.New(authH, playerH, factionH, settingsH)
 

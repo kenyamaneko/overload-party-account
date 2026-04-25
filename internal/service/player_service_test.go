@@ -231,7 +231,7 @@ func TestPlayerService_GetPlayer_Success(t *testing.T) {
 	got, err := svc.GetPlayer(context.Background(), testPlayerID1)
 	require.NoError(t, err)
 	assert.Equal(t, testPlayerID1, got.PlayerID)
-	assert.Equal(t, "Alice", got.Username)
+	assert.Equal(t, "Alice", got.Name)
 }
 
 func TestPlayerService_GetPlayer_NotFound_ReturnsError(t *testing.T) {
@@ -243,27 +243,27 @@ func TestPlayerService_GetPlayer_NotFound_ReturnsError(t *testing.T) {
 	require.ErrorIs(t, err, port.ErrNotFound)
 }
 
-func TestPlayerService_UpdateUsername(t *testing.T) {
+func TestPlayerService_UpdateName(t *testing.T) {
 	ctx := context.Background()
 	sharedPg.Truncate(t)
 	seedPlayer(t, testPlayerID1, "uid-1", "Alice", false)
 
 	svc := newPlayerTestService(nil)
 
-	updated, err := svc.UpdateUsername(ctx, testPlayerID1, "Bob")
+	updated, err := svc.UpdateName(ctx, testPlayerID1, "Bob")
 	require.NoError(t, err)
-	assert.Equal(t, "Bob", updated.Username)
+	assert.Equal(t, "Bob", updated.Name)
 
 	got, err := svc.GetPlayer(ctx, testPlayerID1)
 	require.NoError(t, err)
-	assert.Equal(t, "Bob", got.Username)
+	assert.Equal(t, "Bob", got.Name)
 }
 
-func TestPlayerService_UpdateUsername_NotFound(t *testing.T) {
+func TestPlayerService_UpdateName_NotFound(t *testing.T) {
 	sharedPg.Truncate(t)
 	svc := newPlayerTestService(nil)
 
-	_, err := svc.UpdateUsername(context.Background(), "99999999-9999-9999-9999-999999999999", "Bob")
+	_, err := svc.UpdateName(context.Background(), "99999999-9999-9999-9999-999999999999", "Bob")
 	require.ErrorIs(t, err, port.ErrNotFound)
 }
 

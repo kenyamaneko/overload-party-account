@@ -10,7 +10,7 @@ import (
 type PlayerResponse struct {
 	PlayerID         string     `json:"player_id"`
 	FirebaseUID      string     `json:"firebase_uid"`
-	Username         string     `json:"username"`
+	Name             string     `json:"name"`
 	Level            int64      `json:"level"`
 	Exp              int64      `json:"exp"`
 	IsPremium        bool       `json:"is_premium"`
@@ -35,10 +35,10 @@ type ListFactionsResponse struct {
 	Factions []string `json:"factions"`
 }
 
-// RegisterRequest is the body for POST /internal/v1/auth/register. The internal RPC form carries firebase_uid explicitly; the public-facing form (client → gateway) only has username — gateway forwards the Firebase-verified UID.
+// RegisterRequest is the body for POST /internal/v1/auth/register. The internal RPC form carries firebase_uid explicitly; the public-facing form (client → gateway) only has name — gateway forwards the Firebase-verified UID.
 type RegisterRequest struct {
 	FirebaseUID string `json:"firebase_uid"`
-	Username    string `json:"username"`
+	Name        string `json:"name"`
 }
 
 // LoginRequest is the body for POST /internal/v1/auth/login.

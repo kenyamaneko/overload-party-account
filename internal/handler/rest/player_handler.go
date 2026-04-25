@@ -71,7 +71,7 @@ func (h *PlayerHandler) UpdateName(c *gin.Context) {
 		return
 	}
 
-	player, err := h.playerService.UpdateUsername(c.Request.Context(), playerID, req.Name)
+	player, err := h.playerService.UpdateName(c.Request.Context(), playerID, req.Name)
 	if err != nil {
 		respondError(c, err)
 		return

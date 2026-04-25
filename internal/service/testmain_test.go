@@ -57,13 +57,13 @@ func (f *fakeGameConfigRepo) GetInt64(_ context.Context, key string) (int64, err
 
 // seedPlayer は account.players + player_daily_battle + player_progression の最小シードを投入する。
 // postgres 層テストの helpers_test.go と同じパターン。
-func seedPlayer(t *testing.T, playerID, firebaseUID, username string, isPremium bool) *apiaccount.Player {
+func seedPlayer(t *testing.T, playerID, firebaseUID, name string, isPremium bool) *apiaccount.Player {
 	t.Helper()
 	now := time.Now().UTC()
 	p := &apiaccount.Player{
 		PlayerID:    playerID,
 		FirebaseUID: firebaseUID,
-		Username:    username,
+		Name:        name,
 		Level:       1,
 		Exp:         0,
 		IsPremium:   isPremium,
@@ -72,9 +72,9 @@ func seedPlayer(t *testing.T, playerID, firebaseUID, username string, isPremium 
 	}
 	ctx := context.Background()
 	_, err := sharedPg.Pool.Exec(ctx,
-		`INSERT INTO account.players (player_id, firebase_uid, username, is_premium, equipped_icon_no, selected_faction, premium_expires_at, created_at, updated_at)
+		`INSERT INTO account.players (player_id, firebase_uid, name, is_premium, equipped_icon_no, selected_faction, premium_expires_at, created_at, updated_at)
 		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
-		p.PlayerID, p.FirebaseUID, p.Username, p.IsPremium,
+		p.PlayerID, p.FirebaseUID, p.Name, p.IsPremium,
 		p.EquippedIconNo, p.SelectedFaction, p.PremiumExpiresAt, p.CreatedAt, p.UpdatedAt)
 	require.NoError(t, err)
 
@@ -94,13 +94,13 @@ func seedPlayer(t *testing.T, playerID, firebaseUID, username string, isPremium 
 
 // seedPlayerWithState は指定の level/exp/daily_battle 状態でシードする。
 // GetBattleLimit / AwardExp のテスト用。level/exp は player_progression テーブルに入る。
-func seedPlayerWithState(t *testing.T, playerID, firebaseUID, username string, isPremium bool, level, exp int64, count int64, lastReset civil.Date) *apiaccount.Player {
+func seedPlayerWithState(t *testing.T, playerID, firebaseUID, name string, isPremium bool, level, exp int64, count int64, lastReset civil.Date) *apiaccount.Player {
 	t.Helper()
 	now := time.Now().UTC()
 	p := &apiaccount.Player{
 		PlayerID:    playerID,
 		FirebaseUID: firebaseUID,
-		Username:    username,
+		Name:        name,
 		Level:       level,
 		Exp:         exp,
 		IsPremium:   isPremium,
@@ -109,9 +109,9 @@ func seedPlayerWithState(t *testing.T, playerID, firebaseUID, username string, i
 	}
 	ctx := context.Background()
 	_, err := sharedPg.Pool.Exec(ctx,
-		`INSERT INTO account.players (player_id, firebase_uid, username, is_premium, equipped_icon_no, selected_faction, premium_expires_at, created_at, updated_at)
+		`INSERT INTO account.players (player_id, firebase_uid, name, is_premium, equipped_icon_no, selected_faction, premium_expires_at, created_at, updated_at)
 		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
-		p.PlayerID, p.FirebaseUID, p.Username, p.IsPremium,
+		p.PlayerID, p.FirebaseUID, p.Name, p.IsPremium,
 		p.EquippedIconNo, p.SelectedFaction, p.PremiumExpiresAt, p.CreatedAt, p.UpdatedAt)
 	require.NoError(t, err)
 
@@ -129,11 +129,11 @@ func seedPlayerWithState(t *testing.T, playerID, firebaseUID, username string, i
 	return p
 }
 
-// seedUserSettings は account.user_settings に 1 行追加する。
-func seedUserSettings(t *testing.T, playerID, language string, bgm, se int64, push bool) {
+// seedPlayerSettings は account.player_settings に 1 行追加する。
+func seedPlayerSettings(t *testing.T, playerID, language string, bgm, se int64, push bool) {
 	t.Helper()
 	_, err := sharedPg.Pool.Exec(context.Background(),
-		`INSERT INTO account.user_settings (player_id, language, bgm_volume, se_volume, push_enabled)
+		`INSERT INTO account.player_settings (player_id, language, bgm_volume, se_volume, push_enabled)
 		 VALUES ($1, $2, $3, $4, $5)`,
 		playerID, language, bgm, se, push)
 	require.NoError(t, err)
@@ -142,10 +142,10 @@ func seedUserSettings(t *testing.T, playerID, language string, bgm, se int64, pu
 // newRealRepos は実 PostgreSQL repository と TxManager のセットを返す。
 // service テストで内部 mock を一切使わず、shop 流の「実 DB + 外部依存のみ fake」
 // パターンで service を組むためのヘルパ。
-func newRealRepos() (*postgres.PlayerRepository, *postgres.FactionRepository, *postgres.UserSettingsRepository, *postgres.TxManager) {
+func newRealRepos() (*postgres.PlayerRepository, *postgres.FactionRepository, *postgres.PlayerSettingsRepository, *postgres.TxManager) {
 	return postgres.NewPlayerRepository(sharedPg.Pool),
 		postgres.NewFactionRepository(sharedPg.Pool),
-		postgres.NewUserSettingsRepository(sharedPg.Pool),
+		postgres.NewPlayerSettingsRepository(sharedPg.Pool),
 		postgres.NewTxManager(sharedPg.Pool)
 }
 

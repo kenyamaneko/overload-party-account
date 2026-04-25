@@ -119,8 +119,8 @@ func (s *FactionService) ApplyOnboardingResult(
 
 		// player が存在しない場合は port.ErrNotFound が返り、呼び出し側 (subscriber) が
 		// publisher バグとして DLQ 相当の明示ハンドリングを行う。
-		if err := s.playerRepo.UpdateUsername(txCtx, playerID, displayName); err != nil {
-			return fmt.Errorf("update username: %w", err)
+		if err := s.playerRepo.UpdateName(txCtx, playerID, displayName); err != nil {
+			return fmt.Errorf("update name: %w", err)
 		}
 		set, err := s.writeInitialFactionTx(txCtx, playerID, initialFactionID)
 		if err != nil {

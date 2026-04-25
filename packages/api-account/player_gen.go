@@ -12,7 +12,7 @@ import (
 type Player struct {
 	PlayerID         string     `json:"player_id" db:"player_id"`
 	FirebaseUID      string     `json:"firebase_uid" db:"firebase_uid"`
-	Username         string     `json:"username" db:"username"`
+	Name             string     `json:"name" db:"name"`
 	Level            int64      `json:"level" db:"level"`
 	Exp              int64      `json:"exp" db:"exp"`
 	IsPremium        bool       `json:"is_premium" db:"is_premium"`
@@ -46,8 +46,8 @@ type PlayerFaction struct {
 	AcquiredAt time.Time `json:"acquired_at" db:"acquired_at"`
 }
 
-// UserSettings is the account.user_settings row.
-type UserSettings struct {
+// PlayerSettings is the account.player_settings row.
+type PlayerSettings struct {
 	PlayerID    string    `json:"player_id" db:"player_id"`
 	Language    string    `json:"language" db:"language"`
 	BgmVolume   int64     `json:"bgm_volume" db:"bgm_volume"`

@@ -38,7 +38,7 @@ $$ LANGUAGE plpgsql;
 CREATE TABLE account.players (
   player_id          UUID NOT NULL DEFAULT gen_random_uuid(), -- UUID
   firebase_uid       VARCHAR(128) NOT NULL,          -- Firebase Auth UID (Unique)
-  username           VARCHAR(50) NOT NULL,           -- 表示名
+  name               VARCHAR(50) NOT NULL,           -- 表示名
   is_premium         BOOLEAN NOT NULL,               -- 課金ステータス
   equipped_icon_no   BIGINT,                         -- 装備中アイコン番号（NULL: デフォルト）
   selected_faction   VARCHAR(20),                    -- 選択済みファクション
@@ -96,18 +96,18 @@ CREATE TABLE account.player_factions (
 );
 
 -- =============================================================================
--- account.user_settings
+-- account.player_settings
 -- =============================================================================
 
-CREATE TABLE account.user_settings (
-  player_id    UUID PRIMARY KEY REFERENCES account.players(player_id) ON DELETE CASCADE, -- ユーザーID
+CREATE TABLE account.player_settings (
+  player_id    UUID PRIMARY KEY REFERENCES account.players(player_id) ON DELETE CASCADE, -- プレイヤーID
   language     VARCHAR(10) NOT NULL,                 -- 言語設定
   bgm_volume   BIGINT NOT NULL,                      -- BGM音量 (0-100)
   se_volume    BIGINT NOT NULL,                      -- SE音量 (0-100)
   push_enabled BOOLEAN NOT NULL,                     -- 通知許可
   updated_at   TIMESTAMPTZ NOT NULL DEFAULT now()    -- 更新日時
 );
-CREATE TRIGGER trg_user_settings_updated_at BEFORE UPDATE ON account.user_settings FOR EACH ROW EXECUTE FUNCTION account.update_updated_at();
+CREATE TRIGGER trg_player_settings_updated_at BEFORE UPDATE ON account.player_settings FOR EACH ROW EXECUTE FUNCTION account.update_updated_at();
 
 -- =============================================================================
 -- account.processed_events (Pub/Sub subscriber idempotency)

@@ -17,13 +17,13 @@ import (
 // ptr はテスト内でポインタリテラルを書きやすくするヘルパ。
 func ptr[T any](v T) *T { return &v }
 
-// newUserSettingsTestService は実 PostgreSQL repository で UserSettingsService を組む。
-func newUserSettingsTestService() *UserSettingsService {
+// newPlayerSettingsTestService は実 PostgreSQL repository で PlayerSettingsService を組む。
+func newPlayerSettingsTestService() *PlayerSettingsService {
 	_, _, userSettingsRepo, _ := newRealRepos()
-	return NewUserSettingsService(userSettingsRepo)
+	return NewPlayerSettingsService(userSettingsRepo)
 }
 
-func TestUserSettingsService_Get_Seeded(t *testing.T) {
+func TestPlayerSettingsService_Get_Seeded(t *testing.T) {
 	ctx := context.Background()
 
 	tests := []struct {
@@ -53,9 +53,9 @@ func TestUserSettingsService_Get_Seeded(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			sharedPg.Truncate(t)
 			seedPlayer(t, testPlayerID1, "uid-1", "Alice", false)
-			seedUserSettings(t, testPlayerID1, tt.seedLang, tt.seedBgm, tt.seedSe, tt.seedPush)
+			seedPlayerSettings(t, testPlayerID1, tt.seedLang, tt.seedBgm, tt.seedSe, tt.seedPush)
 
-			svc := newUserSettingsTestService()
+			svc := newPlayerSettingsTestService()
 			got, err := svc.Get(ctx, testPlayerID1)
 			require.NoError(t, err)
 			require.NotNil(t, got)
@@ -68,15 +68,15 @@ func TestUserSettingsService_Get_Seeded(t *testing.T) {
 	}
 }
 
-// TestUserSettingsService_Get_Unseeded_ReturnsDefaultsWithoutPersisting は
+// TestPlayerSettingsService_Get_Unseeded_ReturnsDefaultsWithoutPersisting は
 // 未登録プレイヤーに対して Get がデフォルト値を返しつつ DB に書き込まない契約を検証する
 // （handler は明示的な Update でのみ永続化する）。
-func TestUserSettingsService_Get_Unseeded_ReturnsDefaultsWithoutPersisting(t *testing.T) {
+func TestPlayerSettingsService_Get_Unseeded_ReturnsDefaultsWithoutPersisting(t *testing.T) {
 	ctx := context.Background()
 	sharedPg.Truncate(t)
 	seedPlayer(t, testPlayerID1, "uid-1", "Alice", false)
 
-	svc := newUserSettingsTestService()
+	svc := newPlayerSettingsTestService()
 	got, err := svc.Get(ctx, testPlayerID1)
 	require.NoError(t, err)
 	require.NotNil(t, got)
@@ -88,19 +88,19 @@ func TestUserSettingsService_Get_Unseeded_ReturnsDefaultsWithoutPersisting(t *te
 
 	var count int
 	require.NoError(t, sharedPg.Pool.QueryRow(ctx,
-		`SELECT COUNT(*) FROM account.user_settings WHERE player_id = $1`, testPlayerID1,
+		`SELECT COUNT(*) FROM account.player_settings WHERE player_id = $1`, testPlayerID1,
 	).Scan(&count))
 	assert.Equal(t, 0, count, "Get はデフォルト返却で永続化しない")
 }
 
 // Update は patch の非 nil フィールドだけを更新する（部分更新契約）。
 // nil フィールドは現状維持、複数指定は同時に書き換え。
-func TestUserSettingsService_Update(t *testing.T) {
+func TestPlayerSettingsService_Update(t *testing.T) {
 	ctx := context.Background()
 
 	tests := []struct {
 		name     string
-		patch    *port.UserSettingsPatch
+		patch    *port.PlayerSettingsPatch
 		wantLang string
 		wantBgm  int64
 		wantSe   int64
@@ -108,7 +108,7 @@ func TestUserSettingsService_Update(t *testing.T) {
 	}{
 		{
 			name:     "言語だけ指定すると他の項目はシード値のまま維持される",
-			patch:    &port.UserSettingsPatch{Language: ptr("en")},
+			patch:    &port.PlayerSettingsPatch{Language: ptr("en")},
 			wantLang: "en",
 			wantBgm:  50,
 			wantSe:   50,
@@ -116,7 +116,7 @@ func TestUserSettingsService_Update(t *testing.T) {
 		},
 		{
 			name: "全フィールド指定で一括上書きされる",
-			patch: &port.UserSettingsPatch{
+			patch: &port.PlayerSettingsPatch{
 				Language:    ptr("en"),
 				BgmVolume:   ptr(int64(90)),
 				SeVolume:    ptr(int64(80)),
@@ -133,9 +133,9 @@ func TestUserSettingsService_Update(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			sharedPg.Truncate(t)
 			seedPlayer(t, testPlayerID1, "uid-1", "Alice", false)
-			seedUserSettings(t, testPlayerID1, "ja", 50, 50, true)
+			seedPlayerSettings(t, testPlayerID1, "ja", 50, 50, true)
 
-			svc := newUserSettingsTestService()
+			svc := newPlayerSettingsTestService()
 			require.NoError(t, svc.Update(ctx, testPlayerID1, tt.patch))
 
 			got, err := svc.Get(ctx, testPlayerID1)
@@ -149,34 +149,34 @@ func TestUserSettingsService_Update(t *testing.T) {
 	}
 }
 
-// user_settings 行が未登録なら Update は ErrNotFound を返す。
+// player_settings 行が未登録なら Update は ErrNotFound を返す。
 // 通常は Register で Insert されているので発生しないが、契約として担保する。
-func TestUserSettingsService_Update_NotFound(t *testing.T) {
+func TestPlayerSettingsService_Update_NotFound(t *testing.T) {
 	ctx := context.Background()
 	sharedPg.Truncate(t)
 	seedPlayer(t, testPlayerID1, "uid-1", "Alice", false)
 
-	svc := newUserSettingsTestService()
-	err := svc.Update(ctx, testPlayerID1, &port.UserSettingsPatch{Language: ptr("en")})
+	svc := newPlayerSettingsTestService()
+	err := svc.Update(ctx, testPlayerID1, &port.PlayerSettingsPatch{Language: ptr("en")})
 	require.ErrorIs(t, err, port.ErrNotFound)
 }
 
 // 既存行の updated_at が Update で必ず前進することを検証する（監査やキャッシュ無効化の基盤）。
-// 実際の更新は BEFORE UPDATE トリガー trg_user_settings_updated_at が now() に書き換える。
-func TestUserSettingsService_Update_AdvancesUpdatedAt(t *testing.T) {
+// 実際の更新は BEFORE UPDATE トリガー trg_player_settings_updated_at が now() に書き換える。
+func TestPlayerSettingsService_Update_AdvancesUpdatedAt(t *testing.T) {
 	ctx := context.Background()
 	sharedPg.Truncate(t)
 	seedPlayer(t, testPlayerID1, "uid-1", "Alice", false)
-	seedUserSettings(t, testPlayerID1, "ja", 50, 50, true)
+	seedPlayerSettings(t, testPlayerID1, "ja", 50, 50, true)
 
-	svc := newUserSettingsTestService()
+	svc := newPlayerSettingsTestService()
 	before, err := svc.Get(ctx, testPlayerID1)
 	require.NoError(t, err)
 
 	// updated_at 解像度が 1ms 未満の場合に同値になることを防ぐため 2ms 待つ。
 	time.Sleep(2 * time.Millisecond)
 
-	require.NoError(t, svc.Update(ctx, testPlayerID1, &port.UserSettingsPatch{Language: ptr("en")}))
+	require.NoError(t, svc.Update(ctx, testPlayerID1, &port.PlayerSettingsPatch{Language: ptr("en")}))
 
 	after, err := svc.Get(ctx, testPlayerID1)
 	require.NoError(t, err)
@@ -187,12 +187,12 @@ func TestUserSettingsService_Update_AdvancesUpdatedAt(t *testing.T) {
 
 // Get は該当プレイヤーの設定が無い場合、デフォルト値の UpdatedAt に現在時刻を詰めて返す。
 // 「常に non-nil で language/volume/push がデフォルト値」であることの契約テスト。
-func TestUserSettingsService_Get_DefaultHasCurrentTimestamp(t *testing.T) {
+func TestPlayerSettingsService_Get_DefaultHasCurrentTimestamp(t *testing.T) {
 	ctx := context.Background()
 	sharedPg.Truncate(t)
 	seedPlayer(t, testPlayerID1, "uid-1", "Alice", false)
 
-	svc := newUserSettingsTestService()
+	svc := newPlayerSettingsTestService()
 	before := time.Now()
 	got, err := svc.Get(ctx, testPlayerID1)
 	after := time.Now()

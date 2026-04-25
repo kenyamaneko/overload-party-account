@@ -25,17 +25,17 @@ func TestAuthService_Register_Success(t *testing.T) {
 	tests := []struct {
 		name        string
 		firebaseUID string
-		username    string
+		playerName       string
 	}{
 		{
 			name:        "新規登録 1",
 			firebaseUID: "firebase-uid-1",
-			username:    "TestUser",
+			playerName:       "TestUser",
 		},
 		{
 			name:        "新規登録 2",
 			firebaseUID: "firebase-uid-2",
-			username:    "Alice",
+			playerName:       "Alice",
 		},
 	}
 
@@ -44,30 +44,30 @@ func TestAuthService_Register_Success(t *testing.T) {
 			sharedPg.Truncate(t)
 			svc := newAuthTestService()
 
-			player, err := svc.Register(ctx, tt.firebaseUID, tt.username)
+			player, err := svc.Register(ctx, tt.firebaseUID, tt.playerName)
 			require.NoError(t, err)
 			assert.NotEmpty(t, player.PlayerID)
 			assert.Equal(t, tt.firebaseUID, player.FirebaseUID)
-			assert.Equal(t, tt.username, player.Username)
+			assert.Equal(t, tt.playerName, player.Name)
 			assert.Equal(t, int64(1), player.Level)
 			assert.Equal(t, int64(0), player.Exp)
 			assert.False(t, player.IsPremium)
 
-			// Register はトランザクションで player と user_settings をアトミックに作成する。
+			// Register はトランザクションで player と player_settings をアトミックに作成する。
 			// tx の commit を実 DB 行の存在で検証する。
 			var count int
 			require.NoError(t, sharedPg.Pool.QueryRow(ctx,
-				`SELECT COUNT(*) FROM account.user_settings WHERE player_id = $1`,
+				`SELECT COUNT(*) FROM account.player_settings WHERE player_id = $1`,
 				player.PlayerID,
 			).Scan(&count))
-			assert.Equal(t, 1, count, "Register はデフォルトの user_settings を作成する")
+			assert.Equal(t, 1, count, "Register はデフォルトの player_settings を作成する")
 
 			var language string
 			var bgm, se int64
 			var push bool
 			require.NoError(t, sharedPg.Pool.QueryRow(ctx,
 				`SELECT language, bgm_volume, se_volume, push_enabled
-				 FROM account.user_settings WHERE player_id = $1`,
+				 FROM account.player_settings WHERE player_id = $1`,
 				player.PlayerID,
 			).Scan(&language, &bgm, &se, &push))
 			assert.Equal(t, model.DefaultLanguage, language)
@@ -101,7 +101,7 @@ func TestAuthService_Login_Success(t *testing.T) {
 	loggedIn, err := svc.Login(ctx, "firebase-uid-login")
 	require.NoError(t, err)
 	assert.Equal(t, registered.PlayerID, loggedIn.PlayerID)
-	assert.Equal(t, "LoginUser", loggedIn.Username)
+	assert.Equal(t, "LoginUser", loggedIn.Name)
 }
 
 func TestAuthService_Login_NotFound(t *testing.T) {

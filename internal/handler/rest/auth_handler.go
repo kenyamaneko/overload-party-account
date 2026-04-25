@@ -10,7 +10,7 @@ import (
 	apiaccount "github.com/kenyamaneko/overload-party-account/packages/api-account"
 )
 
-const maxUsernameRunes = 50
+const maxNameRunes = 50
 
 // AuthHandler は認証関連の REST エンドポイントを処理します。
 type AuthHandler struct {
@@ -33,12 +33,12 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "firebase_uid is required"})
 		return
 	}
-	if n := utf8.RuneCountInString(req.Username); n < 1 || n > maxUsernameRunes {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "username must be 1-50 characters"})
+	if n := utf8.RuneCountInString(req.Name); n < 1 || n > maxNameRunes {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "name must be 1-50 characters"})
 		return
 	}
 
-	player, err := h.authService.Register(c.Request.Context(), req.FirebaseUID, req.Username)
+	player, err := h.authService.Register(c.Request.Context(), req.FirebaseUID, req.Name)
 	if err != nil {
 		respondError(c, err)
 		return

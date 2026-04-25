@@ -93,10 +93,10 @@ func (r *fakeFactionRepo) GetPlayerFactions(_ context.Context, playerID string) 
 // 経由して repo に触れるため、fakePlayerRepo は参照されない。
 // 将来 premium_updated のテストを書く際に使えるよう骨格だけ残す。
 type fakePlayerRepo struct {
-	usernames         map[string]string
-	premium           map[string]premiumState
-	updateUsernameErr error
-	updatePremiumErr  error
+	names            map[string]string
+	premium          map[string]premiumState
+	updateNameErr    error
+	updatePremiumErr error
 }
 
 type premiumState struct {
@@ -106,8 +106,8 @@ type premiumState struct {
 
 func newFakePlayerRepo() *fakePlayerRepo {
 	return &fakePlayerRepo{
-		usernames: map[string]string{},
-		premium:   map[string]premiumState{},
+		names:   map[string]string{},
+		premium: map[string]premiumState{},
 	}
 }
 
@@ -126,11 +126,11 @@ func (r *fakePlayerRepo) GetDailyBattle(_ context.Context, _ string) (*apiaccoun
 func (r *fakePlayerRepo) UpdateDailyBattleCount(_ context.Context, _ string, _ int64, _ civil.Date) error {
 	panic("not implemented in test")
 }
-func (r *fakePlayerRepo) UpdateUsername(_ context.Context, playerID, username string) error {
-	if r.updateUsernameErr != nil {
-		return r.updateUsernameErr
+func (r *fakePlayerRepo) UpdateName(_ context.Context, playerID, name string) error {
+	if r.updateNameErr != nil {
+		return r.updateNameErr
 	}
-	r.usernames[playerID] = username
+	r.names[playerID] = name
 	return nil
 }
 func (r *fakePlayerRepo) UpdatePremium(_ context.Context, playerID string, isPremium bool, expiresAt *time.Time) error {

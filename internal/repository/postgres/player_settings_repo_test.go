@@ -17,8 +17,8 @@ import (
 // ptr はテスト内でポインタリテラルを書きやすくするヘルパ。
 func ptr[T any](v T) *T { return &v }
 
-func TestUserSettingsRepository_Get_Seeded(t *testing.T) {
-	repo := postgres.NewUserSettingsRepository(sharedPg.Pool)
+func TestPlayerSettingsRepository_Get_Seeded(t *testing.T) {
+	repo := postgres.NewPlayerSettingsRepository(sharedPg.Pool)
 	ctx := context.Background()
 
 	tests := []struct {
@@ -48,7 +48,7 @@ func TestUserSettingsRepository_Get_Seeded(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			sharedPg.Truncate(t)
 			seedPlayer(t, testPlayerID1, "uid-1", "Alice", false)
-			seedUserSettings(t, testPlayerID1, tt.seedLang, tt.seedBgm, tt.seedSe, tt.seedPush)
+			seedPlayerSettings(t, testPlayerID1, tt.seedLang, tt.seedBgm, tt.seedSe, tt.seedPush)
 
 			got, err := repo.Get(ctx, testPlayerID1)
 			require.NoError(t, err)
@@ -61,8 +61,8 @@ func TestUserSettingsRepository_Get_Seeded(t *testing.T) {
 	}
 }
 
-func TestUserSettingsRepository_Get_Unseeded_ReturnsNil(t *testing.T) {
-	repo := postgres.NewUserSettingsRepository(sharedPg.Pool)
+func TestPlayerSettingsRepository_Get_Unseeded_ReturnsNil(t *testing.T) {
+	repo := postgres.NewPlayerSettingsRepository(sharedPg.Pool)
 	ctx := context.Background()
 
 	sharedPg.Truncate(t)
@@ -74,14 +74,14 @@ func TestUserSettingsRepository_Get_Unseeded_ReturnsNil(t *testing.T) {
 }
 
 // Insert は Register 用プリミティブ。全フィールドを受け取りそのまま書き込む。
-func TestUserSettingsRepository_Insert(t *testing.T) {
-	repo := postgres.NewUserSettingsRepository(sharedPg.Pool)
+func TestPlayerSettingsRepository_Insert(t *testing.T) {
+	repo := postgres.NewPlayerSettingsRepository(sharedPg.Pool)
 	ctx := context.Background()
 
 	sharedPg.Truncate(t)
 	seedPlayer(t, testPlayerID1, "uid-1", "Alice", false)
 
-	payload := &apiaccount.UserSettings{
+	payload := &apiaccount.PlayerSettings{
 		PlayerID:    testPlayerID1,
 		Language:    "ja",
 		BgmVolume:   30,
@@ -102,13 +102,13 @@ func TestUserSettingsRepository_Insert(t *testing.T) {
 // UpdatePartial の仕様:
 //   - 非 nil フィールドだけが書き換わり、nil フィールドは COALESCE で現状維持
 //   - 複数フィールド同時指定、単一フィールドのみ指定、どちらも動作する
-func TestUserSettingsRepository_UpdatePartial(t *testing.T) {
-	repo := postgres.NewUserSettingsRepository(sharedPg.Pool)
+func TestPlayerSettingsRepository_UpdatePartial(t *testing.T) {
+	repo := postgres.NewPlayerSettingsRepository(sharedPg.Pool)
 	ctx := context.Background()
 
 	tests := []struct {
 		name     string
-		patch    *port.UserSettingsPatch
+		patch    *port.PlayerSettingsPatch
 		wantLang string
 		wantBgm  int64
 		wantSe   int64
@@ -116,7 +116,7 @@ func TestUserSettingsRepository_UpdatePartial(t *testing.T) {
 	}{
 		{
 			name: "言語だけ更新すると他のフィールドは現状維持される",
-			patch: &port.UserSettingsPatch{
+			patch: &port.PlayerSettingsPatch{
 				Language: ptr("en"),
 			},
 			wantLang: "en",
@@ -126,7 +126,7 @@ func TestUserSettingsRepository_UpdatePartial(t *testing.T) {
 		},
 		{
 			name: "BGM 音量だけ更新しても言語はシード値のまま",
-			patch: &port.UserSettingsPatch{
+			patch: &port.PlayerSettingsPatch{
 				BgmVolume: ptr(int64(80)),
 			},
 			wantLang: "ja", // seed 値
@@ -136,7 +136,7 @@ func TestUserSettingsRepository_UpdatePartial(t *testing.T) {
 		},
 		{
 			name: "複数フィールド同時指定でまとめて更新される",
-			patch: &port.UserSettingsPatch{
+			patch: &port.PlayerSettingsPatch{
 				Language:    ptr("en"),
 				BgmVolume:   ptr(int64(0)),
 				SeVolume:    ptr(int64(0)),
@@ -153,7 +153,7 @@ func TestUserSettingsRepository_UpdatePartial(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			sharedPg.Truncate(t)
 			seedPlayer(t, testPlayerID1, "uid-1", "Alice", false)
-			seedUserSettings(t, testPlayerID1, "ja", 50, 60, true)
+			seedPlayerSettings(t, testPlayerID1, "ja", 50, 60, true)
 
 			require.NoError(t, repo.UpdatePartial(ctx, testPlayerID1, tt.patch))
 
@@ -168,13 +168,13 @@ func TestUserSettingsRepository_UpdatePartial(t *testing.T) {
 	}
 }
 
-func TestUserSettingsRepository_UpdatePartial_NotFound(t *testing.T) {
-	repo := postgres.NewUserSettingsRepository(sharedPg.Pool)
+func TestPlayerSettingsRepository_UpdatePartial_NotFound(t *testing.T) {
+	repo := postgres.NewPlayerSettingsRepository(sharedPg.Pool)
 	ctx := context.Background()
 
 	sharedPg.Truncate(t)
 	seedPlayer(t, testPlayerID1, "uid-1", "Alice", false)
 
-	err := repo.UpdatePartial(ctx, testPlayerID1, &port.UserSettingsPatch{Language: ptr("en")})
+	err := repo.UpdatePartial(ctx, testPlayerID1, &port.PlayerSettingsPatch{Language: ptr("en")})
 	assert.ErrorIs(t, err, port.ErrNotFound)
 }

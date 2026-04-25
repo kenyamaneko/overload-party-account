@@ -76,13 +76,13 @@ func (s *PlayerService) ListFactions(ctx context.Context, playerID string) ([]st
 	return s.factionRepo.GetPlayerFactions(ctx, playerID)
 }
 
-// UpdateUsername はプレイヤー名を更新し、更新後の Player アグリゲートを返します。
-// repo の write プリミティブはユーザー名のみを書き、ここで FindByID して
+// UpdateName はプレイヤー名を更新し、更新後の Player アグリゲートを返します。
+// repo の write プリミティブは name のみを書き、ここで FindByID して
 // サーバー側で組み立てた最新の Player をクライアントに返す
 // (「server を信じる」原則。クライアントに整合の責任を押し付けない)。
-func (s *PlayerService) UpdateUsername(ctx context.Context, playerID string, name string) (*apiaccount.Player, error) {
-	if err := s.playerRepo.UpdateUsername(ctx, playerID, name); err != nil {
-		return nil, fmt.Errorf("update username: %w", err)
+func (s *PlayerService) UpdateName(ctx context.Context, playerID string, name string) (*apiaccount.Player, error) {
+	if err := s.playerRepo.UpdateName(ctx, playerID, name); err != nil {
+		return nil, fmt.Errorf("update name: %w", err)
 	}
 	player, err := s.playerRepo.FindByID(ctx, playerID)
 	if err != nil {
@@ -300,7 +300,7 @@ func (s *PlayerService) GetPlayerResponse(ctx context.Context, playerID string) 
 	return &apiaccount.PlayerResponse{
 		PlayerID:         player.PlayerID,
 		FirebaseUID:      player.FirebaseUID,
-		Username:         player.Username,
+		Name:             player.Name,
 		Level:            player.Level,
 		Exp:              player.Exp,
 		IsPremium:        player.IsPremium,

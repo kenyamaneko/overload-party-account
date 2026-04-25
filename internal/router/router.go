@@ -13,7 +13,7 @@ func New(
 	authH *rest.AuthHandler,
 	playerH *rest.PlayerHandler,
 	factionH *rest.FactionHandler,
-	settingsH *rest.UserSettingsHandler,
+	settingsH *rest.PlayerSettingsHandler,
 ) *gin.Engine {
 	r := gin.New()
 	r.Use(gin.Recovery())

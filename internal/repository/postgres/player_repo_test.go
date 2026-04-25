@@ -30,7 +30,7 @@ func TestPlayerRepository_Create_Then_FindByID(t *testing.T) {
 	p := &apiaccount.Player{
 		PlayerID:    testPlayerID1,
 		FirebaseUID: "uid-1",
-		Username:    "Alice",
+		Name:        "Alice",
 		Level:       1,
 		Exp:         0,
 		IsPremium:   false,
@@ -52,7 +52,7 @@ func TestPlayerRepository_Create_Then_FindByID(t *testing.T) {
 
 	got, err := repo.FindByID(ctx, testPlayerID1)
 	require.NoError(t, err)
-	assert.Equal(t, "Alice", got.Username)
+	assert.Equal(t, "Alice", got.Name)
 	assert.Equal(t, int64(1), got.Level)
 	assert.Equal(t, int64(0), got.Exp)
 }
@@ -76,7 +76,7 @@ func TestPlayerRepository_FindByFirebaseUID_Seeded(t *testing.T) {
 	got, err := repo.FindByFirebaseUID(ctx, "uid-1")
 	require.NoError(t, err)
 	require.NotNil(t, got)
-	assert.Equal(t, "Alice", got.Username)
+	assert.Equal(t, "Alice", got.Name)
 }
 
 func TestPlayerRepository_FindByFirebaseUID_NotFound_ReturnsNil(t *testing.T) {
@@ -91,27 +91,27 @@ func TestPlayerRepository_FindByFirebaseUID_NotFound_ReturnsNil(t *testing.T) {
 	assert.Nil(t, got)
 }
 
-func TestPlayerRepository_UpdateUsername(t *testing.T) {
+func TestPlayerRepository_UpdateName(t *testing.T) {
 	repo := postgres.NewPlayerRepository(sharedPg.Pool)
 	ctx := context.Background()
 
 	sharedPg.Truncate(t)
 	seedPlayer(t, testPlayerID1, "uid-1", "Alice", false)
 
-	require.NoError(t, repo.UpdateUsername(ctx, testPlayerID1, "Bob"))
+	require.NoError(t, repo.UpdateName(ctx, testPlayerID1, "Bob"))
 
 	// 永続化を確認
 	got, err := repo.FindByID(ctx, testPlayerID1)
 	require.NoError(t, err)
-	assert.Equal(t, "Bob", got.Username)
+	assert.Equal(t, "Bob", got.Name)
 }
 
-func TestPlayerRepository_UpdateUsername_NotFound(t *testing.T) {
+func TestPlayerRepository_UpdateName_NotFound(t *testing.T) {
 	repo := postgres.NewPlayerRepository(sharedPg.Pool)
 	ctx := context.Background()
 
 	sharedPg.Truncate(t)
-	err := repo.UpdateUsername(ctx, testPlayerID1, "Bob")
+	err := repo.UpdateName(ctx, testPlayerID1, "Bob")
 	assert.ErrorIs(t, err, port.ErrNotFound)
 }
 

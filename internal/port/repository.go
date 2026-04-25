@@ -23,9 +23,9 @@ type PlayerRepo interface {
 	// UpdateDailyBattleCount は count と last_reset_date を書き込む純粋なプリミティブです。
 	// 日付リセットや上限判定などのドメインルールは service 層で解決してから呼び出します。
 	UpdateDailyBattleCount(ctx context.Context, playerID string, count int64, resetDate civil.Date) error
-	// UpdateUsername は username のみを更新する純プリミティブです。
+	// UpdateName は name のみを更新する純プリミティブです。
 	// 行が存在しない場合は ErrNotFound を返します。
-	UpdateUsername(ctx context.Context, playerID string, username string) error
+	UpdateName(ctx context.Context, playerID string, name string) error
 	UpdatePremium(ctx context.Context, playerID string, isPremium bool, expiresAt *time.Time) error
 	UpdateFaction(ctx context.Context, playerID, faction string) error
 	// TrySetInitialFaction は selected_faction が NULL の場合のみ faction を書き込みます。
@@ -46,10 +46,10 @@ type PlayerRepo interface {
 	UpdateProgression(ctx context.Context, playerID string, exp, level int64) (*apiaccount.PlayerProgression, error)
 }
 
-// UserSettingsPatch は user_settings の部分更新リクエストを表します。
+// PlayerSettingsPatch は player_settings の部分更新リクエストを表します。
 // nil フィールドは「変更なし（現状維持）」を意味し、repo 層の COALESCE で現在値が保持されます。
 // JSON DTO と layer を切り離すため、port 層のプレーン構造体として定義します。
-type UserSettingsPatch struct {
+type PlayerSettingsPatch struct {
 	Language    *string
 	BgmVolume   *int64
 	SeVolume    *int64
@@ -58,18 +58,18 @@ type UserSettingsPatch struct {
 
 // IsEmpty は 1 つも指定フィールドがない patch（全 nil）かを返します。
 // handler 層で全 nil 送信を 400 として弾くために使います。
-func (p *UserSettingsPatch) IsEmpty() bool {
+func (p *PlayerSettingsPatch) IsEmpty() bool {
 	return p.Language == nil && p.BgmVolume == nil && p.SeVolume == nil && p.PushEnabled == nil
 }
 
-// UserSettingsRepo はユーザー設定の永続化を抽象化するインターフェースです。
-type UserSettingsRepo interface {
-	Get(ctx context.Context, playerID string) (*apiaccount.UserSettings, error)
+// PlayerSettingsRepo はプレイヤー設定の永続化を抽象化するインターフェースです。
+type PlayerSettingsRepo interface {
+	Get(ctx context.Context, playerID string) (*apiaccount.PlayerSettings, error)
 	// Insert は新規行を挿入します。全フィールド必須で、Register 時の初期化に使用します。
-	Insert(ctx context.Context, s *apiaccount.UserSettings) error
+	Insert(ctx context.Context, s *apiaccount.PlayerSettings) error
 	// UpdatePartial は patch で指定された非 nil フィールドのみを更新します（COALESCE 方式）。
 	// 行が存在しない場合は ErrNotFound を返します（通常 Register 時に Insert 済みの前提）。
-	UpdatePartial(ctx context.Context, playerID string, patch *UserSettingsPatch) error
+	UpdatePartial(ctx context.Context, playerID string, patch *PlayerSettingsPatch) error
 }
 
 // GameConfigRepo はゲーム設定値の読み取りを抽象化するインターフェースです。

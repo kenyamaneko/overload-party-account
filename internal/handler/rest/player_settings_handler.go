@@ -10,18 +10,18 @@ import (
 	apiaccount "github.com/kenyamaneko/overload-party-account/packages/api-account"
 )
 
-// UserSettingsHandler はユーザー設定の REST エンドポイントを処理します。
-type UserSettingsHandler struct {
-	svc *service.UserSettingsService
+// PlayerSettingsHandler はプレイヤー設定の REST エンドポイントを処理します。
+type PlayerSettingsHandler struct {
+	svc *service.PlayerSettingsService
 }
 
-// NewUserSettingsHandler は UserSettingsHandler を生成します。
-func NewUserSettingsHandler(svc *service.UserSettingsService) *UserSettingsHandler {
-	return &UserSettingsHandler{svc: svc}
+// NewPlayerSettingsHandler は PlayerSettingsHandler を生成します。
+func NewPlayerSettingsHandler(svc *service.PlayerSettingsService) *PlayerSettingsHandler {
+	return &PlayerSettingsHandler{svc: svc}
 }
 
-// GetSettings はプレイヤーのユーザー設定を返します。
-func (h *UserSettingsHandler) GetSettings(c *gin.Context) {
+// GetSettings はプレイヤーの設定を返します。
+func (h *PlayerSettingsHandler) GetSettings(c *gin.Context) {
 	playerID := c.Param("playerId")
 	if playerID == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "playerId is required"})
@@ -36,10 +36,10 @@ func (h *UserSettingsHandler) GetSettings(c *gin.Context) {
 	c.JSON(http.StatusOK, s)
 }
 
-// UpdateSettings はプレイヤーのユーザー設定を部分更新します。
+// UpdateSettings はプレイヤーの設定を部分更新します。
 // PUT ですが partial update 契約（nil フィールドは現状維持）。
 // 1 つもフィールドが指定されていないリクエストは 400 で弾きます。
-func (h *UserSettingsHandler) UpdateSettings(c *gin.Context) {
+func (h *PlayerSettingsHandler) UpdateSettings(c *gin.Context) {
 	playerID := c.Param("playerId")
 	if playerID == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "playerId is required"})
@@ -52,7 +52,7 @@ func (h *UserSettingsHandler) UpdateSettings(c *gin.Context) {
 		return
 	}
 
-	patch := &port.UserSettingsPatch{
+	patch := &port.PlayerSettingsPatch{
 		Language:    req.Language,
 		BgmVolume:   req.BgmVolume,
 		SeVolume:    req.SeVolume,

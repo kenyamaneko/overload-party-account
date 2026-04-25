@@ -15,22 +15,22 @@ import (
 
 // AuthService はプレイヤーの登録・ログインを管理します。
 type AuthService struct {
-	playerRepo       port.PlayerRepo
-	userSettingsRepo port.UserSettingsRepo
-	txRunner         port.TxRunner
+	playerRepo         port.PlayerRepo
+	playerSettingsRepo port.PlayerSettingsRepo
+	txRunner           port.TxRunner
 }
 
 // NewAuthService は AuthService を生成します。
-func NewAuthService(playerRepo port.PlayerRepo, userSettingsRepo port.UserSettingsRepo, txRunner port.TxRunner) *AuthService {
+func NewAuthService(playerRepo port.PlayerRepo, playerSettingsRepo port.PlayerSettingsRepo, txRunner port.TxRunner) *AuthService {
 	return &AuthService{
-		playerRepo:       playerRepo,
-		userSettingsRepo: userSettingsRepo,
-		txRunner:         txRunner,
+		playerRepo:         playerRepo,
+		playerSettingsRepo: playerSettingsRepo,
+		txRunner:           txRunner,
 	}
 }
 
 // Register は新規プレイヤーを登録します。
-func (s *AuthService) Register(ctx context.Context, firebaseUID, username string) (*apiaccount.Player, error) {
+func (s *AuthService) Register(ctx context.Context, firebaseUID, name string) (*apiaccount.Player, error) {
 	existing, err := s.playerRepo.FindByFirebaseUID(ctx, firebaseUID)
 	if err != nil {
 		return nil, fmt.Errorf("check existing player: %w", err)
@@ -43,7 +43,7 @@ func (s *AuthService) Register(ctx context.Context, firebaseUID, username string
 	player := &apiaccount.Player{
 		PlayerID:    uuid.New().String(),
 		FirebaseUID: firebaseUID,
-		Username:    username,
+		Name:        name,
 		Level:       1,
 		Exp:         0,
 		IsPremium:   false,
@@ -64,7 +64,7 @@ func (s *AuthService) Register(ctx context.Context, firebaseUID, username string
 		UpdatedAt: now,
 	}
 
-	settings := &apiaccount.UserSettings{
+	settings := &apiaccount.PlayerSettings{
 		PlayerID:    player.PlayerID,
 		Language:    model.DefaultLanguage,
 		BgmVolume:   model.DefaultBgmVolume,
@@ -77,8 +77,8 @@ func (s *AuthService) Register(ctx context.Context, firebaseUID, username string
 		if err := s.playerRepo.Create(ctx, player, dailyBattle, progression); err != nil {
 			return fmt.Errorf("create player: %w", err)
 		}
-		if err := s.userSettingsRepo.Insert(ctx, settings); err != nil {
-			return fmt.Errorf("create default user settings: %w", err)
+		if err := s.playerSettingsRepo.Insert(ctx, settings); err != nil {
+			return fmt.Errorf("create default player settings: %w", err)
 		}
 		return nil
 	}); err != nil {

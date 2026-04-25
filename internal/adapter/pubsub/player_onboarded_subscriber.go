@@ -18,7 +18,7 @@ import (
 // クリーンアーキテクチャの依存方向 (adapter → service → port → repo) を崩さないため、
 // adapter 層は service の具象ではなくここで切った最小インターフェースに依存します。
 //
-// processed_events 冪等ガードと username / player_factions / selected_faction の
+// processed_events 冪等ガードと name / player_factions / selected_faction の
 // 書き込みは同一 Tx で行う必要があるため、Tx 境界は service 側が保持します。
 type OnboardingApplier interface {
 	ApplyOnboardingResult(
@@ -38,9 +38,9 @@ type OnboardingApplier interface {
 // subscriber 自身は Unmarshal + OnboardingApplier への委譲のみを行い、
 // SelectableFactions 検証・冪等ガード・同一 Tx 反映は service 層に任せます。
 //
-// account.players の表示名は既存カラム username に書き込みます。
+// account.players の表示名はカラム name に書き込みます。
 // scenario の event payload は display_name という名前ですが、account の
-// DB は「表示名」= username という既存契約のため、列名は変更せず
+// DB は「表示名」= name という既存契約のため、列名は変更せず
 // subscriber handler 内でマッピングを閉じています (ARCHITECTURE.md §6.3)。
 type PlayerOnboardedSubscriber struct {
 	stream  port.MessageStream
@@ -104,7 +104,7 @@ func (s *PlayerOnboardedSubscriber) processEvent(ctx context.Context, data []byt
 		return nil
 	}
 	if !selected {
-		// selected_faction は既に埋まっていた。username / player_factions は反映済み。
+		// selected_faction は既に埋まっていた。name / player_factions は反映済み。
 		// 二重配信 or processed_events を迂回した重複なので警告ログのみ残す。
 		slog.Warn("player-onboarded subscriber: selected_faction already set",
 			"event_id", ev.EventID, "player_id", ev.PlayerID, "faction", ev.InitialFactionID)

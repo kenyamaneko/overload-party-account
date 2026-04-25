@@ -30,7 +30,7 @@ func NewPlayerRepository(pool *pgxpool.Pool) *PlayerRepository {
 
 // selectPlayerColumnsJoin は Player アグリゲートを JOIN で組み立てる SELECT 句。
 // scanPlayer の順序と揃えている。
-const selectPlayerColumnsJoin = `p.player_id, p.firebase_uid, p.username, pp.level, pp.exp,
+const selectPlayerColumnsJoin = `p.player_id, p.firebase_uid, p.name, pp.level, pp.exp,
 		p.is_premium, p.equipped_icon_no, p.selected_faction,
 		p.premium_expires_at, p.created_at, p.updated_at`
 
@@ -54,11 +54,11 @@ func (r *PlayerRepository) Create(ctx context.Context, player *apiaccount.Player
 
 func (r *PlayerRepository) createInner(ctx context.Context, db dbtx, player *apiaccount.Player, dailyBattle *apiaccount.PlayerDailyBattle, progression *apiaccount.PlayerProgression) error {
 	_, err := db.Exec(ctx,
-		`INSERT INTO account.players (player_id, firebase_uid, username, is_premium, equipped_icon_no, selected_faction, premium_expires_at, created_at, updated_at)
+		`INSERT INTO account.players (player_id, firebase_uid, name, is_premium, equipped_icon_no, selected_faction, premium_expires_at, created_at, updated_at)
 		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
 		player.PlayerID,
 		player.FirebaseUID,
-		player.Username,
+		player.Name,
 		player.IsPremium,
 		player.EquippedIconNo,
 		player.SelectedFaction,
@@ -171,16 +171,16 @@ func (r *PlayerRepository) UpdateDailyBattleCount(ctx context.Context, playerID 
 	return nil
 }
 
-// UpdateUsername はプレイヤー名を更新する純プリミティブ。
+// UpdateName はプレイヤー名を更新する純プリミティブ。
 // 更新後のアグリゲート再取得は service 層が FindByID で行う責務とし、
 // repo は単一テーブルへの書き込みだけを担う。行が無ければ port.ErrNotFound を返す。
-func (r *PlayerRepository) UpdateUsername(ctx context.Context, playerID string, username string) error {
+func (r *PlayerRepository) UpdateName(ctx context.Context, playerID string, name string) error {
 	ct, err := connFrom(ctx, r.pool).Exec(ctx,
-		`UPDATE account.players SET username = $1, updated_at = NOW() WHERE player_id = $2`,
-		username, playerID,
+		`UPDATE account.players SET name = $1, updated_at = NOW() WHERE player_id = $2`,
+		name, playerID,
 	)
 	if err != nil {
-		return fmt.Errorf("update username: %w", err)
+		return fmt.Errorf("update name: %w", err)
 	}
 	if ct.RowsAffected() == 0 {
 		return fmt.Errorf("player %s: %w", playerID, port.ErrNotFound)
@@ -309,7 +309,7 @@ func scanPlayer(row pgx.Row) (*apiaccount.Player, error) {
 	err := row.Scan(
 		&p.PlayerID,
 		&p.FirebaseUID,
-		&p.Username,
+		&p.Name,
 		&p.Level,
 		&p.Exp,
 		&p.IsPremium,
