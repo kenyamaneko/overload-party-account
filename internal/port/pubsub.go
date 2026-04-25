@@ -14,7 +14,7 @@ import "context"
 // MessageStream を直接満たせる。
 type MessageHandler = func(ctx context.Context, data []byte) error
 
-// MessageStream は Pub/Sub subscription の抽象境界。account は GCP Pub/Sub
+// MessageStream は Pub/Sub subscription の抽象境界。account は Cloud Pub/Sub
 // SDK の型に直接依存せず、本 interface を通してメッセージを受け取る
 // (Clean Architecture の adapter 層ポート)。
 //

@@ -29,7 +29,7 @@ type FactionPurchasedSubscriber struct {
 }
 
 // NewFactionPurchasedSubscriber は FactionPurchasedSubscriber を生成します。
-// subscription 接続は stream に委ねるため、本コンストラクタでは GCP SDK に
+// subscription 接続は stream に委ねるため、本コンストラクタでは Cloud Pub/Sub SDK に
 // 触れない (クリーンアーキテクチャの依存方向遵守)。
 func NewFactionPurchasedSubscriber(
 	stream port.MessageStream,

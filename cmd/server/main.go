@@ -129,7 +129,7 @@ func run() error {
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
-	factionStream, err := pubsubadapter.NewGCPMessageStream(ctx, cfg.PubsubProjectID, cfg.FactionPurchasedSubscription)
+	factionStream, err := pubsubadapter.NewStream(ctx, cfg.PubsubProjectID, cfg.FactionPurchasedSubscription)
 	if err != nil {
 		return fmt.Errorf("faction-purchased stream: %w", err)
 	}
@@ -139,7 +139,7 @@ func run() error {
 		}
 	}()
 
-	premiumStream, err := pubsubadapter.NewGCPMessageStream(ctx, cfg.PubsubProjectID, cfg.PremiumUpdatedSubscription)
+	premiumStream, err := pubsubadapter.NewStream(ctx, cfg.PubsubProjectID, cfg.PremiumUpdatedSubscription)
 	if err != nil {
 		return fmt.Errorf("premium-updated stream: %w", err)
 	}
@@ -149,7 +149,7 @@ func run() error {
 		}
 	}()
 
-	onboardedStream, err := pubsubadapter.NewGCPMessageStream(ctx, cfg.PubsubProjectID, cfg.PlayerOnboardedSubscription)
+	onboardedStream, err := pubsubadapter.NewStream(ctx, cfg.PubsubProjectID, cfg.PlayerOnboardedSubscription)
 	if err != nil {
 		return fmt.Errorf("player-onboarded stream: %w", err)
 	}
