@@ -31,7 +31,7 @@ func NewPlayerRepository(pool *pgxpool.Pool) *PlayerRepository {
 // selectPlayerColumnsJoin は Player アグリゲートを JOIN で組み立てる SELECT 句。
 // scanPlayer の順序と揃えている。
 const selectPlayerColumnsJoin = `p.player_id, p.firebase_uid, p.name, pp.level, pp.exp,
-		p.is_premium, p.equipped_icon_no, p.selected_faction,
+		p.is_premium, p.equipped_icon_no, p.selected_faction, p.onboarding_status,
 		p.premium_expires_at, p.created_at, p.updated_at`
 
 // Create は players / player_daily_battle / player_progression をアトミックに挿入する。
@@ -279,6 +279,75 @@ func (r *PlayerRepository) GetProgressionForUpdate(ctx context.Context, playerID
 	return prog, nil
 }
 
+// ApplyOnboardingNameSet は name と onboarding_status='name_set' を 1 SQL で書き込む。
+// onboarding_status は IN ('not_started', 'name_set') のときのみ name_set に進め、
+// それ以降の状態 (faction_set / completed) では status を保持して name のみ更新する。
+// out-of-order 配信で先に completed が反映済みでも整合性が保たれる。
+func (r *PlayerRepository) ApplyOnboardingNameSet(ctx context.Context, playerID, name string) error {
+	ct, err := connFrom(ctx, r.pool).Exec(ctx,
+		`UPDATE account.players
+		    SET name = $1,
+		        onboarding_status = CASE
+		          WHEN onboarding_status IN ('not_started', 'name_set') THEN 'name_set'
+		          ELSE onboarding_status
+		        END,
+		        updated_at = NOW()
+		  WHERE player_id = $2`,
+		name, playerID,
+	)
+	if err != nil {
+		return fmt.Errorf("apply onboarding name set: %w", err)
+	}
+	if ct.RowsAffected() == 0 {
+		return fmt.Errorf("player %s: %w", playerID, port.ErrNotFound)
+	}
+	return nil
+}
+
+// ApplyOnboardingFactionSet は selected_faction と onboarding_status='faction_set' を
+// 1 SQL で書き込む。faction_set への前進は IN ('not_started', 'name_set', 'faction_set')
+// のときのみ。それ以降の状態 (completed) では status を保持して selected_faction のみ更新する。
+// player_factions への INSERT は service 層が同一 tx で別途実行する責務。
+func (r *PlayerRepository) ApplyOnboardingFactionSet(ctx context.Context, playerID, faction string) error {
+	ct, err := connFrom(ctx, r.pool).Exec(ctx,
+		`UPDATE account.players
+		    SET selected_faction = $1,
+		        onboarding_status = CASE
+		          WHEN onboarding_status IN ('not_started', 'name_set', 'faction_set') THEN 'faction_set'
+		          ELSE onboarding_status
+		        END,
+		        updated_at = NOW()
+		  WHERE player_id = $2`,
+		faction, playerID,
+	)
+	if err != nil {
+		return fmt.Errorf("apply onboarding faction set: %w", err)
+	}
+	if ct.RowsAffected() == 0 {
+		return fmt.Errorf("player %s: %w", playerID, port.ErrNotFound)
+	}
+	return nil
+}
+
+// ApplyOnboardingCompleted は onboarding_status を completed に書き換える。
+// completed は terminal なので CASE 条件は不要。
+func (r *PlayerRepository) ApplyOnboardingCompleted(ctx context.Context, playerID string) error {
+	ct, err := connFrom(ctx, r.pool).Exec(ctx,
+		`UPDATE account.players
+		    SET onboarding_status = 'completed',
+		        updated_at = NOW()
+		  WHERE player_id = $1`,
+		playerID,
+	)
+	if err != nil {
+		return fmt.Errorf("apply onboarding completed: %w", err)
+	}
+	if ct.RowsAffected() == 0 {
+		return fmt.Errorf("player %s: %w", playerID, port.ErrNotFound)
+	}
+	return nil
+}
+
 // UpdateProgression は exp / level をそのまま書き込む純プリミティブ。
 // 加算やレベル計算は service 層の責務で、ここでは受け取った値を反映するだけ。
 func (r *PlayerRepository) UpdateProgression(ctx context.Context, playerID string, exp, level int64) (*apiaccount.PlayerProgression, error) {
@@ -309,6 +378,7 @@ func scanPlayer(row pgx.Row) (*apiaccount.Player, error) {
 		&p.IsPremium,
 		&p.EquippedIconNo,
 		&p.SelectedFaction,
+		&p.OnboardingStatus,
 		&p.PremiumExpiresAt,
 		&p.CreatedAt,
 		&p.UpdatedAt,

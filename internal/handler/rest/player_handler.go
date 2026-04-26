@@ -58,6 +58,30 @@ func (h *PlayerHandler) UpdateName(c *gin.Context) {
 	c.JSON(http.StatusOK, player)
 }
 
+// ValidateOnboardingName はオンボード内 name 入力ステップで scenario が呼ぶ
+// 表示名バリデーション専用ハンドラ。書き込みは行わない。
+// バリデーション SSoT は internal/model/name.go に集約され、書き込みは
+// onboarding-name-set subscriber が同一 tx で実行する。
+func (h *PlayerHandler) ValidateOnboardingName(c *gin.Context) {
+	playerID := c.Param("playerId")
+	if playerID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "playerId is required"})
+		return
+	}
+
+	var req apiaccount.OnboardingNameValidateRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if err := h.playerService.ValidateOnboardingName(c.Request.Context(), playerID, req.Name); err != nil {
+		respondError(c, err)
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
 // GetBattleLimit はプレイヤーの日次バトル制限情報を返します。
 func (h *PlayerHandler) GetBattleLimit(c *gin.Context) {
 	playerID := c.Param("playerId")

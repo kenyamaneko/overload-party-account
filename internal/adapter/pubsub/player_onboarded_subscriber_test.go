@@ -13,48 +13,37 @@ import (
 	"github.com/kenyamaneko/overload-party-account/internal/port"
 )
 
-// fakeOnboardingApplier は OnboardingApplier を満たす最小スタブ。
+// fakeOnboardingCompletedApplier は OnboardingCompletedApplier を満たす最小スタブ。
 // subscriber は「service 層にイベント内容を正しく委譲し、戻り値に応じて
 // ACK / NACK / 警告ログ分岐だけを行う」契約なので、service 内部の Tx / repo
-// 挙動はここで抽象化する (subscriber テストで repo fake を直接触らない)。
-type fakeOnboardingApplier struct {
-	// returnProcessed / returnSelected は Apply の戻り値を制御する。
+// 挙動はここで抽象化する。
+type fakeOnboardingCompletedApplier struct {
 	returnProcessed bool
-	returnSelected  bool
-	// returnErr を設定すると Apply が常にこのエラーを返す。
-	returnErr error
+	returnErr       error
 
 	called    bool
 	gotEvent  string
 	gotType   string
 	gotPlayer string
-	gotFac    string
 }
 
-func (f *fakeOnboardingApplier) ApplyOnboardingResult(
+func (f *fakeOnboardingCompletedApplier) ApplyCompleted(
 	_ context.Context,
-	eventID, eventType, playerID, initialFactionID string,
-) (bool, bool, error) {
+	eventID, eventType, playerID string,
+) (bool, error) {
 	f.called = true
 	f.gotEvent = eventID
 	f.gotType = eventType
 	f.gotPlayer = playerID
-	f.gotFac = initialFactionID
 	if f.returnErr != nil {
-		return false, false, f.returnErr
+		return false, f.returnErr
 	}
-	return f.returnProcessed, f.returnSelected, nil
+	return f.returnProcessed, nil
 }
 
 // TestPlayerOnboardedSubscriber_Consumes は「Pub/Sub ペイロードを Unmarshal して
-// OnboardingApplier に委譲する」subscriber 単体の仕様を Start() → stream.Consume
-// → processEvent の経路で固定する。scenario 側の契約検証は apiscenariofake 経由で
-// scenario の publish 型をそのまま使う (scenario が schema を変えたら account
-// のテストが compile / 実行で破綻するように設計し、乖離を CI で検知する)。
-//
-// SelectableFactions / 冪等ガード / Tx 境界などの業務不変条件は service 層の
-// 責務なのでここではテストせず、返却値ごとの ACK / NACK / applier 呼び出し有無
-// のみを確認する。
+// OnboardingCompletedApplier に委譲する」subscriber 単体の仕様を Start() →
+// stream.Consume → processEvent の経路で固定する。
 func TestPlayerOnboardedSubscriber_Consumes(t *testing.T) {
 	validEvent := apiscenario.PlayerOnboardedEvent{
 		PlayerID:         "p-1",
@@ -69,22 +58,19 @@ func TestPlayerOnboardedSubscriber_Consumes(t *testing.T) {
 		name            string
 		publish         func(ctx context.Context, pub *apiscenariofake.Publisher, broker *apiscenariofake.Broker)
 		returnProcessed bool
-		returnSelected  bool
 		returnErr       error
 		wantAck         bool
-		assertApplier   func(t *testing.T, a *fakeOnboardingApplier)
+		assertApplier   func(t *testing.T, a *fakeOnboardingCompletedApplier)
 	}{
 		{
-			name:            "正常系: service が processed=true/selected=true を返したら ACK",
+			name:            "正常系: service が processed=true を返したら ACK",
 			publish:         publishValid,
 			returnProcessed: true,
-			returnSelected:  true,
 			wantAck:         true,
-			assertApplier: func(t *testing.T, a *fakeOnboardingApplier) {
+			assertApplier: func(t *testing.T, a *fakeOnboardingCompletedApplier) {
 				assert.True(t, a.called, "applier に委譲する")
 				assert.Equal(t, apiscenario.EventTypePlayerOnboarded, a.gotType)
 				assert.Equal(t, "p-1", a.gotPlayer)
-				assert.Equal(t, "SHE", a.gotFac)
 				assert.NotEmpty(t, a.gotEvent, "EventID は fake の auto-fill で埋まる")
 			},
 		},
@@ -93,18 +79,8 @@ func TestPlayerOnboardedSubscriber_Consumes(t *testing.T) {
 			publish:         publishValid,
 			returnProcessed: false,
 			wantAck:         true,
-			assertApplier: func(t *testing.T, a *fakeOnboardingApplier) {
+			assertApplier: func(t *testing.T, a *fakeOnboardingCompletedApplier) {
 				assert.True(t, a.called, "冪等スキップも applier を経由して判定される")
-			},
-		},
-		{
-			name:            "selected_faction 既存: processed=true/selected=false は警告ログのみで ACK",
-			publish:         publishValid,
-			returnProcessed: true,
-			returnSelected:  false,
-			wantAck:         true,
-			assertApplier: func(t *testing.T, a *fakeOnboardingApplier) {
-				assert.True(t, a.called)
 			},
 		},
 		{
@@ -113,7 +89,7 @@ func TestPlayerOnboardedSubscriber_Consumes(t *testing.T) {
 				broker.Publish(apiscenario.TopicPlayerOnboarded, []byte("broken"))
 			},
 			wantAck: false,
-			assertApplier: func(t *testing.T, a *fakeOnboardingApplier) {
+			assertApplier: func(t *testing.T, a *fakeOnboardingCompletedApplier) {
 				assert.False(t, a.called, "JSON parse 失敗時は applier に到達しない")
 			},
 		},
@@ -127,21 +103,20 @@ func TestPlayerOnboardedSubscriber_Consumes(t *testing.T) {
 				}))
 			},
 			wantAck: true,
-			assertApplier: func(t *testing.T, a *fakeOnboardingApplier) {
+			assertApplier: func(t *testing.T, a *fakeOnboardingCompletedApplier) {
 				assert.False(t, a.called, "event_type フィルタで applier に到達しない")
 			},
 		},
 		{
-			name: "initial_faction_id 欠落: ペイロード仕様違反で NACK (applier 未呼び出し)",
+			name: "player_id 欠落: ペイロード仕様違反で NACK (applier 未呼び出し)",
 			publish: func(_ context.Context, _ *apiscenariofake.Publisher, broker *apiscenariofake.Broker) {
 				broker.Publish(apiscenario.TopicPlayerOnboarded, mustMarshal(t, apiscenario.PlayerOnboardedEvent{
 					EventType: apiscenario.EventTypePlayerOnboarded,
 					EventID:   "33333333-3333-3333-3333-333333333333",
-					PlayerID:  "p-3",
 				}))
 			},
 			wantAck: false,
-			assertApplier: func(t *testing.T, a *fakeOnboardingApplier) {
+			assertApplier: func(t *testing.T, a *fakeOnboardingCompletedApplier) {
 				assert.False(t, a.called, "必須フィールド欠落は applier より手前で弾く")
 			},
 		},
@@ -150,7 +125,7 @@ func TestPlayerOnboardedSubscriber_Consumes(t *testing.T) {
 			publish:   publishValid,
 			returnErr: errors.New("db error"),
 			wantAck:   false,
-			assertApplier: func(t *testing.T, a *fakeOnboardingApplier) {
+			assertApplier: func(t *testing.T, a *fakeOnboardingCompletedApplier) {
 				assert.True(t, a.called)
 			},
 		},
@@ -159,7 +134,7 @@ func TestPlayerOnboardedSubscriber_Consumes(t *testing.T) {
 			publish:   publishValid,
 			returnErr: port.ErrNotFound,
 			wantAck:   false,
-			assertApplier: func(t *testing.T, a *fakeOnboardingApplier) {
+			assertApplier: func(t *testing.T, a *fakeOnboardingCompletedApplier) {
 				assert.True(t, a.called)
 			},
 		},
@@ -171,9 +146,8 @@ func TestPlayerOnboardedSubscriber_Consumes(t *testing.T) {
 			pub := apiscenariofake.NewPublisher(broker)
 			stream := apiscenariofake.NewStream(apiscenariofake.NewSubscriber(broker), apiscenario.TopicPlayerOnboarded)
 
-			applier := &fakeOnboardingApplier{
+			applier := &fakeOnboardingCompletedApplier{
 				returnProcessed: tt.returnProcessed,
-				returnSelected:  tt.returnSelected,
 				returnErr:       tt.returnErr,
 			}
 			sub := NewPlayerOnboardedSubscriber(stream, applier)

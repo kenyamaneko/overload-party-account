@@ -158,6 +158,15 @@ func (r *fakePlayerRepo) GetProgressionForUpdate(_ context.Context, _ string) (*
 func (r *fakePlayerRepo) UpdateProgression(_ context.Context, _ string, _, _ int64) (*apiaccount.PlayerProgression, error) {
 	panic("not implemented in test")
 }
+func (r *fakePlayerRepo) ApplyOnboardingNameSet(_ context.Context, _, _ string) error {
+	panic("not implemented in test")
+}
+func (r *fakePlayerRepo) ApplyOnboardingFactionSet(_ context.Context, _, _ string) error {
+	panic("not implemented in test")
+}
+func (r *fakePlayerRepo) ApplyOnboardingCompleted(_ context.Context, _ string) error {
+	panic("not implemented in test")
+}
 
 // port 境界をテスト時に検証する (コンパイル時 assertion)。
 var _ port.PlayerRepo = (*fakePlayerRepo)(nil)

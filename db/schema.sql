@@ -35,13 +35,19 @@ $$ LANGUAGE plpgsql;
 -- account.players
 -- =============================================================================
 
+-- onboarding_status はオンボーディング進行の SSoT。`name` / `selected_faction` の
+-- nullable 状態とは独立に「未完了 (not_started / name_set / faction_set) と完了
+-- (completed)」を識別可能にする。NULL を「データ消失」専用にし、未完了は明示的な
+-- 列挙値で表現する設計。state machine は一方向遷移のみ
+-- (not_started → name_set → faction_set → completed)。
 CREATE TABLE account.players (
   player_id          UUID NOT NULL DEFAULT gen_random_uuid(), -- UUID
   firebase_uid       VARCHAR(128) NOT NULL,          -- Firebase Auth UID (Unique)
-  name               VARCHAR(50),                    -- 表示名 (NULL: オンボーディング未完了で未設定)
+  name               VARCHAR(50),                    -- 表示名 (NULL: 未設定)
   is_premium         BOOLEAN NOT NULL,               -- 課金ステータス
   equipped_icon_no   BIGINT,                         -- 装備中アイコン番号（NULL: デフォルト）
   selected_faction   VARCHAR(20),                    -- 選択済みファクション
+  onboarding_status  VARCHAR(20) NOT NULL DEFAULT 'not_started', -- オンボード進行状態
   premium_expires_at TIMESTAMPTZ,                    -- サブスク有効期限
   created_at         TIMESTAMPTZ NOT NULL DEFAULT now(), -- 作成日時
   updated_at         TIMESTAMPTZ NOT NULL DEFAULT now(), -- 更新日時
@@ -54,6 +60,10 @@ CREATE TRIGGER trg_players_updated_at BEFORE UPDATE ON account.players FOR EACH 
 ALTER TABLE account.players
   ADD CONSTRAINT chk_players_selected_faction
     CHECK (selected_faction IS NULL OR selected_faction IN ('SHE', 'Tenki', 'Sugar', 'Tuners', 'Neutral'));
+
+ALTER TABLE account.players
+  ADD CONSTRAINT chk_players_onboarding_status
+    CHECK (onboarding_status IN ('not_started', 'name_set', 'faction_set', 'completed'));
 
 -- =============================================================================
 -- account.player_progression (child of players, 1:1)

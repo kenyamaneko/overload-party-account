@@ -94,6 +94,20 @@ func (s *PlayerService) UpdateName(ctx context.Context, playerID string, name st
 	return player, nil
 }
 
+// ValidateOnboardingName は表示名のバリデーションのみを行い、書き込みは行いません。
+// scenario が onboarding-name-set publish 前に呼び、4xx を同期にユーザーへ返すための
+// 専用エントリです。プレイヤーの存在確認も行い、Register 未実施なら 404 を返します。
+func (s *PlayerService) ValidateOnboardingName(ctx context.Context, playerID, name string) error {
+	exists, err := s.playerRepo.Exists(ctx, playerID)
+	if err != nil {
+		return fmt.Errorf("check player exists: %w", err)
+	}
+	if !exists {
+		return fmt.Errorf("player %s: %w", playerID, port.ErrNotFound)
+	}
+	return model.ValidateName(name)
+}
+
 // GetPlayer はプレイヤー情報を返します。
 func (s *PlayerService) GetPlayer(ctx context.Context, playerID string) (*apiaccount.Player, error) {
 	player, err := s.playerRepo.FindByID(ctx, playerID)
@@ -315,6 +329,7 @@ func (s *PlayerService) GetPlayerResponse(ctx context.Context, playerID string) 
 		IsPremium:        player.IsPremium,
 		EquippedIconNo:   player.EquippedIconNo,
 		SelectedFaction:  player.SelectedFaction,
+		OnboardingStatus: player.OnboardingStatus,
 		PremiumExpiresAt: player.PremiumExpiresAt,
 		CreatedAt:        player.CreatedAt,
 		UpdatedAt:        player.UpdatedAt,

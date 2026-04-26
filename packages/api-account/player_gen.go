@@ -8,7 +8,7 @@ import (
 	"cloud.google.com/go/civil"
 )
 
-// Player is the account.players row.
+// Player is the account.players row. OnboardingStatus is the SSoT for onboarding progression (not_started / name_set / faction_set / completed).
 type Player struct {
 	PlayerID         string     `json:"player_id" db:"player_id"`
 	FirebaseUID      string     `json:"firebase_uid" db:"firebase_uid"`
@@ -18,6 +18,7 @@ type Player struct {
 	IsPremium        bool       `json:"is_premium" db:"is_premium"`
 	EquippedIconNo   *int64     `json:"equipped_icon_no,omitempty" db:"equipped_icon_no"`
 	SelectedFaction  *string    `json:"selected_faction,omitempty" db:"selected_faction"`
+	OnboardingStatus string     `json:"onboarding_status" db:"onboarding_status"`
 	PremiumExpiresAt *time.Time `json:"premium_expires_at,omitempty" db:"premium_expires_at"`
 	CreatedAt        time.Time  `json:"created_at" db:"created_at"`
 	UpdatedAt        time.Time  `json:"updated_at" db:"updated_at"`

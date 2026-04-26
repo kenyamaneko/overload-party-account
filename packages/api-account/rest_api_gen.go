@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-// PlayerResponse is returned by GET /internal/v1/players/:playerId and kin. It is Player + computed level progress.
+// PlayerResponse is returned by GET /internal/v1/players/:playerId and kin. It is Player + computed level progress. OnboardingStatus lets clients drive onboarding-resume without a separate scenario RPC.
 type PlayerResponse struct {
 	PlayerID         string     `json:"player_id"`
 	FirebaseUID      string     `json:"firebase_uid"`
@@ -16,6 +16,7 @@ type PlayerResponse struct {
 	IsPremium        bool       `json:"is_premium"`
 	EquippedIconNo   *int64     `json:"equipped_icon_no,omitempty"`
 	SelectedFaction  *string    `json:"selected_faction,omitempty"`
+	OnboardingStatus string     `json:"onboarding_status"`
 	PremiumExpiresAt *time.Time `json:"premium_expires_at,omitempty"`
 	CreatedAt        time.Time  `json:"created_at"`
 	UpdatedAt        time.Time  `json:"updated_at"`
@@ -47,6 +48,11 @@ type LoginRequest struct {
 
 // UpdateNameRequest is the body for PUT /internal/v1/players/:playerId/name.
 type UpdateNameRequest struct {
+	Name string `json:"name"`
+}
+
+// OnboardingNameValidateRequest is the body for POST /internal/v1/players/:playerId/onboarding/name/validate. Validation only; the value is not persisted. Scenario calls this before publishing onboarding-name-set so that 4xx can be relayed to the user synchronously.
+type OnboardingNameValidateRequest struct {
 	Name string `json:"name"`
 }
 

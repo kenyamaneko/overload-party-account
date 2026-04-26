@@ -43,14 +43,15 @@ func (s *AuthService) Register(ctx context.Context, firebaseUID string) (*apiacc
 
 	now := time.Now()
 	player := &apiaccount.Player{
-		PlayerID:    uuid.New().String(),
-		FirebaseUID: firebaseUID,
-		Name:        nil,
-		Level:       1,
-		Exp:         0,
-		IsPremium:   false,
-		CreatedAt:   now,
-		UpdatedAt:   now,
+		PlayerID:         uuid.New().String(),
+		FirebaseUID:      firebaseUID,
+		Name:             nil,
+		Level:            1,
+		Exp:              0,
+		IsPremium:        false,
+		OnboardingStatus: model.OnboardingStatusNotStarted,
+		CreatedAt:        now,
+		UpdatedAt:        now,
 	}
 
 	dailyBattle := &apiaccount.PlayerDailyBattle{

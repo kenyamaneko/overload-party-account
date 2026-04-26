@@ -16,6 +16,8 @@ var allEnvKeys = []string{
 	"FACTION_PURCHASED_SUBSCRIPTION",
 	"PREMIUM_UPDATED_SUBSCRIPTION",
 	"PLAYER_ONBOARDED_SUBSCRIPTION",
+	"ONBOARDING_NAME_SET_SUBSCRIPTION",
+	"ONBOARDING_FACTION_SET_SUBSCRIPTION",
 	"FIRESTORE_PROJECT_ID",
 	"LOG_MODE",
 }
@@ -44,14 +46,16 @@ func mergeEnv(maps ...map[string]string) map[string]string {
 // CLAUDE.md「デフォルト値へのフォールバックを行わない」方針により、全必須 env を
 // 明示的に供給する。各ケースはこれを baseline に override を重ねる。
 var validLocalEnv = map[string]string{
-	"PORT":                           "9005",
-	"DATABASE_URL":                   "postgres://account:account@localhost:5432/account?sslmode=disable",
-	"PUBSUB_PROJECT_ID":              "account-local",
-	"FACTION_PURCHASED_SUBSCRIPTION": "faction-purchased-account-sub",
-	"PREMIUM_UPDATED_SUBSCRIPTION":   "premium-updated-account-sub",
-	"PLAYER_ONBOARDED_SUBSCRIPTION":  "player-onboarded-account-sub",
-	"FIRESTORE_PROJECT_ID":           "account-local",
-	"LOG_MODE":                       "local",
+	"PORT":                                "9005",
+	"DATABASE_URL":                        "postgres://account:account@localhost:5432/account?sslmode=disable",
+	"PUBSUB_PROJECT_ID":                   "account-local",
+	"FACTION_PURCHASED_SUBSCRIPTION":      "faction-purchased-account-sub",
+	"PREMIUM_UPDATED_SUBSCRIPTION":        "premium-updated-account-sub",
+	"PLAYER_ONBOARDED_SUBSCRIPTION":       "player-onboarded-account-sub",
+	"ONBOARDING_NAME_SET_SUBSCRIPTION":    "onboarding-name-set-account-sub",
+	"ONBOARDING_FACTION_SET_SUBSCRIPTION": "onboarding-faction-set-account-sub",
+	"FIRESTORE_PROJECT_ID":                "account-local",
+	"LOG_MODE":                            "local",
 }
 
 func TestFromEnv_Success(t *testing.T) {
@@ -151,6 +155,16 @@ func TestFromEnv_Errors(t *testing.T) {
 			name:    "PLAYER_ONBOARDED_SUBSCRIPTION が未設定ならエラー",
 			envs:    mergeEnv(validLocalEnv, map[string]string{"PLAYER_ONBOARDED_SUBSCRIPTION": ""}),
 			wantErr: "PLAYER_ONBOARDED_SUBSCRIPTION is required",
+		},
+		{
+			name:    "ONBOARDING_NAME_SET_SUBSCRIPTION が未設定ならエラー",
+			envs:    mergeEnv(validLocalEnv, map[string]string{"ONBOARDING_NAME_SET_SUBSCRIPTION": ""}),
+			wantErr: "ONBOARDING_NAME_SET_SUBSCRIPTION is required",
+		},
+		{
+			name:    "ONBOARDING_FACTION_SET_SUBSCRIPTION が未設定ならエラー",
+			envs:    mergeEnv(validLocalEnv, map[string]string{"ONBOARDING_FACTION_SET_SUBSCRIPTION": ""}),
+			wantErr: "ONBOARDING_FACTION_SET_SUBSCRIPTION is required",
 		},
 		{
 			name:    "FIRESTORE_PROJECT_ID が未設定ならエラー",

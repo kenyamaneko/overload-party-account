@@ -55,11 +55,21 @@ endpoint_groups:
 
       - method: PUT
         path: /players/{playerId}/name
-        summary: プレイヤー名を変更する
+        summary: プレイヤー名を変更する（オンボード後の通常名前変更で gateway 経由で呼ばれる）
         request_type: UpdateNameRequest
         response_type: PlayerResponse
         errors:
-          - {status: 400, description: playerId が空 / name が空}
+          - {status: 400, description: playerId が空 / name が空 / バリデーション違反}
+          - {status: 404, description: プレイヤーが存在しない}
+          - {status: 500, description: DB 接続エラー}
+
+      - method: POST
+        path: /players/{playerId}/onboarding/name/validate
+        summary: オンボード内 name 入力ステップで scenario が呼ぶ表示名バリデーション（書き込みなし）
+        request_type: OnboardingNameValidateRequest
+        notes: 成功時 204 No Content。バリデーション SSoT は account の internal/model/name.go。書き込みは onboarding-name-set subscriber が行う
+        errors:
+          - {status: 400, description: name が空 / 全空白 / 制御文字 / 上限超}
           - {status: 404, description: プレイヤーが存在しない}
           - {status: 500, description: DB 接続エラー}
 

@@ -54,6 +54,8 @@ ConfigMap:
 | `FACTION_PURCHASED_SUBSCRIPTION` | faction-purchased の pull subscription 名 |
 | `PREMIUM_UPDATED_SUBSCRIPTION` | premium-updated の pull subscription 名 |
 | `PLAYER_ONBOARDED_SUBSCRIPTION` | player-onboarded の pull subscription 名 |
+| `ONBOARDING_NAME_SET_SUBSCRIPTION` | onboarding-name-set の pull subscription 名 |
+| `ONBOARDING_FACTION_SET_SUBSCRIPTION` | onboarding-faction-set の pull subscription 名 |
 | `FIRESTORE_PROJECT_ID` | `game_config` を読む Firestore プロジェクト ID |
 | `LOG_MODE` | `production`（Cloud Logging 互換 JSON）/ `local`（TextHandler）|
 

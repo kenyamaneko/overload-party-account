@@ -36,6 +36,10 @@ type Config struct {
 	PremiumUpdatedSubscription string
 	// PlayerOnboardedSubscription は player-onboarded の pull subscription 名。
 	PlayerOnboardedSubscription string
+	// OnboardingNameSetSubscription は onboarding-name-set の pull subscription 名。
+	OnboardingNameSetSubscription string
+	// OnboardingFactionSetSubscription は onboarding-faction-set の pull subscription 名。
+	OnboardingFactionSetSubscription string
 
 	// FirestoreProjectID は game_config の読み取り先プロジェクト ID。
 	// ローカル/CI では FIRESTORE_EMULATOR_HOST を別途設定することでエミュレーターに接続する。
@@ -49,13 +53,15 @@ type Config struct {
 // 未設定・未定義値は起動時に fail する（デフォルトへのフォールバック禁止）。
 func FromEnv() (*Config, error) {
 	cfg := &Config{
-		DatabaseURL:                  os.Getenv("DATABASE_URL"),
-		PubsubProjectID:              os.Getenv("PUBSUB_PROJECT_ID"),
-		FactionPurchasedSubscription: os.Getenv("FACTION_PURCHASED_SUBSCRIPTION"),
-		PremiumUpdatedSubscription:   os.Getenv("PREMIUM_UPDATED_SUBSCRIPTION"),
-		PlayerOnboardedSubscription:  os.Getenv("PLAYER_ONBOARDED_SUBSCRIPTION"),
-		FirestoreProjectID:           os.Getenv("FIRESTORE_PROJECT_ID"),
-		LogMode:                      LogMode(os.Getenv("LOG_MODE")),
+		DatabaseURL:                      os.Getenv("DATABASE_URL"),
+		PubsubProjectID:                  os.Getenv("PUBSUB_PROJECT_ID"),
+		FactionPurchasedSubscription:     os.Getenv("FACTION_PURCHASED_SUBSCRIPTION"),
+		PremiumUpdatedSubscription:       os.Getenv("PREMIUM_UPDATED_SUBSCRIPTION"),
+		PlayerOnboardedSubscription:      os.Getenv("PLAYER_ONBOARDED_SUBSCRIPTION"),
+		OnboardingNameSetSubscription:    os.Getenv("ONBOARDING_NAME_SET_SUBSCRIPTION"),
+		OnboardingFactionSetSubscription: os.Getenv("ONBOARDING_FACTION_SET_SUBSCRIPTION"),
+		FirestoreProjectID:               os.Getenv("FIRESTORE_PROJECT_ID"),
+		LogMode:                          LogMode(os.Getenv("LOG_MODE")),
 	}
 
 	rawPort := os.Getenv("PORT")
@@ -85,6 +91,12 @@ func FromEnv() (*Config, error) {
 	}
 	if cfg.PlayerOnboardedSubscription == "" {
 		return nil, fmt.Errorf("config: PLAYER_ONBOARDED_SUBSCRIPTION is required")
+	}
+	if cfg.OnboardingNameSetSubscription == "" {
+		return nil, fmt.Errorf("config: ONBOARDING_NAME_SET_SUBSCRIPTION is required")
+	}
+	if cfg.OnboardingFactionSetSubscription == "" {
+		return nil, fmt.Errorf("config: ONBOARDING_FACTION_SET_SUBSCRIPTION is required")
 	}
 	if cfg.FirestoreProjectID == "" {
 		return nil, fmt.Errorf("config: FIRESTORE_PROJECT_ID is required (game_config)")

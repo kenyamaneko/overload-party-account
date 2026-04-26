@@ -113,7 +113,8 @@ func run() error {
 
 	authSvc := service.NewAuthService(playerRepo, playerSettingsRepo, txManager)
 	playerSvc := service.NewPlayerService(playerRepo, gameConfigRepo, factionRepo, txManager)
-	factionSvc := service.NewFactionService(playerRepo, factionRepo, eventRepo, txManager)
+	factionSvc := service.NewFactionService(playerRepo, factionRepo, txManager)
+	onboardingSvc := service.NewOnboardingService(playerRepo, factionRepo, eventRepo, txManager)
 	settingsSvc := service.NewPlayerSettingsService(playerSettingsRepo)
 
 	authH := rest.NewAuthHandler(authSvc)
@@ -159,9 +160,31 @@ func run() error {
 		}
 	}()
 
+	nameSetStream, err := pubsubadapter.NewStream(ctx, cfg.PubsubProjectID, cfg.OnboardingNameSetSubscription)
+	if err != nil {
+		return fmt.Errorf("onboarding-name-set stream: %w", err)
+	}
+	defer func() {
+		if cerr := nameSetStream.Close(); cerr != nil {
+			slog.Warn("onboarding-name-set stream close", "error", cerr)
+		}
+	}()
+
+	factionSetStream, err := pubsubadapter.NewStream(ctx, cfg.PubsubProjectID, cfg.OnboardingFactionSetSubscription)
+	if err != nil {
+		return fmt.Errorf("onboarding-faction-set stream: %w", err)
+	}
+	defer func() {
+		if cerr := factionSetStream.Close(); cerr != nil {
+			slog.Warn("onboarding-faction-set stream close", "error", cerr)
+		}
+	}()
+
 	factionSub := pubsubadapter.NewFactionPurchasedSubscriber(factionStream, factionRepo, txManager, eventRepo)
 	premiumSub := pubsubadapter.NewPremiumUpdatedSubscriber(premiumStream, playerRepo, txManager, eventRepo)
-	onboardedSub := pubsubadapter.NewPlayerOnboardedSubscriber(onboardedStream, factionSvc)
+	onboardedSub := pubsubadapter.NewPlayerOnboardedSubscriber(onboardedStream, onboardingSvc)
+	nameSetSub := pubsubadapter.NewOnboardingNameSetSubscriber(nameSetStream, onboardingSvc)
+	factionSetSub := pubsubadapter.NewOnboardingFactionSetSubscriber(factionSetStream, onboardingSvc)
 
 	slog.Info("account starting",
 		"addr", srv.Addr,
@@ -169,12 +192,12 @@ func run() error {
 		"firestore_project", cfg.FirestoreProjectID,
 	)
 
-	return runHTTPAndSubscribers(ctx, srv, factionSub, premiumSub, onboardedSub)
+	return runHTTPAndSubscribers(ctx, srv, factionSub, premiumSub, onboardedSub, nameSetSub, factionSetSub)
 }
 
 // runHTTPAndSubscribers は HTTP server と Pub/Sub subscriber 群を並行起動し、
 // どれかの失敗・シグナル到来で全体を graceful に停止する。
-func runHTTPAndSubscribers(ctx context.Context, srv *http.Server, factionSub, premiumSub, onboardedSub subscriber) error {
+func runHTTPAndSubscribers(ctx context.Context, srv *http.Server, subscribers ...subscriber) error {
 	g, gCtx := errgroup.WithContext(ctx)
 
 	g.Go(func() error {
@@ -184,26 +207,15 @@ func runHTTPAndSubscribers(ctx context.Context, srv *http.Server, factionSub, pr
 		return nil
 	})
 
-	g.Go(func() error {
-		if err := factionSub.Start(gCtx); err != nil && gCtx.Err() == nil {
-			return fmt.Errorf("faction-purchased subscriber: %w", err)
-		}
-		return nil
-	})
-
-	g.Go(func() error {
-		if err := premiumSub.Start(gCtx); err != nil && gCtx.Err() == nil {
-			return fmt.Errorf("premium-updated subscriber: %w", err)
-		}
-		return nil
-	})
-
-	g.Go(func() error {
-		if err := onboardedSub.Start(gCtx); err != nil && gCtx.Err() == nil {
-			return fmt.Errorf("player-onboarded subscriber: %w", err)
-		}
-		return nil
-	})
+	for _, sub := range subscribers {
+		sub := sub
+		g.Go(func() error {
+			if err := sub.Start(gCtx); err != nil && gCtx.Err() == nil {
+				return fmt.Errorf("subscriber: %w", err)
+			}
+			return nil
+		})
+	}
 
 	g.Go(func() error {
 		<-gCtx.Done()

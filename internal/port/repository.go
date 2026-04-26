@@ -44,6 +44,19 @@ type PlayerRepo interface {
 	// 加算・レベル計算は service 層の責務で、repo は受け取った値を反映するだけです。
 	// 行が無ければ ErrNotFound。
 	UpdateProgression(ctx context.Context, playerID string, exp, level int64) (*apiaccount.PlayerProgression, error)
+	// ApplyOnboardingNameSet は name と onboarding_status を 1 SQL で更新する純プリミティブです。
+	// onboarding_status は state machine 順序で前進する場合のみ書き換え、後進方向の遷移は
+	// 黙ってスキップします (out-of-order 配信に対する防御)。name は無条件に書き換えます。
+	// 行が無ければ ErrNotFound。
+	ApplyOnboardingNameSet(ctx context.Context, playerID, name string) error
+	// ApplyOnboardingFactionSet は selected_faction と onboarding_status を 1 SQL で更新する純プリミティブです。
+	// onboarding_status は state machine 順序で前進する場合のみ書き換え、後進方向の遷移は
+	// 黙ってスキップします。行が無ければ ErrNotFound。
+	ApplyOnboardingFactionSet(ctx context.Context, playerID, faction string) error
+	// ApplyOnboardingCompleted は onboarding_status を 'completed' に書き換える純プリミティブです。
+	// completed は terminal 状態のため state machine 順序チェックは不要 (常に前進)。
+	// 行が無ければ ErrNotFound。
+	ApplyOnboardingCompleted(ctx context.Context, playerID string) error
 }
 
 // PlayerSettingsPatch は player_settings の部分更新リクエストを表します。

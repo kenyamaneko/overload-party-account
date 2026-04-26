@@ -85,7 +85,7 @@ Register は冪等ではない。重複登録は UNIQUE INDEX `idx_players_fireb
 - ファクション選択は UX 上「チュートリアル開始直後の選択画面」という非同期な操作で、登録と同時に決められない
 - カード配布は card サービスの責務で、account が card の内部状態を知るべきでない
 
-現在のトリガーポイントは **scenario サービスの「オンボーディング完了」イベント** で、account は `player-onboarded` イベントを受けて `player_factions` に追加するだけ（§6.3）。`auth_service.Register` にカード付与・ファクション付与を再導入してはいけない（CLAUDE.md 禁止事項）。
+トリガーポイントは scenario の各オンボードステップで発行される 3 つのイベント (`onboarding-name-set` / `onboarding-faction-set` / `player-onboarded`) で、account は subscriber 経由で `players.name` / `selected_faction` / `player_factions` / `onboarding_status` を反映する（§6.3〜6.5）。`auth_service.Register` にカード付与・ファクション付与を再導入してはいけない（CLAUDE.md 禁止事項）。
 
 ## 4. デイリーバトル制限
 
@@ -159,11 +159,47 @@ BEGIN TX
 COMMIT → ACK
 ```
 
-### 6.3 player-onboarded subscriber
+### 6.3 onboarding-name-set subscriber
+
+subscription: `onboarding-name-set-account-sub` (`ONBOARDING_NAME_SET_SUBSCRIPTION` で上書き可)
+
+発行元: scenario。オンボード内 name 入力ステップで scenario が account の validate REST 成功後に publish する。
+
+処理（[internal/adapter/pubsub/onboarding_name_set_subscriber.go](../internal/adapter/pubsub/onboarding_name_set_subscriber.go)）:
+
+```
+BEGIN TX
+  INSERT processed_events (event_id, event_type)  ← ON CONFLICT DO NOTHING
+  IF 既存行だった: COMMIT; ACK; return
+  UPDATE players SET name = $, onboarding_status = CASE WHEN onboarding_status IN ('not_started','name_set') THEN 'name_set' ELSE onboarding_status END
+COMMIT → ACK
+```
+
+`onboarding_status` の遷移は state machine の前進方向のみ許容する CASE WHEN で書く。
+out-of-order 配信で先に completed が反映済みでも整合性が保たれる。
+
+### 6.4 onboarding-faction-set subscriber
+
+subscription: `onboarding-faction-set-account-sub` (`ONBOARDING_FACTION_SET_SUBSCRIPTION` で上書き可)
+
+発行元: scenario。オンボード内 faction 選択ステップで scenario の `SelectableFactions` 検証成功後に publish する。
+
+処理（[internal/adapter/pubsub/onboarding_faction_set_subscriber.go](../internal/adapter/pubsub/onboarding_faction_set_subscriber.go)）:
+
+```
+BEGIN TX
+  INSERT processed_events (event_id, event_type)  ← ON CONFLICT DO NOTHING
+  IF 既存行だった: COMMIT; ACK; return
+  UPDATE players SET selected_faction = $, onboarding_status = CASE WHEN ... THEN 'faction_set' ELSE onboarding_status END
+  INSERT player_factions (player_id, faction, source='initial_selection') ON CONFLICT DO NOTHING
+COMMIT → ACK
+```
+
+### 6.5 player-onboarded subscriber
 
 subscription: `player-onboarded-account-sub` (`PLAYER_ONBOARDED_SUBSCRIPTION` で上書き可)
 
-発行元: scenario のみ。scenario がオンボーディングシナリオ読了時に transactional outbox 経由で publish する（[ADR-021](../../overload-party-common/docs/adr/021-onboarding-scenario.md) §5.1、[ADR-022](../../overload-party-common/docs/adr/022-faction-selected-decomposition.md) で 1 イベント設計に縮退）。
+発行元: scenario。`POST /onboarding/complete` 受領時に transactional outbox 経由で publish する。
 
 処理（[internal/adapter/pubsub/player_onboarded_subscriber.go](../internal/adapter/pubsub/player_onboarded_subscriber.go)）:
 
@@ -171,17 +207,15 @@ subscription: `player-onboarded-account-sub` (`PLAYER_ONBOARDED_SUBSCRIPTION` �
 BEGIN TX
   INSERT processed_events (event_id, event_type)  ← ON CONFLICT DO NOTHING
   IF 既存行だった: COMMIT; ACK; return
-  UPDATE players SET name = $ ← event.display_name を account の「表示名」カラムに書く
-  INSERT player_factions (player_id, faction=initial_faction_id, source=initial_selection)
-  IF players.selected_faction IS NULL: UPDATE players SET selected_faction = initial_faction_id
+  UPDATE players SET onboarding_status = 'completed'
 COMMIT → ACK
 ```
 
-ADR-022 により、初期 faction のロスター追加 + `selected_faction` 確定の副作用はこの subscriber に統合された（かつて `faction-selected(source=scenario_initial)` が担っていた）。2 イベント待ち合わせの冪等配線は廃止され、`PlayerOnboardedEvent` 1 本の `event_id` で identity + 初期 faction を同一トランザクションで反映する。
+`selected_faction` UPDATE / `player_factions` INSERT は onboarding-faction-set subscriber が
+先行して実行している前提のため本 subscriber では扱わない。
+本 subscriber の責務は state machine の最終遷移 (`completed`) のみ。
 
-event の `display_name` は account の `players.name` カラム（コメント「表示名」）に書く。別カラム `display_name` を新設しない理由は、同一セマンティクスの列を 2 つ持たないため（SSoT 一本化）。scenario 側 payload 名 (`display_name`) と account 側カラム名 (`name`) のマッピングは subscriber handler 内に閉じる。
-
-### 6.4 `processed_events` による冪等性契約
+### 6.6 `processed_events` による冪等性契約
 
 - 1 行 = (`event_id`, `event_type`, `processed_at`) の 3 カラム。`event_id` が PK
 - subscriber はトランザクション冒頭で `INSERT ... ON CONFLICT DO NOTHING RETURNING event_id`
@@ -190,7 +224,7 @@ event の `display_name` は account の `players.name` カラム（コメント
 
 Pub/Sub の Exactly-Once 配信がインフラ層の第一防御。`processed_events` はアプリ層の第二防御で、Exactly-Once 契約が破れた場合（再配信・観測ウィンドウ外のリトライ・メッセージの手動 replay）のセーフティネット。
 
-### 6.5 エラー時の NACK と DLQ
+### 6.7 エラー時の NACK と DLQ
 
 | 失敗種別 | 動作 |
 |---|---|
@@ -228,7 +262,7 @@ service 層は HTTP ステータスを知らず、handler 層は SQL を知ら�
 
 - `DATABASE_URL` は Secret Manager 由来。k8s マニフェストにインラインしない
 - `PUBSUB_PROJECT_ID` / `FIRESTORE_PROJECT_ID` は ConfigMap 経由で環境ごとに切り替え
-- `FACTION_PURCHASED_SUBSCRIPTION` / `PREMIUM_UPDATED_SUBSCRIPTION` / `PLAYER_ONBOARDED_SUBSCRIPTION` はデフォルトで本番名と一致するため通常は未設定でよい。環境分離検証時のみ上書き
+- `FACTION_PURCHASED_SUBSCRIPTION` / `PREMIUM_UPDATED_SUBSCRIPTION` / `PLAYER_ONBOARDED_SUBSCRIPTION` / `ONBOARDING_NAME_SET_SUBSCRIPTION` / `ONBOARDING_FACTION_SET_SUBSCRIPTION` はデフォルトで本番名と一致するため通常は未設定でよい。環境分離検証時のみ上書き
 
 ### 9.2 Pub/Sub トピックと subscriber
 
@@ -236,7 +270,9 @@ service 層は HTTP ステータスを知らず、handler 層は SQL を知ら�
 |---|---|---|---|
 | `faction-purchased` | shop | `faction-purchased-account-sub` | `player_factions` INSERT（`source = shop_purchase`、§6.1） |
 | `premium-updated` | shop | `premium-updated-account-sub` | `players.is_premium` / `premium_expires_at` UPDATE (§6.2) |
-| `player-onboarded` | scenario | `player-onboarded-account-sub` | `players.name` UPDATE + `player_factions` INSERT（`source = initial_selection`）+ `selected_faction` UPDATE（NULL 時のみ）、§6.3 |
+| `onboarding-name-set` | scenario | `onboarding-name-set-account-sub` | `players.name` UPDATE + `onboarding_status='name_set'` を 1 tx で実行 (§6.3) |
+| `onboarding-faction-set` | scenario | `onboarding-faction-set-account-sub` | `players.selected_faction` UPDATE + `player_factions` INSERT (`source='initial_selection'`) + `onboarding_status='faction_set'` を 1 tx で実行 (§6.4) |
+| `player-onboarded` | scenario | `player-onboarded-account-sub` | `players.onboarding_status='completed'` UPDATE のみ (§6.5) |
 
 account 自身はトピックを publish しない。
 
