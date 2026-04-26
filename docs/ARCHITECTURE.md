@@ -72,9 +72,11 @@ BEGIN TX
   INSERT INTO account.players             (新規 UUID)
   INSERT INTO account.player_progression  (player_id, level=1, exp=0)
   INSERT INTO account.player_daily_battle (player_id, count=0, last_reset_date=today)
-  INSERT INTO account.player_settings       (player_id, デフォルト値)
+  INSERT INTO account.player_settings     (player_id, デフォルト値)
 COMMIT
 ```
+
+Register は冪等ではない。重複登録は UNIQUE INDEX `idx_players_firebase_uid` と handler 層の `ErrPlayerAlreadyRegistered` → 409 マッピングで吸収する。gateway 側で冪等リトライしたい場合は Login にフォールバックする契約。
 
 ### 3.1 なぜスターターカードや初期ファクションを含めないか
 
@@ -84,10 +86,6 @@ COMMIT
 - カード配布は card サービスの責務で、account が card の内部状態を知るべきでない
 
 現在のトリガーポイントは **scenario サービスの「オンボーディング完了」イベント** で、account は `player-onboarded` イベントを受けて `player_factions` に追加するだけ（§6.3）。`auth_service.Register` にカード付与・ファクション付与を再導入してはいけない（CLAUDE.md 禁止事項）。
-
-### 3.2 重複登録は 409 で吸収
-
-`firebase_uid` は UNIQUE INDEX `idx_players_firebase_uid` で守られている。二重登録は `FindByFirebaseUID` による pre-check と UNIQUE 制約の両方で弾き、handler は `ErrPlayerAlreadyRegistered` を 409 に変換する。Register は冪等ではない（重複は 409 で返す）。gateway 側で冪等リトライしたい場合は Login にフォールバックする契約になっている。
 
 ## 4. デイリーバトル制限
 
@@ -104,38 +102,19 @@ COMMIT
 
 実装: `service.gameDay()` が `time.Now().UTC().Add(4h)` の日付部分を返す。`gameDayOffset` 定数で一箇所に閉じている ([internal/service/player_service.go](../internal/service/player_service.go))。
 
-### 4.2 リセットと上限判定
+### 4.2 上限ガードと TOCTOU の判断
 
-`GetBattleLimit` と `IncrementBattleCount` の両方で以下を行う:
+リセット判定・上限判定は service 層 (`PlayerService`) の責務で、repository 層 (`PlayerRepository.UpdateDailyBattleCount`) は計算済みのカウントと reset date を書き込むだけのプリミティブ。`free_daily_battle_limit` が Firestore 未設定 (値 0) のときはフォールバックせずエラーを返す (運用事故として扱う)。
 
-1. 現在のゲーム日を算出
-2. `player_daily_battle.last_reset_date` が当日と異なるなら論理的にリセット済みとみなす（カウント 0）
-3. 上限は Firestore `game_config.free_daily_battle_limit` から読む
-4. プレミアム会員は上限判定をスキップ（`GetBattleLimit` では `DailyBattleLimit = -1` / `CanBattle = true` を返す）
+account が `player_daily_battle` の authoritative owner なので、上限不変条件は account 側で守る。battle サービス側が事前に `GetBattleLimit` を呼ぶのは UX のためのプリチェック (「戦う前に残り回数を表示」) であり、最終的な強制は account の書き込みパスで行う二段構え。
 
-`free_daily_battle_limit` が未設定（値 0）のときはエラーを返す（フォールバック禁止）。Firestore 上でキーが存在しない状態は運用事故として扱う。
+TOCTOU (`GetDailyBattle` → `UpdateDailyBattleCount` の間に別リクエストが割り込む可能性) は、同一アカウントの並行バトルが極めて稀なエッジケースとして許容する。行ロック (`SELECT FOR UPDATE`) は採用しない。
 
-リセット判定・上限判定は service 層（`PlayerService`）の責務で、repository 層 (`PlayerRepository.UpdateDailyBattleCount`) は計算済みのカウントと reset date を書き込むだけのプリミティブ。
+## 5. プレイヤー設定の部分更新契約
 
-### 4.3 IncrementBattleCount の上限ガード
+`PUT /internal/v1/players/:playerId/settings` は HTTP メソッドこそ PUT だが、**部分更新セマンティクス** を採用する (REST 慣用的には PATCH が正しいが、呼び出し元への影響を避けるため PUT で運用)。
 
-account が `player_daily_battle` の authoritative owner であるため、上限不変条件は account 側で守る。`IncrementBattleCount` は加算後のカウントが `free_daily_battle_limit` を超える場合 `service.ErrBattleLimitExceeded` を返し、REST handler は HTTP 429 にマップする。プレミアム会員はこの判定をスキップする（カウントは記録する）。
-
-battle サービス側が事前に `GetBattleLimit` を呼ぶのは UX のためのプリチェック（「戦う前に残り回数を表示」）であり、最終的な強制は account の書き込みパスで行う二段構え。
-
-TOCTOU（`GetDailyBattle` → `UpdateDailyBattleCount` の間に別リクエストが割り込む可能性）については、同一アカウントの並行バトルは極めて稀なエッジケースとして許容する。行ロック（SELECT FOR UPDATE）は採用しない。
-
-## 5. ユーザー設定の部分更新契約
-
-`PUT /internal/v1/players/:playerId/settings` は HTTP メソッドこそ PUT だが、**部分更新セマンティクス** を採用する。REST 慣用的には PATCH が正しいが、呼び出し元への影響を避けるため PUT のまま運用する。
-
-リクエスト body は全フィールドがポインタ型 (`*string` / `*int64` / `*bool`) で、省略（nil）は「変更なし」を意味する:
-
-- 少なくとも 1 フィールド指定していない全 nil 送信は 400
-- 指定されたフィールドだけを SQL の `COALESCE($1, language), ...` で書き換え、未指定フィールドは現状維持
-- `player_settings` 行が存在しないプレイヤーは 404（通常 Register で INSERT 済みの前提）
-
-これは「クライアントが language だけ変えるつもりで部分送信したら、送信しなかった bgm_volume がゼロ値で上書きされる」事故を避けるための設計。repo 層では `Insert`（Register 用、全フィールド必須）と `UpdatePartial`（更新用、nil は現状維持）の 2 プリミティブに分離し、Upsert のような「書いてあることを丸ごと反映」パターンは排除している。
+「クライアントが language だけ変えるつもりで部分送信したら、送信しなかった bgm_volume がゼロ値で上書きされる」事故を避けるための設計。repo 層では `Insert` (Register 用、全フィールド必須) と `UpdatePartial` (更新用、nil は現状維持) の 2 プリミティブに分離し、Upsert のような「書いてあることを丸ごと反映」パターンは排除している。具体的なフィールド型・SQL は実装を参照。
 
 ## 6. Pub/Sub subscriber
 
@@ -231,34 +210,15 @@ Pub/Sub の Exactly-Once 配信がインフラ層の第一防御。`processed_ev
 
 > レベル計算の「増加のみ」契約 (`ComputeLevel`) や `AwardGameExp` の NPC 分岐は実装の docstring に記述した。アーキテクチャ層の判断ではなくドメインロジックの判断のため、コード側に閉じている。
 
-## 8. エラーハンドリング
-
-### 8.1 レイヤ別の責務
+## 8. エラーハンドリングのレイヤ責務
 
 | 層 | 返す/扱う |
 |---|---|
 | repository | `port.ErrNotFound` と wrap された SQL エラー |
-| service | ドメインのセンチネル（`ErrPlayerNotFound` / `ErrPlayerAlreadyRegistered` / `ErrInvalidFaction` / `ErrFactionAlreadySelected` / `ErrBattleLimitExceeded`）+ wrap された下位エラー |
-| handler (rest) | `errors.Is` でセンチネルを分類し HTTP ステータスに変換（[internal/handler/rest/errors.go](../internal/handler/rest/errors.go)） |
+| service | ドメインのセンチネル ([internal/service/errors.go](../internal/service/errors.go)) + wrap された下位エラー |
+| handler (rest) | `errors.Is` でセンチネルを分類し HTTP ステータスに変換 ([internal/handler/rest/errors.go](../internal/handler/rest/errors.go)) |
 
-service 層は HTTP ステータスを知らず、handler 層は SQL を知らない。
-
-### 8.2 センチネル → HTTP ステータス
-
-| センチネル | HTTP | 意味 |
-|---|---|---|
-| `port.ErrNotFound` / `service.ErrPlayerNotFound` | 404 | 対象プレイヤーが存在しない |
-| `service.ErrPlayerAlreadyRegistered` | 409 | 同一 firebase_uid で登録済み |
-| `service.ErrFactionAlreadySelected` | 409 | 初期ファクション選択済み（冪等な「成功扱い」のためクライアントはエラーとして表示しない） |
-| `service.ErrBattleLimitExceeded` | 429 | 当日のバトル上限に到達（free プレイヤーのみ） |
-| `service.ErrInvalidFaction` | 400 | ファクション値が `gamedesign.SelectableFactions` に含まれない |
-| その他 | 500 | wrap された下位エラー（DB 接続断等） |
-
-### 8.3 握りつぶし禁止
-
-DB エラー・Pub/Sub デシリアライズ失敗・Firestore 読み取り失敗をログのみで握りつぶさない（CLAUDE.md 設計思想）。
-
-例外: 未知の `event_type` の ACK は「意図的な no-op」で、握りつぶしではない（§6.5）。
+service 層は HTTP ステータスを知らず、handler 層は SQL を知らない。センチネルと HTTP ステータスのマッピングは `errors.go` を SSoT とし、各センチネルの docstring に「なぜ 409 か」「冪等な成功扱いかどうか」等のセマンティクスを書く。
 
 ## 9. 運用
 
