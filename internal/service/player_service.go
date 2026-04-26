@@ -224,7 +224,8 @@ func (s *PlayerService) AwardExp(ctx context.Context, playerID string, expGain i
 }
 
 // ComputeLevel は経験値獲得後の新レベルを算出します。
-// 現在レベルからの増加のみ行い、減少はしません。これにより係数変更が既存レベルに遡及しません。
+// 現在レベルからの「増加のみ」を行い、減少はしません。係数を後から厳しくしても
+// 既存プレイヤーのレベルが下がらないようにする UX 契約を守るための選択です。
 func ComputeLevel(newExp, currentLevel, coeff int64) int64 {
 	level := currentLevel
 	if level < 1 {
@@ -240,8 +241,13 @@ func ComputeLevel(newExp, currentLevel, coeff int64) int64 {
 	return level
 }
 
-// AwardGameExp はゲーム終了後に両プレイヤーに経験値を付与します。
-// NPC 戦（matchType == "npc"）では人間プレイヤー（player1）のみに付与します。
+// AwardGameExp はゲーム終了後に両プレイヤーに経験値を付与する唯一の入口です。
+//   - draw (reason == WinReasonDraw もしくは winnerNum == 0): 両者 exp_draw
+//   - winnerNum == 1 / 2: 勝者 exp_win、敗者 exp_loss
+//   - matchType == MatchTypeNpc: player2 を NPC とみなし付与をスキップ
+//
+// 分岐に使う matchType / reason / winnerNum はリテラル禁止で共有定数パッケージ
+// (overload-party-common, overload-party-battle) を SSoT として参照します。
 func (s *PlayerService) AwardGameExp(ctx context.Context, player1ID, player2ID string, winnerNum int64, reason, matchType string) error {
 	expWin, err := s.gameConfigRepo.GetInt64(ctx, "exp_win")
 	if err != nil {

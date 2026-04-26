@@ -221,9 +221,7 @@ Pub/Sub の Exactly-Once 配信がインフラ層の第一防御。`processed_ev
 
 未知の `event_type` を ACK するのは、将来 publisher 側で新しいイベント種別を追加した際に account の subscriber を止めないため。既知の event_type のペイロードが壊れているケースは JSON デシリアライズ失敗側に分岐する。
 
-## 7. 経験値・レベル計算
-
-### 7.1 係数の SSoT は Firestore
+## 7. 経験値・レベル計算: 係数の SSoT は Firestore
 
 経験値獲得量 (`exp_win` / `exp_loss` / `exp_draw`) とレベル計算係数 (`exp_formula_coefficient`) は Firestore `game_config` から読む。DB には置かない。
 
@@ -231,23 +229,7 @@ Pub/Sub の Exactly-Once 配信がインフラ層の第一防御。`processed_ev
 
 未設定（値 0 または存在しない）は起動エラーにせず、当該リクエストをエラーにする（運用者が値を戻すまで battle 側で経験値が積めない）。
 
-### 7.2 レベル上限の「増加のみ」契約
-
-`ComputeLevel` は現在レベルからの **増加のみ** 計算する。
-
-> 「係数を厳しく変えた後に経験値を追加したら既存プレイヤーのレベルが下がる」事故を避けるため、`newExp < nextLevelExp` のループで増加方向にしかレベルを進めない。
-
-係数変更の遡及はしない。運用上「プレイヤーはレベルが下がらない」という UX 契約を守るための実装上の選択。
-
-### 7.3 AwardGameExp の NPC 扱い
-
-`AwardGameExp(player1, player2, winnerNum, reason, matchType)` は battle 終了時に両プレイヤーへ同時に exp を配る唯一の入口。
-
-- `matchType == "npc"` のとき player2 側を NPC とみなし exp 付与をスキップ
-- `reason == "draw"` または `winnerNum == 0` は両者 `exp_draw`
-- それ以外は勝者 `exp_win` / 敗者 `exp_loss`
-
-`matchType` / `reason` / `winnerNum` の定義は `overload-party-common` と `overload-party-battle` の共有定数パッケージが SSoT（リテラル禁止）。
+> レベル計算の「増加のみ」契約 (`ComputeLevel`) や `AwardGameExp` の NPC 分岐は実装の docstring に記述した。アーキテクチャ層の判断ではなくドメインロジックの判断のため、コード側に閉じている。
 
 ## 8. エラーハンドリング
 
