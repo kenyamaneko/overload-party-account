@@ -27,7 +27,7 @@ files:
         fields:
           - {name: PlayerID, type: string, json: "player_id", db: "player_id"}
           - {name: FirebaseUID, type: string, json: "firebase_uid", db: "firebase_uid"}
-          - {name: Name, type: string, json: "name", db: "name"}
+          - {name: Name, type: "*string", json: "name,omitempty", db: "name"}
           - {name: Level, type: int64, json: "level", db: "level"}
           - {name: Exp, type: int64, json: "exp", db: "exp"}
           - {name: IsPremium, type: bool, json: "is_premium", db: "is_premium"}
@@ -82,7 +82,7 @@ files:
         fields:
           - {name: PlayerID, type: string, json: "player_id"}
           - {name: FirebaseUID, type: string, json: "firebase_uid"}
-          - {name: Name, type: string, json: "name"}
+          - {name: Name, type: "*string", json: "name,omitempty"}
           - {name: Level, type: int64, json: "level"}
           - {name: Exp, type: int64, json: "exp"}
           - {name: IsPremium, type: bool, json: "is_premium"}
@@ -108,10 +108,9 @@ files:
 
       # ── Requests ──
       - name: RegisterRequest
-        comment: "RegisterRequest is the body for POST /internal/v1/auth/register. The internal RPC form carries firebase_uid explicitly; the public-facing form (client → gateway) only has name — gateway forwards the Firebase-verified UID."
+        comment: "RegisterRequest is the body for POST /internal/v1/auth/register. firebase_uid のみで登録する。表示名はオンボード内 name 入力ステップで PUT /internal/v1/players/:playerId/name 経由で確定するため、Register 時には受け取らない。"
         fields:
           - {name: FirebaseUID, type: string, json: "firebase_uid"}
-          - {name: Name, type: string, json: "name"}
 
       - name: LoginRequest
         comment: "LoginRequest is the body for POST /internal/v1/auth/login."

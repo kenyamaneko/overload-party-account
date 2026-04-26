@@ -24,7 +24,7 @@ func TestServer_DefaultResponses(t *testing.T) {
 	}{
 		{name: "Register 既定は 201", method: http.MethodPost, path: "/internal/v1/auth/register", reqBody: []byte(`{}`), wantStatus: http.StatusCreated},
 		{name: "Login 既定は 200", method: http.MethodPost, path: "/internal/v1/auth/login", reqBody: []byte(`{}`), wantStatus: http.StatusOK},
-		{name: "FindByFirebaseUID 既定は 200", method: http.MethodGet, path: "/internal/v1/players/by-firebase-uid/uid-1", reqBody: nil, wantStatus: http.StatusOK},
+		{name: "FindByFirebaseUID 既定は 200", method: http.MethodGet, path: "/internal/v1/auth/by-firebase-uid/uid-1", reqBody: nil, wantStatus: http.StatusOK},
 		{name: "GetPlayer 既定は 200", method: http.MethodGet, path: "/internal/v1/players/p-1", reqBody: nil, wantStatus: http.StatusOK},
 		{name: "UpdateName 既定は 200", method: http.MethodPut, path: "/internal/v1/players/p-1/name", reqBody: []byte(`{}`), wantStatus: http.StatusOK},
 		{name: "GetBattleLimit 既定は 200", method: http.MethodGet, path: "/internal/v1/players/p-1/battle-limit", reqBody: nil, wantStatus: http.StatusOK},
@@ -57,6 +57,8 @@ func TestServer_DefaultResponses(t *testing.T) {
 
 // RegisterFn は request body を typed に受け取って Player を返せる。
 // 代表例として body round trip と auto-defaults を固定する。
+// Register は name を取らず firebase_uid のみで動くため、Player.Name は nil
+// (オンボーディング前) のまま返ることを固定する。
 func TestServer_RegisterFn_RoundTrip(t *testing.T) {
 	srv := apiaccountserverfake.NewServer()
 	defer srv.Close()
@@ -67,11 +69,12 @@ func TestServer_RegisterFn_RoundTrip(t *testing.T) {
 		return http.StatusCreated, apiaccount.Player{
 			PlayerID:    "p-new",
 			FirebaseUID: req.FirebaseUID,
-			Name:        req.Name,
+			// Register 直後 name は未確定。
+			Name: nil,
 		}
 	}
 
-	reqBody, _ := json.Marshal(apiaccount.RegisterRequest{FirebaseUID: "uid-42", Name: "alice"})
+	reqBody, _ := json.Marshal(apiaccount.RegisterRequest{FirebaseUID: "uid-42"})
 	req, _ := http.NewRequest(http.MethodPost, srv.URL()+"/internal/v1/auth/register", bytes.NewReader(reqBody))
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := http.DefaultClient.Do(req)
@@ -80,12 +83,11 @@ func TestServer_RegisterFn_RoundTrip(t *testing.T) {
 
 	assert.Equal(t, http.StatusCreated, resp.StatusCode)
 	assert.Equal(t, "uid-42", gotReq.FirebaseUID)
-	assert.Equal(t, "alice", gotReq.Name)
 
 	var decoded apiaccount.Player
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&decoded))
 	assert.Equal(t, "p-new", decoded.PlayerID)
-	assert.Equal(t, "alice", decoded.Name)
+	assert.Nil(t, decoded.Name)
 }
 
 // RegisterFn で 409 Conflict を擬似できる (既存プレイヤー衝突シナリオ)。
@@ -120,7 +122,7 @@ func TestServer_PathVariables_ExtractPlayerID(t *testing.T) {
 	srv.UpdateNameFn = func(playerID string, req apiaccount.UpdateNameRequest) (int, any) {
 		gotPlayerID = playerID
 		gotReq = req
-		return http.StatusOK, apiaccount.Player{PlayerID: playerID, Name: req.Name}
+		return http.StatusOK, apiaccount.Player{PlayerID: playerID, Name: &req.Name}
 	}
 
 	reqBody := []byte(`{"name":"bob"}`)

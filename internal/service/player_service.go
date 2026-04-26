@@ -10,6 +10,7 @@ import (
 	gamelogic "github.com/kenyamaneko/overload-party-battle/packages/game-logic-constants-go"
 	gamedesign "github.com/kenyamaneko/overload-party-common/packages/game-design-constants"
 
+	"github.com/kenyamaneko/overload-party-account/internal/model"
 	"github.com/kenyamaneko/overload-party-account/internal/port"
 	apiaccount "github.com/kenyamaneko/overload-party-account/packages/api-account"
 )
@@ -46,11 +47,6 @@ func NewPlayerService(
 	}
 }
 
-// FindByFirebaseUID は Firebase UID でプレイヤーを検索します。
-func (s *PlayerService) FindByFirebaseUID(ctx context.Context, firebaseUID string) (*apiaccount.Player, error) {
-	return s.playerRepo.FindByFirebaseUID(ctx, firebaseUID)
-}
-
 // UpdatePremium はプレミアムステータスを更新します。
 func (s *PlayerService) UpdatePremium(ctx context.Context, playerID string, isPremium bool, expiresAtMillis *int64) error {
 	var expiresAt *time.Time
@@ -85,6 +81,9 @@ func (s *PlayerService) ListFactions(ctx context.Context, playerID string) ([]st
 // 100ms 程度の間に名前変更を多重に投げる挙動は実用上想定しないため、
 // read-after-write の整合性は許容する。問題が出たら txRunner で囲む。
 func (s *PlayerService) UpdateName(ctx context.Context, playerID string, name string) (*apiaccount.Player, error) {
+	if err := model.ValidateName(name); err != nil {
+		return nil, err
+	}
 	if err := s.playerRepo.UpdateName(ctx, playerID, name); err != nil {
 		return nil, fmt.Errorf("update name: %w", err)
 	}

@@ -3,9 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
-	"time"
 
-	"github.com/kenyamaneko/overload-party-account/internal/model"
 	"github.com/kenyamaneko/overload-party-account/internal/port"
 	apiaccount "github.com/kenyamaneko/overload-party-account/packages/api-account"
 )
@@ -20,21 +18,16 @@ func NewPlayerSettingsService(repo port.PlayerSettingsRepo) *PlayerSettingsServi
 	return &PlayerSettingsService{repo: repo}
 }
 
-// Get はプレイヤーの設定を返します。未登録ならデフォルト値を返します。
+// Get はプレイヤーの設定を返します。
+// player_settings は Register と同一トランザクションで必ず INSERT される契約のため、
+// 行が無いのは Register 未実施または不整合。デフォルト値で隠さず port.ErrNotFound を返します。
 func (s *PlayerSettingsService) Get(ctx context.Context, playerID string) (*apiaccount.PlayerSettings, error) {
 	settings, err := s.repo.Get(ctx, playerID)
 	if err != nil {
 		return nil, fmt.Errorf("get player settings: %w", err)
 	}
 	if settings == nil {
-		settings = &apiaccount.PlayerSettings{
-			PlayerID:    playerID,
-			Language:    model.DefaultLanguage,
-			BgmVolume:   model.DefaultBgmVolume,
-			SeVolume:    model.DefaultSeVolume,
-			PushEnabled: model.DefaultPushEnabled,
-			UpdatedAt:   time.Now(),
-		}
+		return nil, fmt.Errorf("player settings for %s: %w", playerID, port.ErrNotFound)
 	}
 	return settings, nil
 }

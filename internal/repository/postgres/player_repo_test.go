@@ -27,10 +27,11 @@ func TestPlayerRepository_Create_Then_FindByID(t *testing.T) {
 
 	sharedPg.Truncate(t)
 	now := time.Now().UTC()
+	alice := "Alice"
 	p := &apiaccount.Player{
 		PlayerID:    testPlayerID1,
 		FirebaseUID: "uid-1",
-		Name:        "Alice",
+		Name:        &alice,
 		Level:       1,
 		Exp:         0,
 		IsPremium:   false,
@@ -52,7 +53,8 @@ func TestPlayerRepository_Create_Then_FindByID(t *testing.T) {
 
 	got, err := repo.FindByID(ctx, testPlayerID1)
 	require.NoError(t, err)
-	assert.Equal(t, "Alice", got.Name)
+	require.NotNil(t, got.Name)
+	assert.Equal(t, "Alice", *got.Name)
 	assert.Equal(t, int64(1), got.Level)
 	assert.Equal(t, int64(0), got.Exp)
 }
@@ -76,7 +78,8 @@ func TestPlayerRepository_FindByFirebaseUID_Seeded(t *testing.T) {
 	got, err := repo.FindByFirebaseUID(ctx, "uid-1")
 	require.NoError(t, err)
 	require.NotNil(t, got)
-	assert.Equal(t, "Alice", got.Name)
+	require.NotNil(t, got.Name)
+	assert.Equal(t, "Alice", *got.Name)
 }
 
 func TestPlayerRepository_FindByFirebaseUID_NotFound_ReturnsNil(t *testing.T) {
@@ -103,7 +106,8 @@ func TestPlayerRepository_UpdateName(t *testing.T) {
 	// 永続化を確認
 	got, err := repo.FindByID(ctx, testPlayerID1)
 	require.NoError(t, err)
-	assert.Equal(t, "Bob", got.Name)
+	require.NotNil(t, got.Name)
+	assert.Equal(t, "Bob", *got.Name)
 }
 
 func TestPlayerRepository_UpdateName_NotFound(t *testing.T) {

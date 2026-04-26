@@ -38,7 +38,7 @@ $$ LANGUAGE plpgsql;
 CREATE TABLE account.players (
   player_id          UUID NOT NULL DEFAULT gen_random_uuid(), -- UUID
   firebase_uid       VARCHAR(128) NOT NULL,          -- Firebase Auth UID (Unique)
-  name               VARCHAR(50) NOT NULL,           -- 表示名
+  name               VARCHAR(50),                    -- 表示名 (NULL: オンボーディング未完了で未設定)
   is_premium         BOOLEAN NOT NULL,               -- 課金ステータス
   equipped_icon_no   BIGINT,                         -- 装備中アイコン番号（NULL: デフォルト）
   selected_faction   VARCHAR(20),                    -- 選択済みファクション

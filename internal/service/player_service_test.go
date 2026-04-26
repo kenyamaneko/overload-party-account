@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/kenyamaneko/overload-party-account/internal/model"
 	"github.com/kenyamaneko/overload-party-account/internal/port"
 )
 
@@ -231,7 +232,8 @@ func TestPlayerService_GetPlayer_Success(t *testing.T) {
 	got, err := svc.GetPlayer(context.Background(), testPlayerID1)
 	require.NoError(t, err)
 	assert.Equal(t, testPlayerID1, got.PlayerID)
-	assert.Equal(t, "Alice", got.Name)
+	require.NotNil(t, got.Name)
+	assert.Equal(t, "Alice", *got.Name)
 }
 
 func TestPlayerService_GetPlayer_NotFound_ReturnsError(t *testing.T) {
@@ -252,11 +254,32 @@ func TestPlayerService_UpdateName(t *testing.T) {
 
 	updated, err := svc.UpdateName(ctx, testPlayerID1, "Bob")
 	require.NoError(t, err)
-	assert.Equal(t, "Bob", updated.Name)
+	require.NotNil(t, updated.Name)
+	assert.Equal(t, "Bob", *updated.Name)
 
 	got, err := svc.GetPlayer(ctx, testPlayerID1)
 	require.NoError(t, err)
-	assert.Equal(t, "Bob", got.Name)
+	require.NotNil(t, got.Name)
+	assert.Equal(t, "Bob", *got.Name)
+}
+
+// 業務バリデーション違反は repo に到達せず ErrInvalidName を返す契約を固定する。
+// 詳細な境界値は model/name_test.go で網羅しているため、ここでは UpdateName 経路で
+// バリデーションが効いていることだけを 1 ケースで確認する。
+func TestPlayerService_UpdateName_InvalidName_ReturnsErrInvalidName(t *testing.T) {
+	ctx := context.Background()
+	sharedPg.Truncate(t)
+	seedPlayer(t, testPlayerID1, "uid-1", "Alice", false)
+
+	svc := newPlayerTestService(nil)
+	_, err := svc.UpdateName(ctx, testPlayerID1, "")
+	require.ErrorIs(t, err, model.ErrInvalidName)
+
+	// repo に到達していないこと: name はシード値のまま。
+	got, err := svc.GetPlayer(ctx, testPlayerID1)
+	require.NoError(t, err)
+	require.NotNil(t, got.Name)
+	assert.Equal(t, "Alice", *got.Name)
 }
 
 func TestPlayerService_UpdateName_NotFound(t *testing.T) {

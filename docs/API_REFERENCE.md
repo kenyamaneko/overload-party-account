@@ -9,16 +9,15 @@
 
 ### `POST /internal/v1/auth/register`
 
-新規プレイヤーを登録する（gateway が Firebase UID + name を中継）
+新規プレイヤーを登録する（gateway が Firebase UID を中継）。表示名は受け取らず、オンボーディング完了時に確定する。
 
-> 成功時 201 Created。name は 1〜50 文字
+> 成功時 201 Created。`name` は `null` で挿入される
 
 #### リクエスト
 
 | フィールド | 型 | JSON | 説明 |
 |---|---|---|---|
 | `FirebaseUID` | `string` | `firebase_uid` |  |
-| `Name` | `string` | `name` |  |
 
 #### レスポンス
 
@@ -26,7 +25,7 @@
 |---|---|---|---|
 | `PlayerID` | `string` | `player_id` |  |
 | `FirebaseUID` | `string` | `firebase_uid` |  |
-| `Name` | `string` | `name` |  |
+| `Name` | `*string` | `name,omitempty` | オンボーディング未完了時は `null` |
 | `Level` | `int64` | `level` |  |
 | `Exp` | `int64` | `exp` |  |
 | `IsPremium` | `bool` | `is_premium` |  |
@@ -42,7 +41,7 @@
 
 | ステータス | 説明 |
 |---|---|
-| 400 | firebase_uid が空 / name が 1〜50 文字範囲外 |
+| 400 | firebase_uid が空 |
 | 409 | 同一 firebase_uid で既に登録済み |
 | 500 | DB 接続エラー |
 
@@ -64,7 +63,7 @@ Firebase UID でログイン（プレイヤー情報を返す）
 |---|---|---|---|
 | `PlayerID` | `string` | `player_id` |  |
 | `FirebaseUID` | `string` | `firebase_uid` |  |
-| `Name` | `string` | `name` |  |
+| `Name` | `*string` | `name,omitempty` | オンボーディング未完了時は `null` |
 | `Level` | `int64` | `level` |  |
 | `Exp` | `int64` | `exp` |  |
 | `IsPremium` | `bool` | `is_premium` |  |
@@ -86,9 +85,9 @@ Firebase UID でログイン（プレイヤー情報を返す）
 
 ---
 
-### `GET /internal/v1/players/by-firebase-uid/{firebaseUID}`
+### `GET /internal/v1/auth/by-firebase-uid/{firebaseUID}`
 
-Firebase UID からプレイヤーを検索する
+Firebase UID からプレイヤーを検索する（gateway などサービス間ルックアップ用）
 
 #### レスポンス
 
@@ -96,7 +95,7 @@ Firebase UID からプレイヤーを検索する
 |---|---|---|---|
 | `PlayerID` | `string` | `player_id` |  |
 | `FirebaseUID` | `string` | `firebase_uid` |  |
-| `Name` | `string` | `name` |  |
+| `Name` | `*string` | `name,omitempty` | オンボーディング未完了時は `null` |
 | `Level` | `int64` | `level` |  |
 | `Exp` | `int64` | `exp` |  |
 | `IsPremium` | `bool` | `is_premium` |  |
@@ -154,7 +153,7 @@ Firebase UID からプレイヤーを検索する
 |---|---|---|---|
 | `PlayerID` | `string` | `player_id` |  |
 | `FirebaseUID` | `string` | `firebase_uid` |  |
-| `Name` | `string` | `name` |  |
+| `Name` | `*string` | `name,omitempty` | オンボーディング未完了時は `null` |
 | `Level` | `int64` | `level` |  |
 | `Exp` | `int64` | `exp` |  |
 | `IsPremium` | `bool` | `is_premium` |  |
@@ -184,7 +183,7 @@ Firebase UID からプレイヤーを検索する
 
 | フィールド | 型 | JSON | 説明 |
 |---|---|---|---|
-| `Name` | `string` | `name` |  |
+| `Name` | `*string` | `name,omitempty` | オンボーディング未完了時は `null` |
 
 #### レスポンス
 
@@ -192,7 +191,7 @@ Firebase UID からプレイヤーを検索する
 |---|---|---|---|
 | `PlayerID` | `string` | `player_id` |  |
 | `FirebaseUID` | `string` | `firebase_uid` |  |
-| `Name` | `string` | `name` |  |
+| `Name` | `*string` | `name,omitempty` | オンボーディング未完了時は `null` |
 | `Level` | `int64` | `level` |  |
 | `Exp` | `int64` | `exp` |  |
 | `IsPremium` | `bool` | `is_premium` |  |

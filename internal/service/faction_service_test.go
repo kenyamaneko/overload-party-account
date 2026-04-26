@@ -194,3 +194,39 @@ func TestFactionService_SelectInitialFaction_PlayerNotFound_ReturnsErrNotFound(t
 	err := svc.SelectInitialFaction(ctx, "99999999-9999-9999-9999-999999999999", "SHE")
 	require.ErrorIs(t, err, port.ErrNotFound)
 }
+
+// ApplyOnboardingResult は表示名を扱わない契約: シナリオは入力時点で
+// PUT /players/:id/name を呼んで account に確定済みのため、player-onboarded 経路では
+// initial_faction の反映と processed_events の冪等ガードのみを担う。
+// name が NULL のままでも faction の付与には支障がないことをここで固定する。
+func TestFactionService_ApplyOnboardingResult_NameIndependent(t *testing.T) {
+	ctx := context.Background()
+	sharedPg.Truncate(t)
+	seedPlayer(t, testPlayerID1, "uid-1", "", false) // name 未確定 (NULL) のプレイヤー
+
+	playerRepo, factionRepo, _, tx := newRealRepos()
+	eventRepo := newProcessedEventRepo()
+	svc := NewFactionService(playerRepo, factionRepo, eventRepo, tx)
+
+	processed, selected, err := svc.ApplyOnboardingResult(
+		ctx,
+		"44444444-4444-4444-4444-444444444444",
+		"player.onboarded",
+		testPlayerID1,
+		"SHE",
+	)
+	require.NoError(t, err)
+	assert.True(t, processed)
+	assert.True(t, selected)
+
+	// faction だけ反映され、name は触られず NULL のまま。
+	p, ferr := playerRepo.FindByID(ctx, testPlayerID1)
+	require.NoError(t, ferr)
+	assert.Nil(t, p.Name, "ApplyOnboardingResult は name を書かない")
+	require.NotNil(t, p.SelectedFaction)
+	assert.Equal(t, "SHE", *p.SelectedFaction)
+
+	factions, ferr := factionRepo.GetPlayerFactions(ctx, testPlayerID1)
+	require.NoError(t, ferr)
+	assert.ElementsMatch(t, []string{"SHE"}, factions)
+}

@@ -7,6 +7,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/kenyamaneko/overload-party-account/internal/model"
 	"github.com/kenyamaneko/overload-party-account/internal/port"
 	"github.com/kenyamaneko/overload-party-account/internal/service"
 )
@@ -70,5 +71,6 @@ func isTooManyRequests(err error) bool {
 
 // isValidation はクライアント入力の妥当性違反によるエラーか判定する。
 func isValidation(err error) bool {
-	return errors.Is(err, service.ErrInvalidFaction)
+	return errors.Is(err, service.ErrInvalidFaction) ||
+		errors.Is(err, model.ErrInvalidName)
 }

@@ -10,10 +10,8 @@
 // Player / PlayerResponse 等) を再利用するため、本パッケージは自前の型を
 // 宣言していない。
 //
-// Go 1.22 ServeMux は `/players/by-firebase-uid/{uid}` と
-// `/players/{playerID}/{resource}` の両方が同じ URL に match しうる
-// (`/players/by-firebase-uid/battle-limit` のような病的 URL) ため登録時に
-// 衝突と判定する。これを回避するため `/players/` 配下は 1 つの catch-all
+// Go 1.22 ServeMux は `/players/{playerID}/{resource}` 配下のパターン衝突を
+// 検知して登録を拒否することがあるため、`/players/` 配下は 1 つの catch-all
 // handler で受け、path を自前で dispatch する。
 package apiaccountserverfake
 
@@ -38,7 +36,7 @@ type Server struct {
 	// LoginFn: POST /internal/v1/auth/login。既定は 200 + 空 Player。
 	LoginFn func(req apiaccount.LoginRequest) (int, any)
 
-	// FindByFirebaseUIDFn: GET /internal/v1/players/by-firebase-uid/{uid}。
+	// FindByFirebaseUIDFn: GET /internal/v1/auth/by-firebase-uid/{uid}。
 	// 既定は 200 + 空 Player。未登録を擬似したい場合は Fn で 404 を返す。
 	FindByFirebaseUIDFn func(firebaseUID string) (int, any)
 
@@ -88,6 +86,7 @@ func NewServer() *Server {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /internal/v1/auth/register", s.handleRegister)
 	mux.HandleFunc("POST /internal/v1/auth/login", s.handleLogin)
+	mux.HandleFunc("GET /internal/v1/auth/by-firebase-uid/{firebaseUID}", s.handleFindByFirebaseUIDRoute)
 	// /players/ 配下はパターン衝突回避のため manual dispatch する。
 	mux.HandleFunc("/internal/v1/players/", s.playersDispatcher)
 	s.srv = httptest.NewServer(mux)
@@ -100,9 +99,16 @@ func (s *Server) URL() string { return s.srv.URL }
 // Close は内部 httptest.Server を閉じる。
 func (s *Server) Close() { s.srv.Close() }
 
+// handleFindByFirebaseUIDRoute は GET /internal/v1/auth/by-firebase-uid/{firebaseUID}
+// の Go 1.22 ServeMux ハンドラ。path value から UID を抜き出して既存の
+// handleFindByFirebaseUID に委譲する。
+func (s *Server) handleFindByFirebaseUIDRoute(w http.ResponseWriter, r *http.Request) {
+	s.handleFindByFirebaseUID(w, r, r.PathValue("firebaseUID"))
+}
+
 // playersDispatcher は /internal/v1/players/ 配下の全 route を受けて
 // method + path 構造で個別 handler に dispatch する。Go 1.22 ServeMux が
-// `by-firebase-uid/{uid}` と `{playerID}/{resource}` の衝突を拒否するため、
+// `{playerID}/{resource}` 配下のサブツリーで衝突を拒否することがあるため、
 // 自前でルーティングする必要がある。
 func (s *Server) playersDispatcher(w http.ResponseWriter, r *http.Request) {
 	const prefix = "/internal/v1/players/"
@@ -112,9 +118,6 @@ func (s *Server) playersDispatcher(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case len(parts) == 1 && parts[0] == "award-game-exp" && r.Method == http.MethodPost:
 		s.handleAwardGameExp(w, r)
-		return
-	case len(parts) == 2 && parts[0] == "by-firebase-uid" && r.Method == http.MethodGet:
-		s.handleFindByFirebaseUID(w, r, parts[1])
 		return
 	case len(parts) == 1 && r.Method == http.MethodGet:
 		s.handleGetPlayer(w, r, parts[0])

@@ -57,13 +57,19 @@ func (f *fakeGameConfigRepo) GetInt64(_ context.Context, key string) (int64, err
 
 // seedPlayer は account.players + player_daily_battle + player_progression の最小シードを投入する。
 // postgres 層テストの helpers_test.go と同じパターン。
+// 引数 name に "" を渡すと account.players.name を NULL として挿入する
+// (オンボーディング前の name 未確定状態を再現するため)。
 func seedPlayer(t *testing.T, playerID, firebaseUID, name string, isPremium bool) *apiaccount.Player {
 	t.Helper()
 	now := time.Now().UTC()
+	var namePtr *string
+	if name != "" {
+		namePtr = &name
+	}
 	p := &apiaccount.Player{
 		PlayerID:    playerID,
 		FirebaseUID: firebaseUID,
-		Name:        name,
+		Name:        namePtr,
 		Level:       1,
 		Exp:         0,
 		IsPremium:   isPremium,
@@ -94,13 +100,18 @@ func seedPlayer(t *testing.T, playerID, firebaseUID, name string, isPremium bool
 
 // seedPlayerWithState は指定の level/exp/daily_battle 状態でシードする。
 // GetBattleLimit / AwardExp のテスト用。level/exp は player_progression テーブルに入る。
+// 引数 name に "" を渡すと account.players.name を NULL として挿入する。
 func seedPlayerWithState(t *testing.T, playerID, firebaseUID, name string, isPremium bool, level, exp int64, count int64, lastReset civil.Date) *apiaccount.Player {
 	t.Helper()
 	now := time.Now().UTC()
+	var namePtr *string
+	if name != "" {
+		namePtr = &name
+	}
 	p := &apiaccount.Player{
 		PlayerID:    playerID,
 		FirebaseUID: firebaseUID,
-		Name:        name,
+		Name:        namePtr,
 		Level:       level,
 		Exp:         exp,
 		IsPremium:   isPremium,

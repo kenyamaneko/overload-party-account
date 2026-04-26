@@ -16,13 +16,18 @@ import (
 // seedPlayer は account.players + player_daily_battle + player_progression の最小シードを投入する。
 // テストで頻繁に必要な「ログイン済みプレイヤー」の状態を 1 行で作る。
 // Level/Exp は Player アグリゲートに詰めて返すが、物理的には player_progression に INSERT される。
+// 引数 name に "" を渡すと name を NULL として挿入する (オンボーディング前の未確定状態を再現する用途)。
 func seedPlayer(t *testing.T, playerID, firebaseUID, name string, isPremium bool) *apiaccount.Player {
 	t.Helper()
 	now := time.Now().UTC()
+	var namePtr *string
+	if name != "" {
+		namePtr = &name
+	}
 	p := &apiaccount.Player{
 		PlayerID:    playerID,
 		FirebaseUID: firebaseUID,
-		Name:        name,
+		Name:        namePtr,
 		Level:       1,
 		Exp:         0,
 		IsPremium:   isPremium,

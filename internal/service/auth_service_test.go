@@ -25,17 +25,14 @@ func TestAuthService_Register_Success(t *testing.T) {
 	tests := []struct {
 		name        string
 		firebaseUID string
-		playerName       string
 	}{
 		{
 			name:        "新規登録 1",
 			firebaseUID: "firebase-uid-1",
-			playerName:       "TestUser",
 		},
 		{
 			name:        "新規登録 2",
 			firebaseUID: "firebase-uid-2",
-			playerName:       "Alice",
 		},
 	}
 
@@ -44,14 +41,24 @@ func TestAuthService_Register_Success(t *testing.T) {
 			sharedPg.Truncate(t)
 			svc := newAuthTestService()
 
-			player, err := svc.Register(ctx, tt.firebaseUID, tt.playerName)
+			player, err := svc.Register(ctx, tt.firebaseUID)
 			require.NoError(t, err)
 			assert.NotEmpty(t, player.PlayerID)
 			assert.Equal(t, tt.firebaseUID, player.FirebaseUID)
-			assert.Equal(t, tt.playerName, player.Name)
+			// Register 直後の表示名は nil。オンボーディング完了時に
+			// player-onboarded イベント経由で確定する契約。
+			assert.Nil(t, player.Name)
 			assert.Equal(t, int64(1), player.Level)
 			assert.Equal(t, int64(0), player.Exp)
 			assert.False(t, player.IsPremium)
+
+			// DB 上でも name が NULL になっていることを確認する (server を信じない明示的検証)。
+			var dbName *string
+			require.NoError(t, sharedPg.Pool.QueryRow(ctx,
+				`SELECT name FROM account.players WHERE player_id = $1`,
+				player.PlayerID,
+			).Scan(&dbName))
+			assert.Nil(t, dbName, "Register は name を NULL で挿入する")
 
 			// Register はトランザクションで player と player_settings をアトミックに作成する。
 			// tx の commit を実 DB 行の存在で検証する。
@@ -83,10 +90,10 @@ func TestAuthService_Register_DuplicateFirebaseUID_ReturnsAlreadyRegistered(t *t
 	sharedPg.Truncate(t)
 	svc := newAuthTestService()
 
-	_, err := svc.Register(ctx, "firebase-uid-dup", "FirstUser")
+	_, err := svc.Register(ctx, "firebase-uid-dup")
 	require.NoError(t, err)
 
-	_, err = svc.Register(ctx, "firebase-uid-dup", "SecondUser")
+	_, err = svc.Register(ctx, "firebase-uid-dup")
 	require.ErrorIs(t, err, ErrPlayerAlreadyRegistered)
 }
 
@@ -95,13 +102,14 @@ func TestAuthService_Login_Success(t *testing.T) {
 	sharedPg.Truncate(t)
 	svc := newAuthTestService()
 
-	registered, err := svc.Register(ctx, "firebase-uid-login", "LoginUser")
+	registered, err := svc.Register(ctx, "firebase-uid-login")
 	require.NoError(t, err)
 
 	loggedIn, err := svc.Login(ctx, "firebase-uid-login")
 	require.NoError(t, err)
 	assert.Equal(t, registered.PlayerID, loggedIn.PlayerID)
-	assert.Equal(t, "LoginUser", loggedIn.Name)
+	// 直後 Login では name は未設定のまま。
+	assert.Nil(t, loggedIn.Name)
 }
 
 func TestAuthService_Login_NotFound(t *testing.T) {
@@ -110,4 +118,35 @@ func TestAuthService_Login_NotFound(t *testing.T) {
 
 	_, err := svc.Login(context.Background(), "nonexistent-uid")
 	require.ErrorIs(t, err, ErrPlayerNotFound)
+}
+
+// オンボーディング動線の通し: Register で name 未設定のまま行を作り、
+// 後続の UpdateName で初めて表示名が確定する仕様を固定する。
+// 「途中でゲームを落とした後の再起動でも Register をやり直さない」設計の
+// 基礎が成立していることをここで保証する。
+func TestAuthService_RegisterThenUpdateName_OnboardingFlow(t *testing.T) {
+	ctx := context.Background()
+	sharedPg.Truncate(t)
+
+	authSvc := newAuthTestService()
+	registered, err := authSvc.Register(ctx, "firebase-uid-onboard")
+	require.NoError(t, err)
+	require.Nil(t, registered.Name, "Register 直後は name が nil")
+
+	// オンボーディングシナリオ完了相当の表示名確定。
+	playerRepo, factionRepo, _, tx := newRealRepos()
+	playerSvc := NewPlayerService(playerRepo, newFakeGameConfigRepo(map[string]int64{
+		ConfigKeyExpFormulaCoefficient: 60,
+	}), factionRepo, tx)
+
+	updated, err := playerSvc.UpdateName(ctx, registered.PlayerID, "Alice")
+	require.NoError(t, err)
+	require.NotNil(t, updated.Name, "UpdateName 後は name が確定する")
+	assert.Equal(t, "Alice", *updated.Name)
+
+	// Login で再取得しても確定済みの name が残ることを確認 (永続化されていること)。
+	loggedIn, err := authSvc.Login(ctx, "firebase-uid-onboard")
+	require.NoError(t, err)
+	require.NotNil(t, loggedIn.Name)
+	assert.Equal(t, "Alice", *loggedIn.Name)
 }

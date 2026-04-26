@@ -73,19 +73,23 @@ func (s *FactionService) SelectInitialFaction(ctx context.Context, playerID, fac
 	return nil
 }
 
-// ApplyOnboardingResult は player-onboarded イベント起因で表示名更新と初期ファクション
-// 確定、および processed_events 冪等ガードを同一トランザクションに束ねて反映する
-// ユースケースです。subscriber は Unmarshal と本メソッド呼び出しのみを担当し、
-// ビジネス不変条件 (SelectableFactions 内であること / selected_faction が NULL の
-// ときだけ上書きすること / processed_events・username・player_factions・
-// selected_faction を同一 Tx で確定すること) は本メソッドが保証します。
+// ApplyOnboardingResult は player-onboarded イベント起因で初期ファクション確定と
+// processed_events 冪等ガードを同一トランザクションに束ねて反映するユースケースです。
+// subscriber は Unmarshal と本メソッド呼び出しのみを担当し、ビジネス不変条件
+// (SelectableFactions 内であること / selected_faction が NULL のときだけ上書きすること /
+// processed_events・player_factions・selected_faction を同一 Tx で確定すること) は
+// 本メソッドが保証します。
+//
+// 表示名 (players.name) は本経路では扱いません。シナリオが入力時点で
+// PUT /players/:id/name を呼び account に確定済みであることが前提です。
+// この分離により、オンボーディング途中で離脱した場合も再登録を要求されません。
 //
 // 戻り値:
 //   - processed=false: 同一 event_id が processed_events に既存 (冪等スキップ)。
 //     他の戻り値フィールドは無意味 (副作用なし)。呼び出し側は ACK するだけ。
 //   - processed=true, selected=true: 今回のコールで全副作用を確定した。
 //   - processed=true, selected=false: selected_faction が既に埋まっていた
-//     (二重配信 / race)。username と player_factions は反映済み。ログ警告のみで
+//     (二重配信 / race)。player_factions は反映済み。ログ警告のみで
 //     エラー扱いにしない (ErrFactionAlreadySelected は REST 用意味論なので
 //     onboarding パスでは返さない)。
 //
@@ -94,13 +98,10 @@ func (s *FactionService) SelectInitialFaction(ctx context.Context, playerID, fac
 // ハンドリングする責務を負います。
 func (s *FactionService) ApplyOnboardingResult(
 	ctx context.Context,
-	eventID, eventType, playerID, displayName, initialFactionID string,
+	eventID, eventType, playerID, initialFactionID string,
 ) (processed, selected bool, err error) {
 	if playerID == "" {
 		return false, false, fmt.Errorf("%w: playerID is empty", ErrInvalidFaction)
-	}
-	if displayName == "" {
-		return false, false, fmt.Errorf("%w: displayName is empty", ErrInvalidFaction)
 	}
 	if err := validateInitialFaction(initialFactionID); err != nil {
 		return false, false, err
@@ -117,11 +118,8 @@ func (s *FactionService) ApplyOnboardingResult(
 		}
 		processed = true
 
-		// player が存在しない場合は port.ErrNotFound が返り、呼び出し側 (subscriber) が
-		// publisher バグとして DLQ 相当の明示ハンドリングを行う。
-		if err := s.playerRepo.UpdateName(txCtx, playerID, displayName); err != nil {
-			return fmt.Errorf("update name: %w", err)
-		}
+		// 存在しない player に対しては writeInitialFactionTx 内の UPDATE が
+		// RowsAffected=0 となり port.ErrNotFound でラップされる。
 		set, err := s.writeInitialFactionTx(txCtx, playerID, initialFactionID)
 		if err != nil {
 			return err

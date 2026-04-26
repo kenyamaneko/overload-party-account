@@ -12,7 +12,7 @@ import (
 type Player struct {
 	PlayerID         string     `json:"player_id" db:"player_id"`
 	FirebaseUID      string     `json:"firebase_uid" db:"firebase_uid"`
-	Name             string     `json:"name" db:"name"`
+	Name             *string    `json:"name,omitempty" db:"name"`
 	Level            int64      `json:"level" db:"level"`
 	Exp              int64      `json:"exp" db:"exp"`
 	IsPremium        bool       `json:"is_premium" db:"is_premium"`

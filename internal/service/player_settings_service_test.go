@@ -10,7 +10,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/kenyamaneko/overload-party-account/internal/model"
 	"github.com/kenyamaneko/overload-party-account/internal/port"
 )
 
@@ -68,29 +67,17 @@ func TestPlayerSettingsService_Get_Seeded(t *testing.T) {
 	}
 }
 
-// TestPlayerSettingsService_Get_Unseeded_ReturnsDefaultsWithoutPersisting は
-// 未登録プレイヤーに対して Get がデフォルト値を返しつつ DB に書き込まない契約を検証する
-// （handler は明示的な Update でのみ永続化する）。
-func TestPlayerSettingsService_Get_Unseeded_ReturnsDefaultsWithoutPersisting(t *testing.T) {
+// player_settings 行が存在しない場合 Get は port.ErrNotFound を返し、
+// デフォルト値での隠蔽は行わない（Register と同一 Tx で必ず INSERT されている契約のため、
+// 行が無いのは Register 未実施または不整合の症状であり、エラーとして扱う）。
+func TestPlayerSettingsService_Get_Unseeded_ReturnsErrNotFound(t *testing.T) {
 	ctx := context.Background()
 	sharedPg.Truncate(t)
 	seedPlayer(t, testPlayerID1, "uid-1", "Alice", false)
 
 	svc := newPlayerSettingsTestService()
-	got, err := svc.Get(ctx, testPlayerID1)
-	require.NoError(t, err)
-	require.NotNil(t, got)
-	assert.Equal(t, testPlayerID1, got.PlayerID)
-	assert.Equal(t, model.DefaultLanguage, got.Language)
-	assert.Equal(t, model.DefaultBgmVolume, got.BgmVolume)
-	assert.Equal(t, model.DefaultSeVolume, got.SeVolume)
-	assert.Equal(t, model.DefaultPushEnabled, got.PushEnabled)
-
-	var count int
-	require.NoError(t, sharedPg.Pool.QueryRow(ctx,
-		`SELECT COUNT(*) FROM account.player_settings WHERE player_id = $1`, testPlayerID1,
-	).Scan(&count))
-	assert.Equal(t, 0, count, "Get はデフォルト返却で永続化しない")
+	_, err := svc.Get(ctx, testPlayerID1)
+	require.ErrorIs(t, err, port.ErrNotFound)
 }
 
 // Update は patch の非 nil フィールドだけを更新する（部分更新契約）。
@@ -185,23 +172,3 @@ func TestPlayerSettingsService_Update_AdvancesUpdatedAt(t *testing.T) {
 		after.UpdatedAt, before.UpdatedAt)
 }
 
-// Get は該当プレイヤーの設定が無い場合、デフォルト値の UpdatedAt に現在時刻を詰めて返す。
-// 「常に non-nil で language/volume/push がデフォルト値」であることの契約テスト。
-func TestPlayerSettingsService_Get_DefaultHasCurrentTimestamp(t *testing.T) {
-	ctx := context.Background()
-	sharedPg.Truncate(t)
-	seedPlayer(t, testPlayerID1, "uid-1", "Alice", false)
-
-	svc := newPlayerSettingsTestService()
-	before := time.Now()
-	got, err := svc.Get(ctx, testPlayerID1)
-	after := time.Now()
-	require.NoError(t, err)
-	require.NotNil(t, got)
-
-	// デフォルト UpdatedAt は [before, after] の範囲内であるべき。
-	assert.False(t, got.UpdatedAt.Before(before.Add(-time.Second)),
-		"default UpdatedAt %v should be ~now (before=%v)", got.UpdatedAt, before)
-	assert.False(t, got.UpdatedAt.After(after.Add(time.Second)),
-		"default UpdatedAt %v should be ~now (after=%v)", got.UpdatedAt, after)
-}

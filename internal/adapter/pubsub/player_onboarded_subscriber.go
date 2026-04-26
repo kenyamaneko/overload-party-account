@@ -18,12 +18,13 @@ import (
 // クリーンアーキテクチャの依存方向 (adapter → service → port → repo) を崩さないため、
 // adapter 層は service の具象ではなくここで切った最小インターフェースに依存します。
 //
-// processed_events 冪等ガードと name / player_factions / selected_faction の
-// 書き込みは同一 Tx で行う必要があるため、Tx 境界は service 側が保持します。
+// processed_events 冪等ガードと player_factions / selected_faction の書き込みは
+// 同一 Tx で行う必要があるため、Tx 境界は service 側が保持します。表示名は
+// シナリオが入力時点で account REST に書き込み済みのため、本経路では扱いません。
 type OnboardingApplier interface {
 	ApplyOnboardingResult(
 		ctx context.Context,
-		eventID, eventType, playerID, displayName, initialFactionID string,
+		eventID, eventType, playerID, initialFactionID string,
 	) (processed, selected bool, err error)
 }
 
@@ -38,10 +39,9 @@ type OnboardingApplier interface {
 // subscriber 自身は Unmarshal + OnboardingApplier への委譲のみを行い、
 // SelectableFactions 検証・冪等ガード・同一 Tx 反映は service 層に任せます。
 //
-// account.players の表示名はカラム name に書き込みます。
-// scenario の event payload は display_name という名前ですが、account の
-// DB は「表示名」= name という既存契約のため、列名は変更せず
-// subscriber handler 内でマッピングを閉じています (ARCHITECTURE.md §6.3)。
+// 表示名は本経路では扱わない。表示名はシナリオ内の name 入力ステップで
+// scenario が PUT /internal/v1/players/:playerId/name を呼んで account に
+// 確定するため、player-onboarded payload には載せない。
 type PlayerOnboardedSubscriber struct {
 	stream  port.MessageStream
 	applier OnboardingApplier
@@ -77,7 +77,7 @@ func (s *PlayerOnboardedSubscriber) processEvent(ctx context.Context, data []byt
 	}
 
 	processed, selected, err := s.applier.ApplyOnboardingResult(
-		ctx, ev.EventID, ev.EventType, ev.PlayerID, ev.DisplayName, ev.InitialFactionID,
+		ctx, ev.EventID, ev.EventType, ev.PlayerID, ev.InitialFactionID,
 	)
 	if err != nil {
 		// Register 未実施プレイヤーに対する onboarded event は publisher 側 (scenario)
@@ -104,7 +104,7 @@ func (s *PlayerOnboardedSubscriber) processEvent(ctx context.Context, data []byt
 		return nil
 	}
 	if !selected {
-		// selected_faction は既に埋まっていた。name / player_factions は反映済み。
+		// selected_faction は既に埋まっていた。player_factions は反映済み。
 		// 二重配信 or processed_events を迂回した重複なので警告ログのみ残す。
 		slog.Warn("player-onboarded subscriber: selected_faction already set",
 			"event_id", ev.EventID, "player_id", ev.PlayerID, "faction", ev.InitialFactionID)

@@ -29,8 +29,10 @@ func NewAuthService(playerRepo port.PlayerRepo, playerSettingsRepo port.PlayerSe
 	}
 }
 
-// Register は新規プレイヤーを登録します。
-func (s *AuthService) Register(ctx context.Context, firebaseUID, name string) (*apiaccount.Player, error) {
+// Register は新規プレイヤーを登録します。表示名は Register では取得せず、
+// オンボーディング完了時の player-onboarded イベントで初めて確定します
+// (オンボーディング途中での中断後に再登録を要求しないための分離)。
+func (s *AuthService) Register(ctx context.Context, firebaseUID string) (*apiaccount.Player, error) {
 	existing, err := s.playerRepo.FindByFirebaseUID(ctx, firebaseUID)
 	if err != nil {
 		return nil, fmt.Errorf("check existing player: %w", err)
@@ -43,7 +45,7 @@ func (s *AuthService) Register(ctx context.Context, firebaseUID, name string) (*
 	player := &apiaccount.Player{
 		PlayerID:    uuid.New().String(),
 		FirebaseUID: firebaseUID,
-		Name:        name,
+		Name:        nil,
 		Level:       1,
 		Exp:         0,
 		IsPremium:   false,
@@ -88,6 +90,13 @@ func (s *AuthService) Register(ctx context.Context, firebaseUID, name string) (*
 	// カードパック配布は登録時には行わない。初回ファクション選択時に
 	// gateway がオーケストレーションする（player_factions が冪等性キー）。
 	return player, nil
+}
+
+// FindByFirebaseUID は Firebase UID でプレイヤーを検索します。
+// 内部 API (gateway などサービス間の UID→Player ルックアップ) 用の純粋な参照系で、
+// ログインという業務イベントを伴わない点が Login との違いです。
+func (s *AuthService) FindByFirebaseUID(ctx context.Context, firebaseUID string) (*apiaccount.Player, error) {
+	return s.playerRepo.FindByFirebaseUID(ctx, firebaseUID)
 }
 
 // Login は Firebase UID でプレイヤーを検索しログインします。

@@ -28,19 +28,17 @@ type fakeOnboardingApplier struct {
 	gotEvent  string
 	gotType   string
 	gotPlayer string
-	gotName   string
 	gotFac    string
 }
 
 func (f *fakeOnboardingApplier) ApplyOnboardingResult(
 	_ context.Context,
-	eventID, eventType, playerID, displayName, initialFactionID string,
+	eventID, eventType, playerID, initialFactionID string,
 ) (bool, bool, error) {
 	f.called = true
 	f.gotEvent = eventID
 	f.gotType = eventType
 	f.gotPlayer = playerID
-	f.gotName = displayName
 	f.gotFac = initialFactionID
 	if f.returnErr != nil {
 		return false, false, f.returnErr
@@ -60,7 +58,6 @@ func (f *fakeOnboardingApplier) ApplyOnboardingResult(
 func TestPlayerOnboardedSubscriber_Consumes(t *testing.T) {
 	validEvent := apiscenario.PlayerOnboardedEvent{
 		PlayerID:         "p-1",
-		DisplayName:      "name-1",
 		InitialFactionID: "SHE",
 	}
 
@@ -87,7 +84,6 @@ func TestPlayerOnboardedSubscriber_Consumes(t *testing.T) {
 				assert.True(t, a.called, "applier に委譲する")
 				assert.Equal(t, apiscenario.EventTypePlayerOnboarded, a.gotType)
 				assert.Equal(t, "p-1", a.gotPlayer)
-				assert.Equal(t, "name-1", a.gotName)
 				assert.Equal(t, "SHE", a.gotFac)
 				assert.NotEmpty(t, a.gotEvent, "EventID は fake の auto-fill で埋まる")
 			},
@@ -139,10 +135,9 @@ func TestPlayerOnboardedSubscriber_Consumes(t *testing.T) {
 			name: "initial_faction_id 欠落: ペイロード仕様違反で NACK (applier 未呼び出し)",
 			publish: func(_ context.Context, _ *apiscenariofake.Publisher, broker *apiscenariofake.Broker) {
 				broker.Publish(apiscenario.TopicPlayerOnboarded, mustMarshal(t, apiscenario.PlayerOnboardedEvent{
-					EventType:   apiscenario.EventTypePlayerOnboarded,
-					EventID:     "33333333-3333-3333-3333-333333333333",
-					PlayerID:    "p-3",
-					DisplayName: "x",
+					EventType: apiscenario.EventTypePlayerOnboarded,
+					EventID:   "33333333-3333-3333-3333-333333333333",
+					PlayerID:  "p-3",
 				}))
 			},
 			wantAck: false,

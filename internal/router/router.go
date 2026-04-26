@@ -26,10 +26,9 @@ func New(
 	{
 		v1.POST("/auth/register", authH.Register)
 		v1.POST("/auth/login", authH.Login)
+		v1.GET("/auth/by-firebase-uid/:firebaseUID", authH.GetPlayerByFirebaseUID)
 
 		v1.POST("/players/award-game-exp", playerH.AwardGameExp)
-
-		v1.GET("/players/by-firebase-uid/:firebaseUID", playerH.GetPlayerByFirebaseUID)
 
 		players := v1.Group("/players/:playerId")
 		{

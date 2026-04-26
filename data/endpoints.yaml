@@ -26,8 +26,8 @@ endpoint_groups:
           - {status: 500, description: DB 接続エラー}
 
       - method: GET
-        path: /players/by-firebase-uid/{firebaseUID}
-        summary: Firebase UID からプレイヤーを検索する
+        path: /auth/by-firebase-uid/{firebaseUID}
+        summary: Firebase UID からプレイヤーを検索する（gateway などサービス間ルックアップ用）
         response_type: PlayerResponse
         errors:
           - {status: 400, description: firebaseUID が空}

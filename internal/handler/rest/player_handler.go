@@ -34,25 +34,6 @@ func (h *PlayerHandler) GetPlayer(c *gin.Context) {
 	c.JSON(http.StatusOK, resp)
 }
 
-// GetPlayerByFirebaseUID は Firebase UID でプレイヤーを検索します。
-func (h *PlayerHandler) GetPlayerByFirebaseUID(c *gin.Context) {
-	firebaseUID := c.Param("firebaseUID")
-	if firebaseUID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "firebaseUID is required"})
-		return
-	}
-	player, err := h.playerService.FindByFirebaseUID(c.Request.Context(), firebaseUID)
-	if err != nil {
-		respondError(c, err)
-		return
-	}
-	if player == nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "player not found"})
-		return
-	}
-	c.JSON(http.StatusOK, player)
-}
-
 // UpdateName はプレイヤー名を更新します。
 func (h *PlayerHandler) UpdateName(c *gin.Context) {
 	playerID := c.Param("playerId")
@@ -66,11 +47,9 @@ func (h *PlayerHandler) UpdateName(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	if req.Name == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "name is required"})
-		return
-	}
 
+	// 表示名の業務ルール (空・空白のみ・制御文字・MaxNameRunes 超) は service 層で検証する。
+	// 違反時は model.ErrInvalidName が返り、respondError 経由で 400 にマップされる。
 	player, err := h.playerService.UpdateName(c.Request.Context(), playerID, req.Name)
 	if err != nil {
 		respondError(c, err)

@@ -15,13 +15,13 @@ account は以下の機能ドメインを所有する。
 
 | 機能 | 主要な責務 |
 |---|---|
-| プレイヤー登録・ログイン | Firebase UID と player_id の紐付け。初期行の作成（players / player_daily_battle / player_settings） |
+| プレイヤー登録・ログイン | Firebase UID と player_id の紐付け。初期行の作成（players / player_daily_battle / player_settings）。表示名はオンボーディング完了時に別経路で確定するため Register 時には受け取らない |
 | プレイヤー情報の参照・更新 | プレイヤー名・選択ファクション・装備アイコンの参照/更新。レベル進捗の算出 |
 | デイリーバトル制限 | JST 05:00 境界の制限回数管理。increment は冪等 |
 | ファクション所有 | onboarding 完了時の初期 faction 登録（`player-onboarded` イベント）と shop 購入時の追加（`faction-purchased` イベント）を `player_factions` に射影 |
 | 経験値・レベル | `AwardGameExp` による両プレイヤー同時付与。係数変更時もレベルは下がらない |
 | プレミアムステータス | `premium-updated` イベントから `is_premium` を射影保持 |
-| 表示名の反映 | `player-onboarded` イベントから `players.name` を更新（オンボーディング完了時） |
+| 表示名の検証・反映 | `PUT /players/:id/name` で表示名を受け、業務ルール (空・空白のみ・制御文字・`MaxNameRunes` 超) を [model.ValidateName](../internal/model/name.go) で検証して `players.name` を UPDATE |
 | ユーザー設定 | 言語・音量・通知フラグの参照/更新 |
 
 account は **account スキーマの DB 行と Pub/Sub から取り込んだ状態を唯一の真実とし**、他サービスを直接呼び出さず、自らイベントを publish もしない。
@@ -32,17 +32,22 @@ account は **account スキーマの DB 行と Pub/Sub から取り込んだ状
 
 ### 2.1 `POST /internal/v1/auth/register`
 
-**入力**: `{firebase_uid, name}`（gateway が ID Token 検証済み前提）
-**成功**: `201 Created` + `Player` レスポンス
+**入力**: `{firebase_uid}`（gateway が ID Token 検証済み前提）
+**成功**: `201 Created` + `Player` レスポンス（`name` は `null`）
 **処理**:
 
-1. `name` が 1〜50 文字（utf-8 rune 数）であることを確認。範囲外は 400
-2. `firebase_uid` で既存プレイヤーを pre-check。存在すれば 409 (`ErrPlayerAlreadyRegistered`)
-3. 新 UUID を採番し、単一トランザクションで:
-   - `players` INSERT (is_premium=false, selected_faction=NULL)
+1. `firebase_uid` で既存プレイヤーを pre-check。存在すれば 409 (`ErrPlayerAlreadyRegistered`)
+2. 新 UUID を採番し、単一トランザクションで:
+   - `players` INSERT (`name` NULL, is_premium=false, selected_faction=NULL)
    - `player_progression` INSERT (level=1, exp=0)
    - `player_daily_battle` INSERT (count=0, last_reset_date=今日の UTC 日付)
    - `player_settings` INSERT (アプリ層デフォルト値)
+
+`name` は本エンドポイントでは受け取らない。表示名はオンボーディングシナリオの中で
+ユーザーが入力した時点で §3 `PUT /players/:id/name` を呼んで account に確定する
+(`MaxNameRunes` などの業務バリデーション SSoT は account)。これによりオンボーディング途中で
+離脱しても再 Register を強要せず、シナリオ再開時は `players.name` の有無を見て
+入力ステップをスキップ判定できる。
 
 ### 2.2 Register の冪等性契約
 
@@ -58,6 +63,14 @@ account は **account スキーマの DB 行と Pub/Sub から取り込んだ状
 
 副作用なし。
 
+### 2.4 `GET /internal/v1/auth/by-firebase-uid/:firebaseUID`
+
+**入力**: パスパラメータ `firebaseUID`
+**成功**: `200 OK` + `Player` レスポンス
+**処理**: `players` を `firebase_uid` で検索。不在なら 404
+
+Login と同じルックアップだが、ログインという業務イベントを伴わない参照系（gateway などサービス間の UID→Player 解決用）。
+
 ---
 
 ## 3. プレイヤー情報の参照・更新
@@ -65,7 +78,6 @@ account は **account スキーマの DB 行と Pub/Sub から取り込んだ状
 | メソッド | パス | 概要 |
 |---|---|---|
 | GET | `/internal/v1/players/:playerId` | プレイヤー情報 + レベル進捗を返す |
-| GET | `/internal/v1/players/by-firebase-uid/:firebaseUID` | Firebase UID からプレイヤーを引く |
 | PUT | `/internal/v1/players/:playerId/name` | name 更新 |
 | PUT | `/internal/v1/players/:playerId/faction` | アクティブ選択ファクション更新 |
 | PUT | `/internal/v1/players/:playerId/premium` | プレミアムステータス更新（battle 等の内部呼び出し用） |
@@ -200,7 +212,7 @@ battle サービスが試合終了時に呼ぶ唯一の経験値付与エンド�
 
 ### 8.1 `GET /internal/v1/players/:playerId/settings`
 
-`player_settings` を返す。行が存在しない場合は **アプリ層デフォルト値を返す** (404 にしない)。Register 時に INSERT するため通常は必ず存在するが、ガードとしてデフォルトを返す。
+`player_settings` を返す。Register と同一トランザクションで必ず INSERT される契約のため、行が存在しないのは Register 未実施または不整合の症状。デフォルト値で隠さず **404 (`port.ErrNotFound`)** を返す。
 
 ### 8.2 `PUT /internal/v1/players/:playerId/settings`
 
@@ -251,9 +263,9 @@ subscription: `player-onboarded-account-sub`
 
 - publisher: scenario のみ（オンボーディングシナリオ読了時に transactional outbox 経由で publish、[ADR-021](../../overload-party-common/docs/adr/021-onboarding-scenario.md) §5.1、ADR-022 で 1 イベント設計に縮退）
 - 副作用:
-  - `players.name` を payload の `display_name` で UPDATE
   - `player_factions` に `initial_faction_id` を `source = initial_selection` で INSERT（冪等）
   - `players.selected_faction` が NULL の場合のみ `initial_faction_id` を UPDATE
+- 表示名 (`players.name`) は本経路では扱わない: シナリオは入力時点で §3 `PUT /name` 経由で account に確定する設計。payload に `display_name` が残っていても account 側は無視する (scenario 改修完了次第 schema 上も削除予定)。
 
 ADR-022 により、かつて `faction-selected(source=scenario_initial)` が担っていた初期 faction ロスター追加 + `selected_faction` 確定の副作用は本 subscriber に統合されている。
 

@@ -2,15 +2,12 @@ package rest
 
 import (
 	"net/http"
-	"unicode/utf8"
 
 	"github.com/gin-gonic/gin"
 
 	"github.com/kenyamaneko/overload-party-account/internal/service"
 	apiaccount "github.com/kenyamaneko/overload-party-account/packages/api-account"
 )
-
-const maxNameRunes = 50
 
 // AuthHandler は認証関連の REST エンドポイントを処理します。
 type AuthHandler struct {
@@ -22,7 +19,8 @@ func NewAuthHandler(authService *service.AuthService) *AuthHandler {
 	return &AuthHandler{authService: authService}
 }
 
-// Register は新規プレイヤー登録を処理します。
+// Register は新規プレイヤー登録を処理します。表示名は受け取らず、
+// オンボーディング完了時の player-onboarded イベントで確定します。
 func (h *AuthHandler) Register(c *gin.Context) {
 	var req apiaccount.RegisterRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -33,18 +31,33 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "firebase_uid is required"})
 		return
 	}
-	if n := utf8.RuneCountInString(req.Name); n < 1 || n > maxNameRunes {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "name must be 1-50 characters"})
-		return
-	}
 
-	player, err := h.authService.Register(c.Request.Context(), req.FirebaseUID, req.Name)
+	player, err := h.authService.Register(c.Request.Context(), req.FirebaseUID)
 	if err != nil {
 		respondError(c, err)
 		return
 	}
 
 	c.JSON(http.StatusCreated, player)
+}
+
+// GetPlayerByFirebaseUID は Firebase UID でプレイヤーを検索します。
+func (h *AuthHandler) GetPlayerByFirebaseUID(c *gin.Context) {
+	firebaseUID := c.Param("firebaseUID")
+	if firebaseUID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "firebaseUID is required"})
+		return
+	}
+	player, err := h.authService.FindByFirebaseUID(c.Request.Context(), firebaseUID)
+	if err != nil {
+		respondError(c, err)
+		return
+	}
+	if player == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "player not found"})
+		return
+	}
+	c.JSON(http.StatusOK, player)
 }
 
 // Login は既存プレイヤーのログインを処理します。
