@@ -25,8 +25,8 @@ const (
 type Config struct {
 	Port int
 
-	// DatabaseURL は PostgreSQL 接続文字列（pgx が解釈可能な URL 形式 or libpq 形式）。
-	DatabaseURL string
+	// DatabaseConn は PostgreSQL 接続文字列（libpq キーワード形式）。
+	DatabaseConn string
 
 	// PubsubProjectID は account が subscribe する Pub/Sub topic を保有する Google Cloud project ID。
 	PubsubProjectID string
@@ -53,7 +53,7 @@ type Config struct {
 // 未設定・未定義値は起動時に fail する（デフォルトへのフォールバック禁止）。
 func FromEnv() (*Config, error) {
 	cfg := &Config{
-		DatabaseURL:                      os.Getenv("DATABASE_URL"),
+		DatabaseConn:                     os.Getenv("DATABASE_CONN"),
 		PubsubProjectID:                  os.Getenv("PUBSUB_PROJECT_ID"),
 		FactionPurchasedSubscription:     os.Getenv("FACTION_PURCHASED_SUBSCRIPTION"),
 		PremiumUpdatedSubscription:       os.Getenv("PREMIUM_UPDATED_SUBSCRIPTION"),
@@ -77,8 +77,8 @@ func FromEnv() (*Config, error) {
 	}
 	cfg.Port = n
 
-	if cfg.DatabaseURL == "" {
-		return nil, fmt.Errorf("config: DATABASE_URL is required")
+	if cfg.DatabaseConn == "" {
+		return nil, fmt.Errorf("config: DATABASE_CONN is required")
 	}
 	if cfg.PubsubProjectID == "" {
 		return nil, fmt.Errorf("config: PUBSUB_PROJECT_ID is required (account subscribes to faction-purchased / premium-updated / player-onboarded)")

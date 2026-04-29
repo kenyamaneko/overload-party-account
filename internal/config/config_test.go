@@ -11,7 +11,7 @@ import (
 // で上書きし、シェル環境からの漏れで Given が非決定になるのを防ぐ。
 var allEnvKeys = []string{
 	"PORT",
-	"DATABASE_URL",
+	"DATABASE_CONN",
 	"PUBSUB_PROJECT_ID",
 	"FACTION_PURCHASED_SUBSCRIPTION",
 	"PREMIUM_UPDATED_SUBSCRIPTION",
@@ -47,7 +47,7 @@ func mergeEnv(maps ...map[string]string) map[string]string {
 // 明示的に供給する。各ケースはこれを baseline に override を重ねる。
 var validLocalEnv = map[string]string{
 	"PORT":                                "9005",
-	"DATABASE_URL":                        "postgres://account:account@localhost:5432/account?sslmode=disable",
+	"DATABASE_CONN":                       "host=localhost port=5432 dbname=account user=account password=account sslmode=disable",
 	"PUBSUB_PROJECT_ID":                   "account-local",
 	"FACTION_PURCHASED_SUBSCRIPTION":      "faction-purchased-account-sub",
 	"PREMIUM_UPDATED_SUBSCRIPTION":        "premium-updated-account-sub",
@@ -69,7 +69,7 @@ func TestFromEnv_Success(t *testing.T) {
 			envs: validLocalEnv,
 			assert: func(t *testing.T, cfg *Config) {
 				assert.Equal(t, 9005, cfg.Port)
-				assert.Equal(t, "postgres://account:account@localhost:5432/account?sslmode=disable", cfg.DatabaseURL)
+				assert.Equal(t, "host=localhost port=5432 dbname=account user=account password=account sslmode=disable", cfg.DatabaseConn)
 				assert.Equal(t, "account-local", cfg.PubsubProjectID)
 				assert.Equal(t, "faction-purchased-account-sub", cfg.FactionPurchasedSubscription)
 				assert.Equal(t, "premium-updated-account-sub", cfg.PremiumUpdatedSubscription)
@@ -132,9 +132,9 @@ func TestFromEnv_Errors(t *testing.T) {
 			wantErr: "PORT must be in 1-65535",
 		},
 		{
-			name:    "DATABASE_URL が未設定ならエラー",
-			envs:    mergeEnv(validLocalEnv, map[string]string{"DATABASE_URL": ""}),
-			wantErr: "DATABASE_URL is required",
+			name:    "DATABASE_CONN が未設定ならエラー",
+			envs:    mergeEnv(validLocalEnv, map[string]string{"DATABASE_CONN": ""}),
+			wantErr: "DATABASE_CONN is required",
 		},
 		{
 			name:    "PUBSUB_PROJECT_ID が未設定ならエラー",
