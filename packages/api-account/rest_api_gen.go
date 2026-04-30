@@ -15,7 +15,7 @@ type PlayerResponse struct {
 	Exp              int64      `json:"exp"`
 	IsPremium        bool       `json:"is_premium"`
 	EquippedIconNo   *int64     `json:"equipped_icon_no,omitempty"`
-	SelectedFaction  *string    `json:"selected_faction,omitempty"`
+	InitialFaction   *string    `json:"initial_faction,omitempty"`
 	OnboardingStatus string     `json:"onboarding_status"`
 	PremiumExpiresAt *time.Time `json:"premium_expires_at,omitempty"`
 	CreatedAt        time.Time  `json:"created_at"`
@@ -62,11 +62,6 @@ type UpdatePremiumRequest struct {
 	ExpiresAtMillis *int64 `json:"expires_at_millis,omitempty"`
 }
 
-// UpdateFactionRequest is the body for PUT /internal/v1/players/:playerId/faction.
-type UpdateFactionRequest struct {
-	Faction string `json:"faction"`
-}
-
 // AddExpRequest is the body for POST /internal/v1/players/:playerId/exp.
 type AddExpRequest struct {
 	ExpGain int64 `json:"exp_gain"`
@@ -84,13 +79,11 @@ type AwardGameExpRequest struct {
 // FactionGrantRequest is the body for POST /internal/v1/players/:playerId/factions.
 type FactionGrantRequest struct {
 	Faction string `json:"faction"`
-	Source  string `json:"source"`
 }
 
-// SelectInitialFactionRequest is the body for POST /internal/v1/players/:playerId/factions/select. Scenario calls this once the tutorial/story pins the player's faction choice; account inserts player_factions (ON CONFLICT DO NOTHING RETURNING) + UPDATE players.selected_faction in one tx, then calls card.grant-initial-pack.
+// SelectInitialFactionRequest is the body for POST /internal/v1/players/:playerId/factions/select. Scenario calls this once the tutorial/story pins the player's faction choice; account UPSERTs player_factions with is_initial=TRUE in one tx, then calls card.grant-initial-pack.
 type SelectInitialFactionRequest struct {
 	FactionID string `json:"faction_id"`
-	Source    string `json:"source"`
 }
 
 // UpdateSettingsRequest is the body for PUT /internal/v1/players/:playerId/settings. Partial update semantics: nil fields are left unchanged (COALESCE in SQL). At least one non-nil field is required.

@@ -23,7 +23,7 @@ files:
       - cloud.google.com/go/civil
     types:
       - name: Player
-        comment: "Player is the account.players row. OnboardingStatus is the SSoT for onboarding progression (not_started / name_set / faction_set / completed)."
+        comment: "Player is the account.players row + derived initial faction. OnboardingStatus is the SSoT for onboarding progression (not_started / name_set / faction_set / completed). InitialFaction はオンボーディングで選択した faction で、player_factions.is_initial=TRUE の行から導出される (players テーブルの列ではない)。"
         fields:
           - {name: PlayerID, type: string, json: "player_id", db: "player_id"}
           - {name: FirebaseUID, type: string, json: "firebase_uid", db: "firebase_uid"}
@@ -32,18 +32,18 @@ files:
           - {name: Exp, type: int64, json: "exp", db: "exp"}
           - {name: IsPremium, type: bool, json: "is_premium", db: "is_premium"}
           - {name: EquippedIconNo, type: "*int64", json: "equipped_icon_no,omitempty", db: "equipped_icon_no"}
-          - {name: SelectedFaction, type: "*string", json: "selected_faction,omitempty", db: "selected_faction"}
+          - {name: InitialFaction, type: "*string", json: "initial_faction,omitempty"}
           - {name: OnboardingStatus, type: string, json: "onboarding_status", db: "onboarding_status"}
           - {name: PremiumExpiresAt, type: "*time.Time", json: "premium_expires_at,omitempty", db: "premium_expires_at"}
           - {name: CreatedAt, type: time.Time, json: "created_at", db: "created_at"}
           - {name: UpdatedAt, type: time.Time, json: "updated_at", db: "updated_at"}
 
       - name: PlayerDailyBattle
-        comment: "PlayerDailyBattle is the account.player_daily_battle row."
+        comment: "PlayerDailyBattle is one account.player_daily_battle row (one per player per game day). PK is (player_id, game_date)."
         fields:
           - {name: PlayerID, type: string, json: "player_id", db: "player_id"}
+          - {name: GameDate, type: civil.Date, json: "game_date", db: "game_date"}
           - {name: DailyBattleCount, type: int64, json: "daily_battle_count", db: "daily_battle_count"}
-          - {name: LastResetDate, type: civil.Date, json: "last_reset_date", db: "last_reset_date"}
 
       - name: PlayerProgression
         comment: "PlayerProgression is the account.player_progression row. level/exp are split from players to isolate high-frequency battle updates from the profile row."
@@ -54,11 +54,11 @@ files:
           - {name: UpdatedAt, type: time.Time, json: "updated_at", db: "updated_at"}
 
       - name: PlayerFaction
-        comment: "PlayerFaction is a single row in account.player_factions."
+        comment: "PlayerFaction is a single row in account.player_factions. IsInitial=TRUE の行はオンボーディングで選択した faction (1 プレイヤーに最大 1 行)。"
         fields:
           - {name: PlayerID, type: string, json: "player_id", db: "player_id"}
           - {name: Faction, type: string, json: "faction", db: "faction"}
-          - {name: Source, type: string, json: "source", db: "source"}
+          - {name: IsInitial, type: bool, json: "is_initial", db: "is_initial"}
           - {name: AcquiredAt, type: time.Time, json: "acquired_at", db: "acquired_at"}
 
       - name: PlayerSettings
@@ -88,7 +88,7 @@ files:
           - {name: Exp, type: int64, json: "exp"}
           - {name: IsPremium, type: bool, json: "is_premium"}
           - {name: EquippedIconNo, type: "*int64", json: "equipped_icon_no,omitempty"}
-          - {name: SelectedFaction, type: "*string", json: "selected_faction,omitempty"}
+          - {name: InitialFaction, type: "*string", json: "initial_faction,omitempty"}
           - {name: OnboardingStatus, type: string, json: "onboarding_status"}
           - {name: PremiumExpiresAt, type: "*time.Time", json: "premium_expires_at,omitempty"}
           - {name: CreatedAt, type: time.Time, json: "created_at"}
@@ -135,11 +135,6 @@ files:
           - {name: IsPremium, type: bool, json: "is_premium"}
           - {name: ExpiresAtMillis, type: "*int64", json: "expires_at_millis,omitempty"}
 
-      - name: UpdateFactionRequest
-        comment: "UpdateFactionRequest is the body for PUT /internal/v1/players/:playerId/faction."
-        fields:
-          - {name: Faction, type: string, json: "faction"}
-
       - name: AddExpRequest
         comment: "AddExpRequest is the body for POST /internal/v1/players/:playerId/exp."
         fields:
@@ -158,13 +153,11 @@ files:
         comment: "FactionGrantRequest is the body for POST /internal/v1/players/:playerId/factions."
         fields:
           - {name: Faction, type: string, json: "faction"}
-          - {name: Source, type: string, json: "source"}
 
       - name: SelectInitialFactionRequest
-        comment: "SelectInitialFactionRequest is the body for POST /internal/v1/players/:playerId/factions/select. Scenario calls this once the tutorial/story pins the player's faction choice; account inserts player_factions (ON CONFLICT DO NOTHING RETURNING) + UPDATE players.selected_faction in one tx, then calls card.grant-initial-pack."
+        comment: "SelectInitialFactionRequest is the body for POST /internal/v1/players/:playerId/factions/select. Scenario calls this once the tutorial/story pins the player's faction choice; account UPSERTs player_factions with is_initial=TRUE in one tx, then calls card.grant-initial-pack."
         fields:
           - {name: FactionID, type: string, json: "faction_id"}
-          - {name: Source, type: string, json: "source"}
 
       - name: UpdateSettingsRequest
         comment: "UpdateSettingsRequest is the body for PUT /internal/v1/players/:playerId/settings. Partial update semantics: nil fields are left unchanged (COALESCE in SQL). At least one non-nil field is required."

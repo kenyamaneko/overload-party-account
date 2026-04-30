@@ -30,7 +30,6 @@ func TestServer_DefaultResponses(t *testing.T) {
 		{name: "GetBattleLimit 既定は 200", method: http.MethodGet, path: "/internal/v1/players/p-1/battle-limit", reqBody: nil, wantStatus: http.StatusOK},
 		{name: "IncrementBattleCount 既定は 204", method: http.MethodPost, path: "/internal/v1/players/p-1/battle-limit/increment", reqBody: nil, wantStatus: http.StatusNoContent},
 		{name: "UpdatePremium 既定は 204", method: http.MethodPut, path: "/internal/v1/players/p-1/premium", reqBody: []byte(`{}`), wantStatus: http.StatusNoContent},
-		{name: "UpdateFaction 既定は 204", method: http.MethodPut, path: "/internal/v1/players/p-1/faction", reqBody: []byte(`{}`), wantStatus: http.StatusNoContent},
 		{name: "GrantFaction 既定は 204", method: http.MethodPost, path: "/internal/v1/players/p-1/factions", reqBody: []byte(`{}`), wantStatus: http.StatusNoContent},
 		{name: "ListFactions 既定は 200", method: http.MethodGet, path: "/internal/v1/players/p-1/factions", reqBody: nil, wantStatus: http.StatusOK},
 		{name: "AddExp 既定は 204", method: http.MethodPost, path: "/internal/v1/players/p-1/exp", reqBody: []byte(`{}`), wantStatus: http.StatusNoContent},

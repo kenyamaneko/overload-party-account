@@ -8,7 +8,7 @@ import (
 	"cloud.google.com/go/civil"
 )
 
-// Player is the account.players row. OnboardingStatus is the SSoT for onboarding progression (not_started / name_set / faction_set / completed).
+// Player is the account.players row + derived initial faction. OnboardingStatus is the SSoT for onboarding progression (not_started / name_set / faction_set / completed). InitialFaction はオンボーディングで選択した faction で、player_factions.is_initial=TRUE の行から導出される (players テーブルの列ではない)。
 type Player struct {
 	PlayerID         string     `json:"player_id" db:"player_id"`
 	FirebaseUID      string     `json:"firebase_uid" db:"firebase_uid"`
@@ -17,18 +17,18 @@ type Player struct {
 	Exp              int64      `json:"exp" db:"exp"`
 	IsPremium        bool       `json:"is_premium" db:"is_premium"`
 	EquippedIconNo   *int64     `json:"equipped_icon_no,omitempty" db:"equipped_icon_no"`
-	SelectedFaction  *string    `json:"selected_faction,omitempty" db:"selected_faction"`
+	InitialFaction   *string    `json:"initial_faction,omitempty"`
 	OnboardingStatus string     `json:"onboarding_status" db:"onboarding_status"`
 	PremiumExpiresAt *time.Time `json:"premium_expires_at,omitempty" db:"premium_expires_at"`
 	CreatedAt        time.Time  `json:"created_at" db:"created_at"`
 	UpdatedAt        time.Time  `json:"updated_at" db:"updated_at"`
 }
 
-// PlayerDailyBattle is the account.player_daily_battle row.
+// PlayerDailyBattle is one account.player_daily_battle row (one per player per game day). PK is (player_id, game_date).
 type PlayerDailyBattle struct {
 	PlayerID         string     `json:"player_id" db:"player_id"`
+	GameDate         civil.Date `json:"game_date" db:"game_date"`
 	DailyBattleCount int64      `json:"daily_battle_count" db:"daily_battle_count"`
-	LastResetDate    civil.Date `json:"last_reset_date" db:"last_reset_date"`
 }
 
 // PlayerProgression is the account.player_progression row. level/exp are split from players to isolate high-frequency battle updates from the profile row.
@@ -39,11 +39,11 @@ type PlayerProgression struct {
 	UpdatedAt time.Time `json:"updated_at" db:"updated_at"`
 }
 
-// PlayerFaction is a single row in account.player_factions.
+// PlayerFaction is a single row in account.player_factions. IsInitial=TRUE の行はオンボーディングで選択した faction (1 プレイヤーに最大 1 行)。
 type PlayerFaction struct {
 	PlayerID   string    `json:"player_id" db:"player_id"`
 	Faction    string    `json:"faction" db:"faction"`
-	Source     string    `json:"source" db:"source"`
+	IsInitial  bool      `json:"is_initial" db:"is_initial"`
 	AcquiredAt time.Time `json:"acquired_at" db:"acquired_at"`
 }
 

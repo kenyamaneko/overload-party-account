@@ -101,16 +101,6 @@ endpoint_groups:
           - {status: 404, description: プレイヤーが存在しない}
           - {status: 500, description: DB 接続エラー}
 
-      - method: PUT
-        path: /players/{playerId}/faction
-        summary: 選択中ファクションを変更する
-        request_type: UpdateFactionRequest
-        notes: 成功時 204 No Content
-        errors:
-          - {status: 400, description: playerId が空 / faction が空}
-          - {status: 404, description: プレイヤーが存在しない}
-          - {status: 500, description: DB 接続エラー}
-
       - method: POST
         path: /players/{playerId}/exp
         summary: 経験値を加算する
@@ -127,7 +117,7 @@ endpoint_groups:
         request_type: FactionGrantRequest
         notes: 成功時 204 No Content
         errors:
-          - {status: 400, description: playerId が空 / faction または source が空}
+          - {status: 400, description: playerId が空 / faction が空}
           - {status: 404, description: プレイヤーが存在しない}
           - {status: 500, description: DB 接続エラー}
 
@@ -137,7 +127,7 @@ endpoint_groups:
         request_type: SelectInitialFactionRequest
         notes: 冪等。既に選択済みの場合は 409 を返すがクライアントにとってはエラーではない
         errors:
-          - {status: 400, description: faction_id が空 / 無効なファクション / source が initial_selection 以外}
+          - {status: 400, description: faction_id が空 / 無効なファクション}
           - {status: 404, description: プレイヤーが存在しない}
           - {status: 409, description: 初期ファクション選択済み（冪等 no-op）}
           - {status: 500, description: DB 接続エラー}

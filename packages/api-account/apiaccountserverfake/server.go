@@ -57,9 +57,6 @@ type Server struct {
 	// UpdatePremiumFn: PUT /internal/v1/players/{playerID}/premium。既定は 204 No Content。
 	UpdatePremiumFn func(playerID string, req apiaccount.UpdatePremiumRequest) (int, any)
 
-	// UpdateFactionFn: PUT /internal/v1/players/{playerID}/faction。既定は 204 No Content。
-	UpdateFactionFn func(playerID string, req apiaccount.UpdateFactionRequest) (int, any)
-
 	// GrantFactionFn: POST /internal/v1/players/{playerID}/factions。既定は 204 No Content。
 	GrantFactionFn func(playerID string, req apiaccount.FactionGrantRequest) (int, any)
 
@@ -147,11 +144,6 @@ func (s *Server) routePlayerSubresource(w http.ResponseWriter, r *http.Request, 
 	case "premium":
 		if r.Method == http.MethodPut {
 			s.handleUpdatePremium(w, r, playerID)
-			return
-		}
-	case "faction":
-		if r.Method == http.MethodPut {
-			s.handleUpdateFaction(w, r, playerID)
 			return
 		}
 	case "factions":
@@ -276,20 +268,6 @@ func (s *Server) handleUpdatePremium(w http.ResponseWriter, r *http.Request, pla
 	_ = json.NewDecoder(r.Body).Decode(&req)
 	s.mu.Lock()
 	fn := s.UpdatePremiumFn
-	s.mu.Unlock()
-	if fn == nil {
-		w.WriteHeader(http.StatusNoContent)
-		return
-	}
-	status, body := fn(playerID, req)
-	writeJSON(w, status, body)
-}
-
-func (s *Server) handleUpdateFaction(w http.ResponseWriter, r *http.Request, playerID string) {
-	var req apiaccount.UpdateFactionRequest
-	_ = json.NewDecoder(r.Body).Decode(&req)
-	s.mu.Lock()
-	fn := s.UpdateFactionFn
 	s.mu.Unlock()
 	if fn == nil {
 		w.WriteHeader(http.StatusNoContent)

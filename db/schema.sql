@@ -35,18 +35,19 @@ $$ LANGUAGE plpgsql;
 -- account.players
 -- =============================================================================
 
--- onboarding_status はオンボーディング進行の SSoT。`name` / `selected_faction` の
--- nullable 状態とは独立に「未完了 (not_started / name_set / faction_set) と完了
--- (completed)」を識別可能にする。NULL を「データ消失」専用にし、未完了は明示的な
--- 列挙値で表現する設計。state machine は一方向遷移のみ
--- (not_started → name_set → faction_set → completed)。
+-- onboarding_status はオンボーディング進行の SSoT。`name` の nullable 状態とは独立に
+-- 「未完了 (not_started / name_set / faction_set) と完了 (completed)」を識別可能にする。
+-- NULL を「データ消失」専用にし、未完了は明示的な列挙値で表現する設計。state machine は
+-- 一方向遷移のみ (not_started → name_set → faction_set → completed)。
+--
+-- 「オンボーディングで選択した faction」は player_factions.is_initial が表現し、players
+-- 側に専用カラムを置かない (所持リストと初回選択の SSoT を 1 テーブルに集約)。
 CREATE TABLE account.players (
   player_id          UUID NOT NULL DEFAULT gen_random_uuid(), -- UUID
   firebase_uid       VARCHAR(128) NOT NULL,          -- Firebase Auth UID (Unique)
   name               VARCHAR(50),                    -- 表示名 (NULL: 未設定)
   is_premium         BOOLEAN NOT NULL,               -- 課金ステータス
   equipped_icon_no   BIGINT,                         -- 装備中アイコン番号（NULL: デフォルト）
-  selected_faction   VARCHAR(20),                    -- 選択済みファクション
   onboarding_status  VARCHAR(20) NOT NULL DEFAULT 'not_started', -- オンボード進行状態
   premium_expires_at TIMESTAMPTZ,                    -- サブスク有効期限
   created_at         TIMESTAMPTZ NOT NULL DEFAULT now(), -- 作成日時
@@ -56,10 +57,6 @@ CREATE TABLE account.players (
 
 CREATE UNIQUE INDEX idx_players_firebase_uid ON account.players(firebase_uid);
 CREATE TRIGGER trg_players_updated_at BEFORE UPDATE ON account.players FOR EACH ROW EXECUTE FUNCTION account.update_updated_at();
-
-ALTER TABLE account.players
-  ADD CONSTRAINT chk_players_selected_faction
-    CHECK (selected_faction IS NULL OR selected_faction IN ('SHE', 'Tenki', 'Sugar', 'Tuners', 'Neutral'));
 
 ALTER TABLE account.players
   ADD CONSTRAINT chk_players_onboarding_status
@@ -84,13 +81,16 @@ CREATE TABLE account.player_progression (
 CREATE TRIGGER trg_player_progression_updated_at BEFORE UPDATE ON account.player_progression FOR EACH ROW EXECUTE FUNCTION account.update_updated_at();
 
 -- =============================================================================
--- account.player_daily_battle (child of players, 1:1)
+-- account.player_daily_battle (child of players, 1 行/プレイヤー/ゲーム日)
+-- 履歴を残して将来の BigQuery エクスポートで分析可能にする。
+-- ゲーム日 (game_date) は JST 05:00 リセットの civil.Date を service 層が決める。
 -- =============================================================================
 
 CREATE TABLE account.player_daily_battle (
-  player_id          UUID PRIMARY KEY REFERENCES account.players(player_id) ON DELETE CASCADE, -- 親テーブル参照
-  daily_battle_count BIGINT NOT NULL,                -- 本日のバトル回数
-  last_reset_date    DATE NOT NULL                   -- 最終リセット日
+  player_id          UUID NOT NULL REFERENCES account.players(player_id) ON DELETE CASCADE, -- 親テーブル参照
+  game_date          DATE NOT NULL,                  -- ゲーム日 (JST 05:00 リセット)
+  daily_battle_count BIGINT NOT NULL,                -- そのゲーム日のバトル回数
+  PRIMARY KEY (player_id, game_date)
 );
 
 -- =============================================================================
@@ -100,10 +100,15 @@ CREATE TABLE account.player_daily_battle (
 CREATE TABLE account.player_factions (
   player_id   UUID NOT NULL REFERENCES account.players(player_id) ON DELETE CASCADE, -- 親テーブル参照
   faction     VARCHAR(20) NOT NULL CHECK (faction IN ('SHE', 'Tenki', 'Sugar', 'Tuners', 'Neutral')), -- 陣営名 (SHE / Tenki / Sugar / Tuners / Neutral)
-  source      VARCHAR(20) NOT NULL CHECK (source IN ('initial_selection', 'shop_purchase')), -- 取得経路 (initial_selection / shop_purchase)
+  is_initial  BOOLEAN NOT NULL DEFAULT FALSE,        -- オンボーディングで選択した faction か (1 プレイヤーにつき最大 1 行 TRUE)
   acquired_at TIMESTAMPTZ NOT NULL DEFAULT now(),    -- 取得日時
   PRIMARY KEY (player_id, faction)
 );
+
+-- 「オンボーディングで選択した faction は 1 プレイヤーに最大 1 つ」を partial unique index で保証する。
+-- アプリ層で SELECT FOR UPDATE する代わりに DB 側で唯一性を担保する。
+CREATE UNIQUE INDEX idx_player_factions_initial
+  ON account.player_factions(player_id) WHERE is_initial = TRUE;
 
 -- =============================================================================
 -- account.player_settings
