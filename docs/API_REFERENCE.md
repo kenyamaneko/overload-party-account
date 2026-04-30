@@ -30,7 +30,7 @@
 | `Exp` | `int64` | `exp` |  |
 | `IsPremium` | `bool` | `is_premium` |  |
 | `EquippedIconNo` | `*int64` | `equipped_icon_no,omitempty` |  |
-| `SelectedFaction` | `*string` | `selected_faction,omitempty` |  |
+| `InitialFaction` | `*string` | `initial_faction,omitempty` | オンボーディングで選択した faction (player_factions.is_initial=TRUE から導出) |
 | `PremiumExpiresAt` | `*time.Time` | `premium_expires_at,omitempty` |  |
 | `CreatedAt` | `time.Time` | `created_at` |  |
 | `UpdatedAt` | `time.Time` | `updated_at` |  |
@@ -68,7 +68,7 @@ Firebase UID でログイン（プレイヤー情報を返す）
 | `Exp` | `int64` | `exp` |  |
 | `IsPremium` | `bool` | `is_premium` |  |
 | `EquippedIconNo` | `*int64` | `equipped_icon_no,omitempty` |  |
-| `SelectedFaction` | `*string` | `selected_faction,omitempty` |  |
+| `InitialFaction` | `*string` | `initial_faction,omitempty` | オンボーディングで選択した faction (player_factions.is_initial=TRUE から導出) |
 | `PremiumExpiresAt` | `*time.Time` | `premium_expires_at,omitempty` |  |
 | `CreatedAt` | `time.Time` | `created_at` |  |
 | `UpdatedAt` | `time.Time` | `updated_at` |  |
@@ -100,7 +100,7 @@ Firebase UID からプレイヤーを検索する（gateway などサービス�
 | `Exp` | `int64` | `exp` |  |
 | `IsPremium` | `bool` | `is_premium` |  |
 | `EquippedIconNo` | `*int64` | `equipped_icon_no,omitempty` |  |
-| `SelectedFaction` | `*string` | `selected_faction,omitempty` |  |
+| `InitialFaction` | `*string` | `initial_faction,omitempty` | オンボーディングで選択した faction (player_factions.is_initial=TRUE から導出) |
 | `PremiumExpiresAt` | `*time.Time` | `premium_expires_at,omitempty` |  |
 | `CreatedAt` | `time.Time` | `created_at` |  |
 | `UpdatedAt` | `time.Time` | `updated_at` |  |
@@ -158,7 +158,7 @@ Firebase UID からプレイヤーを検索する（gateway などサービス�
 | `Exp` | `int64` | `exp` |  |
 | `IsPremium` | `bool` | `is_premium` |  |
 | `EquippedIconNo` | `*int64` | `equipped_icon_no,omitempty` |  |
-| `SelectedFaction` | `*string` | `selected_faction,omitempty` |  |
+| `InitialFaction` | `*string` | `initial_faction,omitempty` | オンボーディングで選択した faction (player_factions.is_initial=TRUE から導出) |
 | `PremiumExpiresAt` | `*time.Time` | `premium_expires_at,omitempty` |  |
 | `CreatedAt` | `time.Time` | `created_at` |  |
 | `UpdatedAt` | `time.Time` | `updated_at` |  |
@@ -196,7 +196,7 @@ Firebase UID からプレイヤーを検索する（gateway などサービス�
 | `Exp` | `int64` | `exp` |  |
 | `IsPremium` | `bool` | `is_premium` |  |
 | `EquippedIconNo` | `*int64` | `equipped_icon_no,omitempty` |  |
-| `SelectedFaction` | `*string` | `selected_faction,omitempty` |  |
+| `InitialFaction` | `*string` | `initial_faction,omitempty` | オンボーディングで選択した faction (player_factions.is_initial=TRUE から導出) |
 | `PremiumExpiresAt` | `*time.Time` | `premium_expires_at,omitempty` |  |
 | `CreatedAt` | `time.Time` | `created_at` |  |
 | `UpdatedAt` | `time.Time` | `updated_at` |  |
@@ -274,28 +274,6 @@ Firebase UID からプレイヤーを検索する（gateway などサービス�
 
 ---
 
-### `PUT /internal/v1/players/{playerId}/faction`
-
-選択中ファクションを変更する
-
-> 成功時 204 No Content
-
-#### リクエスト
-
-| フィールド | 型 | JSON | 説明 |
-|---|---|---|---|
-| `Faction` | `string` | `faction` |  |
-
-#### エラー
-
-| ステータス | 説明 |
-|---|---|
-| 400 | playerId が空 / faction が空 |
-| 404 | プレイヤーが存在しない |
-| 500 | DB 接続エラー |
-
----
-
 ### `POST /internal/v1/players/{playerId}/exp`
 
 経験値を加算する
@@ -329,13 +307,12 @@ Firebase UID からプレイヤーを検索する（gateway などサービス�
 | フィールド | 型 | JSON | 説明 |
 |---|---|---|---|
 | `Faction` | `string` | `faction` |  |
-| `Source` | `string` | `source` |  |
 
 #### エラー
 
 | ステータス | 説明 |
 |---|---|
-| 400 | playerId が空 / faction または source が空 |
+| 400 | playerId が空 / faction が空 |
 | 404 | プレイヤーが存在しない |
 | 500 | DB 接続エラー |
 
@@ -352,13 +329,12 @@ Firebase UID からプレイヤーを検索する（gateway などサービス�
 | フィールド | 型 | JSON | 説明 |
 |---|---|---|---|
 | `FactionID` | `string` | `faction_id` |  |
-| `Source` | `string` | `source` |  |
 
 #### エラー
 
 | ステータス | 説明 |
 |---|---|
-| 400 | faction_id が空 / 無効なファクション / source が initial_selection 以外 |
+| 400 | faction_id が空 / 無効なファクション |
 | 404 | プレイヤーが存在しない |
 | 409 | 初期ファクション選択済み（冪等 no-op） |
 | 500 | DB 接続エラー |

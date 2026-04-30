@@ -15,7 +15,7 @@ account は以下の機能ドメインを所有する。
 
 | 機能 | 主要な責務 |
 |---|---|
-| プレイヤー登録・ログイン | Firebase UID と player_id の紐付け。初期行の作成（players / player_daily_battle / player_settings）。表示名はオンボーディング完了時に別経路で確定するため Register 時には受け取らない |
+| プレイヤー登録・ログイン | Firebase UID と player_id の紐付け。初期行の作成（players / player_progression / player_settings）。表示名はオンボーディング完了時に別経路で確定するため Register 時には受け取らない |
 | プレイヤー情報の参照・更新 | プレイヤー名・選択ファクション・装備アイコンの参照/更新。レベル進捗の算出 |
 | デイリーバトル制限 | JST 05:00 境界の制限回数管理。increment は冪等 |
 | ファクション所有 | onboarding 完了時の初期 faction 登録（`player-onboarded` イベント）と shop 購入時の追加（`faction-purchased` イベント）を `player_factions` に射影 |
@@ -38,10 +38,11 @@ account は **account スキーマの DB 行と Pub/Sub から取り込んだ状
 
 1. `firebase_uid` で既存プレイヤーを pre-check。存在すれば 409 (`ErrPlayerAlreadyRegistered`)
 2. 新 UUID を採番し、単一トランザクションで:
-   - `players` INSERT (`name` NULL, is_premium=false, selected_faction=NULL)
+   - `players` INSERT (`name` NULL, is_premium=false)
    - `player_progression` INSERT (level=1, exp=0)
-   - `player_daily_battle` INSERT (count=0, last_reset_date=今日の UTC 日付)
    - `player_settings` INSERT (アプリ層デフォルト値)
+
+`player_daily_battle` は Register では作らない。1 行/プレイヤー/ゲーム日の履歴台帳で、初回バトルの `IncrementDailyBattleCount` UPSERT で発生する (詳細は §4)。
 
 `name` は本エンドポイントでは受け取らない。表示名はオンボーディングシナリオの中で
 ユーザーが入力した時点で §3 `PUT /players/:id/name` を呼んで account に確定する
@@ -79,10 +80,10 @@ Login と同じルックアップだが、ログインという業務イベン�
 |---|---|---|
 | GET | `/internal/v1/players/:playerId` | プレイヤー情報 + レベル進捗を返す |
 | PUT | `/internal/v1/players/:playerId/name` | name 更新 |
-| PUT | `/internal/v1/players/:playerId/faction` | アクティブ選択ファクション更新 |
 | PUT | `/internal/v1/players/:playerId/premium` | プレミアムステータス更新（battle 等の内部呼び出し用） |
 | POST | `/internal/v1/players/:playerId/factions` | ファクションの明示的付与（運用用） |
 | GET | `/internal/v1/players/:playerId/factions` | 所持ファクション一覧 |
+| POST | `/internal/v1/players/:playerId/factions/select` | initial faction 選択 (オンボーディング経路。詳細は §5.1) |
 
 ### 3.1 `GetPlayerResponse` のレベル進捗
 
@@ -106,7 +107,7 @@ GetPlayer レスポンスには現在レベル内の `level_exp_current` と `le
 
 | フィールド | 意味 |
 |---|---|
-| `daily_battle_count` | 現在のカウンタ値（`last_reset_date` がゲーム日と異なれば 0 扱い） |
+| `daily_battle_count` | 当日のゲーム日に対応する `player_daily_battle` 行のカウント。行が無ければ 0 |
 | `daily_battle_limit` | free の上限。プレミアム時は `-1`（無制限シグナル） |
 | `can_battle` | `daily_battle_count < daily_battle_limit`。プレミアム時は常に true |
 
@@ -117,7 +118,7 @@ GetPlayer レスポンスには現在レベル内の `level_exp_current` と `le
 battle サービスが試合開始時に呼ぶ。
 
 - **プレミアム会員でもカウントを記録する**（上限判定は行わない）
-- 当日のゲーム日と `last_reset_date` が異なれば 0 にリセットしてから 1 に
+- 当日のゲーム日 `(player_id, game_date)` を 1 SQL で UPSERT。行が無ければ count=1 で発生し、あれば +1 加算
 - レスポンスは 204 No Content
 
 冪等ではない（呼ぶたびにインクリメント）。同一試合に対する二重呼び出しを避けるのは battle 側の責務。
@@ -128,33 +129,22 @@ battle サービスが試合開始時に呼ぶ。
 
 ### 5.1 初期ファクション選択 (`POST /internal/v1/players/:playerId/factions/select`)
 
-**入力**: `{faction_id, source?}`
+オンボーディングで最初に選択した faction を保持する。
+
+**入力**: `{faction_id}`
 **成功**: `200 OK`
 
 バリデーション:
 
 1. `playerId` が空 → 400
 2. `faction_id` が空 → 400
-3. `source` 指定時は `"initial_selection"` 以外 → 400
-4. `faction_id` が `gamedesign.SelectableFactions`（`SHE` / `Tenki` / `Sugar` / `Tuners`、`Neutral` は除外）に含まれない → 400 (`ErrInvalidFaction`)
-
-処理（単一トランザクション）:
-
-1. `player_factions (player_id, faction, 'initial_selection')` を `INSERT ... ON CONFLICT DO NOTHING`
-2. INSERT が新規なら `players.selected_faction` を UPDATE
-3. INSERT が既存なら `ErrFactionAlreadySelected` → 409
-
-**冪等性の扱い**: 409 はエラーではなく「既に選択済み」のシグナル。クライアント（ゲートウェイ / UI）は 409 を成功と同等に扱う契約。
-
-**Neutral を選べない理由**: Neutral はチュートリアル中のサブファクションで、プレイヤーが能動的に選ぶカテゴリではない。`gamedesign.SelectableFactions` が Neutral を含まないことで弾く。
+3. `faction_id` が `gamedesign.SelectableFactions`（`SHE` / `Tenki` / `Sugar` / `Tuners`、`Neutral` は除外）に含まれない → 400 (`ErrInvalidFaction`)
+4. プレイヤー不在 → 404
+5. 既に選択済み → 409 (`ErrFactionAlreadySelected`、クライアントは 409 を成功と同等に扱う契約)
 
 ### 5.2 ファクション付与 (`POST /internal/v1/players/:playerId/factions`)
 
-運用・バックオフィス用途の直接付与。`{faction, source}` を受け取り `AddPlayerFaction` を呼ぶ。通常運用では使わず、onboarding は `player-onboarded` subscriber、shop 購入は `faction-purchased` subscriber が主経路。
-
-### 5.3 アクティブ選択の切り替え (`PUT /internal/v1/players/:playerId/faction`)
-
-プレイヤーが所持している複数ファクションから「現在アクティブ」を切り替える。account 側では `players.selected_faction` の UPDATE のみ（所持判定は呼び出し元の責務）。
+運用・バックオフィス用途の直接付与。`{faction}` を受け取り `AddPlayerFaction` を呼ぶ (`is_initial=FALSE` 固定)。
 
 ---
 
@@ -241,7 +231,7 @@ subscription: `faction-purchased-account-sub`
 
 | publisher | account の副作用 |
 |---|---|
-| shop | `player_factions` INSERT のみ（`source = shop_purchase` 固定、`selected_faction` は変更しない） |
+| shop | `player_factions` INSERT のみ (`is_initial=FALSE` 固定) |
 
 ADR-022 により、かつて `faction-selected` topic が担っていた 2 業務事実（scenario 初期選択 / shop 購入）は業務事実単位で分解された。scenario 初期選択は §9.3 `player-onboarded` に統合され、本 topic は shop 購入のみを扱う。
 
@@ -262,14 +252,11 @@ subscription: `premium-updated-account-sub`
 subscription: `player-onboarded-account-sub`
 
 - publisher: scenario のみ（オンボーディングシナリオ読了時に transactional outbox 経由で publish、[ADR-021](../../overload-party-common/docs/adr/021-onboarding-scenario.md) §5.1、ADR-022 で 1 イベント設計に縮退）
-- 副作用:
-  - `player_factions` に `initial_faction_id` を `source = initial_selection` で INSERT（冪等）
-  - `players.selected_faction` が NULL の場合のみ `initial_faction_id` を UPDATE
-- 表示名 (`players.name`) は本経路では扱わない: シナリオは入力時点で §3 `PUT /name` 経由で account に確定する設計。payload に `display_name` が残っていても account 側は無視する (scenario 改修完了次第 schema 上も削除予定)。
+- 副作用: `players.onboarding_status='completed'` への遷移のみ
+- 表示名 (`players.name`) は本経路では扱わない (シナリオは入力時点で §3 `PUT /name` 経由で確定する設計)
+- initial faction の永続化は先行する `onboarding-faction-set` subscriber (§9.x、[ARCHITECTURE.md §6.4](ARCHITECTURE.md)) が完了している前提
 
-ADR-022 により、かつて `faction-selected(source=scenario_initial)` が担っていた初期 faction ロスター追加 + `selected_faction` 確定の副作用は本 subscriber に統合されている。
-
-詳細契約: [ARCHITECTURE.md §6.3](ARCHITECTURE.md)
+詳細契約: [ARCHITECTURE.md §6.5](ARCHITECTURE.md)
 
 ### 9.4 冪等性
 

@@ -40,7 +40,7 @@ account は他サービスを直接呼び出さない（gateway / shop / scenari
 
 | 概念 | 更新頻度 | 更新者 |
 |---|---|---|
-| `players` のプロフィール系 (name / selected_faction / is_premium 等) | 低 | ユーザー操作 or 外部イベント |
+| `players` のプロフィール系 (name / is_premium 等) | 低 | ユーザー操作 or 外部イベント |
 | `player_progression` (level / exp) | 高 | 戦闘終了ごとに毎回 |
 
 同居させていた従来実装では以下の問題があった:
@@ -65,16 +65,17 @@ account は Firebase Auth の ID Token を検証しない。**認証は gateway 
 
 ## 3. Register フローのトランザクション設計
 
-`POST /internal/v1/auth/register` は 4 テーブルを同一トランザクションで初期化する:
+`POST /internal/v1/auth/register` は 3 テーブルを同一トランザクションで初期化する:
 
 ```
 BEGIN TX
   INSERT INTO account.players             (新規 UUID)
   INSERT INTO account.player_progression  (player_id, level=1, exp=0)
-  INSERT INTO account.player_daily_battle (player_id, count=0, last_reset_date=today)
   INSERT INTO account.player_settings     (player_id, デフォルト値)
 COMMIT
 ```
+
+`player_daily_battle` は Register では作らない。1 行/プレイヤー/ゲーム日の履歴台帳で、初回バトル時に `IncrementDailyBattleCount` の UPSERT で発生する。当日の行が無ければカウント 0 とみなすため、初期行は不要。
 
 Register は冪等ではない。重複登録は UNIQUE INDEX `idx_players_firebase_uid` と handler 層の `ErrPlayerAlreadyRegistered` → 409 マッピングで吸収する。gateway 側で冪等リトライしたい場合は Login にフォールバックする契約。
 
@@ -85,11 +86,11 @@ Register は冪等ではない。重複登録は UNIQUE INDEX `idx_players_fireb
 - ファクション選択は UX 上「チュートリアル開始直後の選択画面」という非同期な操作で、登録と同時に決められない
 - カード配布は card サービスの責務で、account が card の内部状態を知るべきでない
 
-トリガーポイントは scenario の各オンボードステップで発行される 3 つのイベント (`onboarding-name-set` / `onboarding-faction-set` / `player-onboarded`) で、account は subscriber 経由で `players.name` / `selected_faction` / `player_factions` / `onboarding_status` を反映する（§6.3〜6.5）。`auth_service.Register` にカード付与・ファクション付与を再導入してはいけない（CLAUDE.md 禁止事項）。
+トリガーポイントは scenario の各オンボードステップで発行される 3 つのイベント (`onboarding-name-set` / `onboarding-faction-set` / `player-onboarded`) で、account は subscriber 経由で `players.name` / `player_factions (is_initial=TRUE 行)` / `onboarding_status` を反映する（§6.3〜6.5）。`auth_service.Register` にカード付与・ファクション付与を再導入してはいけない（CLAUDE.md 禁止事項）。
 
 ## 4. デイリーバトル制限
 
-デイリーバトル制限は `account.player_daily_battle` テーブル（players と 1:1）で管理する。
+デイリーバトル制限は `account.player_daily_battle` テーブル (1 行/プレイヤー/ゲーム日の履歴台帳) で管理する。当日の行が無ければカウント 0 とみなす。
 
 ### 4.1 ゲーム日の境界 (JST 05:00)
 
@@ -100,15 +101,19 @@ Register は冪等ではない。重複登録は UNIQUE INDEX `idx_players_fireb
 | JST 2024-01-02 04:59 (UTC 2024-01-01 19:59) | 2024-01-01 |
 | JST 2024-01-02 05:00 (UTC 2024-01-01 20:00) | 2024-01-02 |
 
-実装: `service.gameDay()` が `time.Now().UTC().Add(4h)` の日付部分を返す。`gameDayOffset` 定数で一箇所に閉じている ([internal/service/player_service.go](../internal/service/player_service.go))。
+実装: `service.gameDay()` が `time.Now().UTC().Add(4h)` の日付部分を返す。`gameDayOffset` 定数で一箇所に閉じている ([internal/service/player_service.go](../internal/service/player_service.go))。リセットはアプリ側のロジックではなく、PK `(player_id, game_date)` が日ごとに別行を区別することで自動的に行われる。
 
-### 4.2 上限ガードと TOCTOU の判断
+### 4.2 履歴台帳としての設計
 
-リセット判定・上限判定は service 層 (`PlayerService`) の責務で、repository 層 (`PlayerRepository.UpdateDailyBattleCount`) は計算済みのカウントと reset date を書き込むだけのプリミティブ。`free_daily_battle_limit` が Firestore 未設定 (値 0) のときはフォールバックせずエラーを返す (運用事故として扱う)。
+1 行/プレイヤー/ゲーム日で過去のバトル回数を保持する。これはアプリ内でプレイヤーごとのバトル回数履歴が残る唯一の場所であり、将来 BigQuery エクスポートでプレイヤーごとの日次推移を分析できるようにするための土台。Register 時に当日の初期行を作らず、初回バトルの UPSERT で発生させる (登録と日次台帳のライフサイクルを切り離す目的)。
+
+### 4.3 上限ガードと TOCTOU の判断
+
+上限判定は service 層 (`PlayerService`) の責務で、repository 層 (`PlayerRepository.IncrementDailyBattleCount`) は `(player_id, game_date)` を 1 SQL で UPSERT し加算後のカウントを返すプリミティブ。`free_daily_battle_limit` が Firestore 未設定 (値 0) のときはフォールバックせずエラーを返す (運用事故として扱う)。
 
 account が `player_daily_battle` の authoritative owner なので、上限不変条件は account 側で守る。battle サービス側が事前に `GetBattleLimit` を呼ぶのは UX のためのプリチェック (「戦う前に残り回数を表示」) であり、最終的な強制は account の書き込みパスで行う二段構え。
 
-TOCTOU (`GetDailyBattle` → `UpdateDailyBattleCount` の間に別リクエストが割り込む可能性) は、同一アカウントの並行バトルが極めて稀なエッジケースとして許容する。行ロック (`SELECT FOR UPDATE`) は採用しない。
+TOCTOU は、free プレイヤーの上限超過判定で `GetDailyBattle` → UPSERT の隙間が原理的には残る (短時間に上限ぎりぎりの並行バトルがあれば +1 通る可能性) が、同一アカウントの並行バトルは極めて稀なエッジケースとして許容する。行ロック (`SELECT FOR UPDATE`) は採用しない。インクリメント自体は単発の UPSERT で原子的なので、カウントが飛んだり重複したりはしない。
 
 ## 5. プレイヤー設定の部分更新契約
 
@@ -128,7 +133,7 @@ subscription: `faction-purchased-account-sub` (`FACTION_PURCHASED_SUBSCRIPTION` 
 
 | publisher | 副作用 |
 |---|---|
-| shop | `player_factions` INSERT のみ（`source = shop_purchase` 固定、selected_faction は変更しない） |
+| shop | `player_factions` INSERT のみ (`is_initial=FALSE` 固定) |
 
 処理（[internal/adapter/pubsub/faction_purchased_subscriber.go](../internal/adapter/pubsub/faction_purchased_subscriber.go)）:
 
@@ -136,13 +141,12 @@ subscription: `faction-purchased-account-sub` (`FACTION_PURCHASED_SUBSCRIPTION` 
 BEGIN TX
   INSERT processed_events (event_id, event_type)  ← ON CONFLICT DO NOTHING
   IF 既存行だった: COMMIT; ACK; return
-  INSERT player_factions (player_id, faction, source=shop_purchase)
+  INSERT player_factions (player_id, faction, is_initial=FALSE)
+    ON CONFLICT (player_id, faction) DO NOTHING
 COMMIT → ACK
 ```
 
-ショップ購入で `selected_faction` を更新しないのは、購入は「ロスター追加」であり、プレイヤーが能動的に切り替える前に勝手にアクティブ選択を上書きしてはいけないため。アクティブ切り替えは `PUT /players/:id/faction` の独立したエンドポイント。
-
-scenario 起因の初期 faction 確定（かつて `faction-selected(source=scenario_initial)` が担っていた）は `player-onboarded` subscriber に統合された（§6.3）。
+scenario 起因の初期 faction 確定 (かつて `faction-selected(source=scenario_initial)` が担っていた) は onboarding-faction-set subscriber (§6.4) に統合された。
 
 ### 6.2 premium-updated subscriber
 
@@ -190,8 +194,9 @@ subscription: `onboarding-faction-set-account-sub` (`ONBOARDING_FACTION_SET_SUBS
 BEGIN TX
   INSERT processed_events (event_id, event_type)  ← ON CONFLICT DO NOTHING
   IF 既存行だった: COMMIT; ACK; return
-  UPDATE players SET selected_faction = $, onboarding_status = CASE WHEN ... THEN 'faction_set' ELSE onboarding_status END
-  INSERT player_factions (player_id, faction, source='initial_selection') ON CONFLICT DO NOTHING
+  UPDATE players SET onboarding_status = CASE WHEN ... THEN 'faction_set' ELSE onboarding_status END
+  INSERT player_factions (player_id, faction, is_initial=TRUE)
+    ON CONFLICT (player_id, faction) DO UPDATE SET is_initial = TRUE
 COMMIT → ACK
 ```
 
@@ -211,9 +216,7 @@ BEGIN TX
 COMMIT → ACK
 ```
 
-`selected_faction` UPDATE / `player_factions` INSERT は onboarding-faction-set subscriber が
-先行して実行している前提のため本 subscriber では扱わない。
-本 subscriber の責務は state machine の最終遷移 (`completed`) のみ。
+initial faction の永続化は onboarding-faction-set subscriber が先行している前提。本 subscriber の責務は `completed` への状態遷移のみ。
 
 ### 6.6 `processed_events` による冪等性契約
 
@@ -242,8 +245,6 @@ Pub/Sub の Exactly-Once 配信がインフラ層の第一防御。`processed_ev
 
 未設定（値 0 または存在しない）は起動エラーにせず、当該リクエストをエラーにする（運用者が値を戻すまで battle 側で経験値が積めない）。
 
-> レベル計算の「増加のみ」契約 (`ComputeLevel`) や `AwardGameExp` の NPC 分岐は実装の docstring に記述した。アーキテクチャ層の判断ではなくドメインロジックの判断のため、コード側に閉じている。
-
 ## 8. エラーハンドリングのレイヤ責務
 
 | 層 | 返す/扱う |
@@ -268,10 +269,10 @@ service 層は HTTP ステータスを知らず、handler 層は SQL を知ら�
 
 | トピック | 発行元 | account の subscription | account 側の副作用 |
 |---|---|---|---|
-| `faction-purchased` | shop | `faction-purchased-account-sub` | `player_factions` INSERT（`source = shop_purchase`、§6.1） |
+| `faction-purchased` | shop | `faction-purchased-account-sub` | `player_factions` INSERT (`is_initial=FALSE`、§6.1) |
 | `premium-updated` | shop | `premium-updated-account-sub` | `players.is_premium` / `premium_expires_at` UPDATE (§6.2) |
 | `onboarding-name-set` | scenario | `onboarding-name-set-account-sub` | `players.name` UPDATE + `onboarding_status='name_set'` を 1 tx で実行 (§6.3) |
-| `onboarding-faction-set` | scenario | `onboarding-faction-set-account-sub` | `players.selected_faction` UPDATE + `player_factions` INSERT (`source='initial_selection'`) + `onboarding_status='faction_set'` を 1 tx で実行 (§6.4) |
+| `onboarding-faction-set` | scenario | `onboarding-faction-set-account-sub` | `player_factions` UPSERT (`is_initial=TRUE`) + `onboarding_status='faction_set'` を 1 tx で実行 (§6.4) |
 | `player-onboarded` | scenario | `player-onboarded-account-sub` | `players.onboarding_status='completed'` UPDATE のみ (§6.5) |
 
 account 自身はトピックを publish しない。

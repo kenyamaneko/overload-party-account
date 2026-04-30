@@ -50,13 +50,6 @@
 - git tag の手動打ちは禁止（CI が自動生成）
 - 生成済み型コード（`packages/api-account/*_gen.go`）を手で書き換えない。型は
   `data/models.yaml` を SSoT とし、変更後は `python3 scripts/generate_types.py` で再生成する
+- Google CloudのことをGCPと表現してはいけない。（GCPは旧名称のため）
 - このファイル（CLAUDE.md）を Claude が書き換えない。
   ルールの追加・修正は人間が明示的に指示した場合のみ行う
-- クライアント認証をこのサービスで行わない。account は ClusterIP のみで公開され、
-  gateway が Firebase 認証済みの `playerId` / `firebase_uid` を forward する前提で動作する
-- `DATABASE_URL` 未設定時のフォールバックを再導入しない。未設定なら起動を fail させる
-  （`PUBSUB_PROJECT_ID` / `FIRESTORE_PROJECT_ID` も同様）
-- `auth_service.Register` にスターターカード付与や初期ファクション付与を再導入しない。
-  初期ファクション選択・カード配布のトリガーは scenario 側の責務に移動済み
-- `factions` リファレンステーブルを再導入しない。ファクションマスターの SSoT は
-  `common/data/factions.yaml` から code-generate された定数（`gamedesign.SelectableFactions` 等）

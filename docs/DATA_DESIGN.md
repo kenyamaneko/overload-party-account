@@ -19,7 +19,7 @@ account スキーマはプレイヤーの基本情報・デイリーバトル回
 
 - **PK:** `player_id` (UUID)
 - **UNIQUE INDEX:** `idx_players_firebase_uid` ON `firebase_uid`
-- **CHECK:** `selected_faction IS NULL OR selected_faction IN ('SHE', 'Tenki', 'Sugar', 'Tuners', 'Neutral')`
+- **CHECK:** `onboarding_status IN ('not_started', 'name_set', 'faction_set', 'completed')`
 - **TRIGGER:** `trg_players_updated_at` — UPDATE 時に `updated_at` を自動更新
 
 <!-- BEGIN GENERATED: players -->
@@ -27,10 +27,10 @@ account スキーマはプレイヤーの基本情報・デイリーバトル回
 |---|---|---|---|
 | `player_id` | UUID | No | UUID |
 | `firebase_uid` | VARCHAR(128) | No | Firebase Auth UID (Unique) |
-| `name` | VARCHAR(50) | No | 表示名 |
+| `name` | VARCHAR(50) | Yes | 表示名 (NULL: 未設定) |
 | `is_premium` | BOOLEAN | No | 課金ステータス |
 | `equipped_icon_no` | BIGINT | Yes | 装備中アイコン番号（NULL: デフォルト） |
-| `selected_faction` | VARCHAR(20) | Yes | 選択済みファクション |
+| `onboarding_status` | VARCHAR(20) | No | オンボード進行状態 |
 | `premium_expires_at` | TIMESTAMPTZ | Yes | サブスク有効期限 |
 | `created_at` | TIMESTAMPTZ | No | 作成日時 |
 | `updated_at` | TIMESTAMPTZ | No | 更新日時 |
@@ -38,51 +38,52 @@ account スキーマはプレイヤーの基本情報・デイリーバトル回
 
 **設計判断:**
 - `is_premium` / `premium_expires_at` を players に射影で持つ理由は、ほぼ全ての REST レスポンスで課金ステータスを返す必要があり、毎回 shop を呼ぶと結合が強くなりすぎるため。shop が authoritative で、`premium-updated` Pub/Sub で最終的整合させる
-- `selected_faction` は「現在アクティブなファクション」。オンボーディング完了時に `player-onboarded` イベント受信で初期値が入り（ADR-022 により `faction-selected` 経由ではなく `player-onboarded` に統合済み）、以降は `PUT /players/:id/faction` でプレイヤーが切り替える
-- `name` は「表示名」。Register 時の値を、オンボーディング完了イベント (`player-onboarded`、scenario が publish) で上書きする運用。account 側で `display_name` 列を別途設けない（同一セマンティクスの列を複数持つと SSoT が分散するため）
+- 「オンボーディングで選択した faction」は `players` 側に列を置かず、`player_factions.is_initial=TRUE` の行が SSoT (#3 参照)
+- `name` は「表示名」。Register 時には NULL で挿入し、オンボーディング中の `PUT /players/:id/name` で確定する。account 側で `display_name` 列を別途設けない（同一セマンティクスの列を複数持つと SSoT が分散するため）
 - `equipped_icon_no` は shop 側の `cosmetic_items(item_type='icon', item_no=N)` を参照するが、cross-schema FK は張らない（アプリ層整合性）
 
 ### 2. player_daily_battle
 
-デイリーバトル回数の管理。players と 1:1。
+デイリーバトル回数の履歴台帳。1 行 = 1 プレイヤー × 1 ゲーム日。
 
-- **PK:** `player_id` (→ `players.player_id`, ON DELETE CASCADE)
+- **PK:** `(player_id, game_date)` (`player_id` → `players.player_id`, ON DELETE CASCADE)
 
 <!-- BEGIN GENERATED: player_daily_battle -->
 | カラム名 | 型 | Nullable | 説明 |
 |---|---|---|---|
 | `player_id` | UUID | No | 親テーブル参照 |
-| `daily_battle_count` | BIGINT | No | 本日のバトル回数 |
-| `last_reset_date` | DATE | No | 最終リセット日 |
+| `game_date` | DATE | No | ゲーム日 (JST 05:00 リセット) |
+| `daily_battle_count` | BIGINT | No | そのゲーム日のバトル回数 |
 <!-- END GENERATED: player_daily_battle -->
 
 **設計判断:**
-- players に埋め込まず別テーブルにしているのは、バトル回数チェック / increment が高頻度で走るのに対し、players 本体の更新（name / is_premium 等）とは独立しているため。更新競合を分離する目的
-- リセット日境界は JST 05:00。詳細は [ARCHITECTURE.md §4.1](ARCHITECTURE.md)
-- `last_reset_date` は「最後にカウンタを 0 に戻した日」。Increment 時に当日のゲーム日と比較してリセット判定する
+- players に埋め込まず別テーブルにしているのは、バトル回数チェック / increment が高頻度で走るのに対し、players 本体の更新 (name / is_premium 等) とは独立しているため。更新競合を分離する目的
+- リセット境界は JST 05:00。`game_date` は service 層が `gameDay()` で算出する civil.Date。詳細は [ARCHITECTURE.md §4.1](ARCHITECTURE.md)
+- 1 行/日で履歴を残すのは、将来 BigQuery エクスポートでプレイヤーごとの日次バトル回数を分析できるようにするため。これがアプリ内で履歴が残る唯一の場所
+- 当日の行が無ければカウント 0 とみなす (新ゲーム日でまだバトルしていない状態)。Register 時には INSERT せず、初回バトルの UPSERT で行が発生する
 
 ### 3. player_factions
 
-プレイヤーが所持しているファクション（カードセット）の中間テーブル。
+プレイヤーが所持しているファクション (カードセット) と「オンボーディングで選択した faction」を兼ねるテーブル。
 
 - **PK:** `(player_id, faction)`
 - **FK:** `player_id` → `players` (ON DELETE CASCADE)
 - **CHECK:** `faction IN ('SHE', 'Tenki', 'Sugar', 'Tuners', 'Neutral')`
-- **CHECK:** `source IN ('initial_selection', 'shop_purchase')`
+- **PARTIAL UNIQUE INDEX:** `idx_player_factions_initial` ON `(player_id) WHERE is_initial = TRUE` (1 プレイヤーに initial faction は最大 1 つ)
 
 <!-- BEGIN GENERATED: player_factions -->
 | カラム名 | 型 | Nullable | 説明 |
 |---|---|---|---|
 | `player_id` | UUID | No | 親テーブル参照 |
 | `faction` | VARCHAR(20) | No | 陣営名 (SHE / Tenki / Sugar / Tuners / Neutral) |
-| `source` | VARCHAR(20) | No | 取得経路 (initial_selection / shop_purchase) |
+| `is_initial` | BOOLEAN | No | オンボーディングで選択した faction か (1 プレイヤーにつき最大 1 行 TRUE) |
 | `acquired_at` | TIMESTAMPTZ | No | 取得日時 |
 <!-- END GENERATED: player_factions -->
 
 **設計判断:**
-- `players.selected_faction` は「今アクティブなファクション」、`player_factions` は「所持している全ファクション」。両者は責務が違うため分離している
-- 書き込み経路は 2 つ: `player-onboarded` subscriber（scenario が publish、initial_selection）と `faction-purchased` subscriber（shop が publish、shop_purchase）。運用 REST (`POST /players/:id/factions`) は直接付与用のバックアップ経路
-- 複合 PK `(player_id, faction)` が冪等性のキー。`INSERT ... ON CONFLICT DO NOTHING` で重複適用を排除する
+- 所持リストと「オンボーディングで選択した faction」を 1 テーブルに集約。`is_initial=TRUE` の行が後者で、partial unique index で「1 プレイヤーに最大 1 つ」を DB レベルで保証する
+- ショップ先行で買った行をオンボーディングで initial 確定するときは、同じ行を `is_initial=TRUE` に昇格させる
+- 複合 PK `(player_id, faction)` が冪等性のキー
 - `factions` リファレンステーブルは存在しない。ファクションマスターの SSoT は `common/data/factions.yaml` から code-generate された定数で、DB 側では CHECK 制約で enum を表現する
 
 ### 4. player_settings
@@ -156,7 +157,7 @@ Pub/Sub subscriber の冪等性を保証するアプリ層ガードテーブル�
 players (PK: player_id)
   │
   ├── 1:1 ── player_progression  (FK: player_id, CASCADE)
-  ├── 1:1 ── player_daily_battle (FK: player_id, CASCADE)
+  ├── 1:N ── player_daily_battle (FK: player_id, CASCADE)  -- 1 行/ゲーム日
   ├── 1:N ── player_factions     (FK: player_id, CASCADE)
   └── 1:1 ── player_settings     (FK: player_id, CASCADE)
 
