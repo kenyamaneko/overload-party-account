@@ -11,52 +11,50 @@ import (
 
 // PlayerRepo はプレイヤーデータの永続化を抽象化するインターフェースです。
 //
-// account.players / account.player_daily_battle / account.player_progression の
-// 3 テーブルを 1 つのアグリゲートとして扱います。呼び出し元は物理テーブル分割を知らずに
-// 「プレイヤー」として操作できます。FindByID 等は JOIN で Level / Exp も詰めて返します。
+// account.players (1:1 子の player_progression を含む) を「プレイヤー」アグリゲートとして
+// 扱い、呼び出し元は物理テーブル分割を知らずに操作できます。FindByID 等は JOIN で
+// Level / Exp も詰めて返します。
+//
+// player_daily_battle は 1 行/プレイヤー/ゲーム日の履歴台帳としてアグリゲートの外側に
+// 位置付け、専用プリミティブ (GetDailyBattle / IncrementDailyBattleCount) で読み書きします。
 type PlayerRepo interface {
-	// Create は players / player_daily_battle / player_progression を同一トランザクションで初期化します。
-	Create(ctx context.Context, player *apiaccount.Player, dailyBattle *apiaccount.PlayerDailyBattle, progression *apiaccount.PlayerProgression) error
+	// Create は players / player_progression を同一トランザクションで初期化します。
+	// player_daily_battle はゲーム日ごとに行が発生する履歴台帳のため Create では INSERT しません
+	// (初回バトルの IncrementDailyBattleCount で UPSERT されます)。
+	Create(ctx context.Context, player *apiaccount.Player, progression *apiaccount.PlayerProgression) error
 	FindByID(ctx context.Context, playerID string) (*apiaccount.Player, error)
+	// FindByFirebaseUID は firebase_uid で検索する。該当なしは ErrNotFound。
+	// 業務分岐 (Register の既登録検出など) は呼び出し側で errors.Is で判定する。
 	FindByFirebaseUID(ctx context.Context, firebaseUID string) (*apiaccount.Player, error)
-	GetDailyBattle(ctx context.Context, playerID string) (*apiaccount.PlayerDailyBattle, error)
-	// UpdateDailyBattleCount は count と last_reset_date を書き込む純粋なプリミティブです。
-	// 日付リセットや上限判定などのドメインルールは service 層で解決してから呼び出します。
-	UpdateDailyBattleCount(ctx context.Context, playerID string, count int64, resetDate civil.Date) error
-	// UpdateName は name のみを更新する純プリミティブです。
-	// 行が存在しない場合は ErrNotFound を返します。
-	UpdateName(ctx context.Context, playerID string, name string) error
-	UpdatePremium(ctx context.Context, playerID string, isPremium bool, expiresAt *time.Time) error
-	UpdateFaction(ctx context.Context, playerID, faction string) error
-	// SetSelectedFactionIfNull は selected_faction が NULL の場合のみ faction を書き込みます。
-	// 戻り値は「行が更新されたか」のみで、未更新の理由 (既に選択済み / プレイヤー不在) は
-	// 識別しません。識別が必要な場合は呼び出し元が Exists と組み合わせて判断します。
-	SetSelectedFactionIfNull(ctx context.Context, playerID, faction string) (set bool, err error)
 	// Exists は player_id に対応する行の存在のみを確認する純プリミティブです。
 	Exists(ctx context.Context, playerID string) (bool, error)
+	// GetDailyBattle は (player_id, gameDate) の行を返します。該当なしは (nil, nil)。
+	// 「指定ゲーム日にまだバトルしていない」を nil で表現するため、呼び出し側はカウント 0 として扱います。
+	GetDailyBattle(ctx context.Context, playerID string, gameDate civil.Date) (*apiaccount.PlayerDailyBattle, error)
 	// GetProgression は account.player_progression の現在値を返します。行が無ければ ErrNotFound。
 	GetProgression(ctx context.Context, playerID string) (*apiaccount.PlayerProgression, error)
 	// GetProgressionForUpdate は SELECT ... FOR UPDATE で行ロックを取得して progression を返します。
 	// FOR UPDATE はトランザクション内でのみ意味を持つため、呼び出し側が TxRunner.RunInTx 配下で
 	// 使う責務を負います。行が無ければ ErrNotFound。
 	GetProgressionForUpdate(ctx context.Context, playerID string) (*apiaccount.PlayerProgression, error)
+	// GetOnboardingStatus は onboarding_status を返します。行が無ければ ErrNotFound。
+	GetOnboardingStatus(ctx context.Context, playerID string) (string, error)
+	// UpdateName は name のみを更新する純プリミティブです。
+	// 行が存在しない場合は ErrNotFound を返します。
+	UpdateName(ctx context.Context, playerID string, name string) error
+	UpdatePremium(ctx context.Context, playerID string, isPremium bool, expiresAt *time.Time) error
+	// IncrementDailyBattleCount は (player_id, gameDate) のカウントを 1 加算した結果を返します。
+	// INSERT ... ON CONFLICT DO UPDATE の単発 SQL なので、加算自体は原子的です
+	// (Get → Update を直列に呼ぶ実装と比べてカウントが飛んだり重複したりしません)。
+	IncrementDailyBattleCount(ctx context.Context, playerID string, gameDate civil.Date) (int64, error)
 	// UpdateProgression は exp と level をそのまま書き込む純プリミティブです。
 	// 加算・レベル計算は service 層の責務で、repo は受け取った値を反映するだけです。
 	// 行が無ければ ErrNotFound。
 	UpdateProgression(ctx context.Context, playerID string, exp, level int64) (*apiaccount.PlayerProgression, error)
-	// ApplyOnboardingNameSet は name と onboarding_status を 1 SQL で更新する純プリミティブです。
-	// onboarding_status は state machine 順序で前進する場合のみ書き換え、後進方向の遷移は
-	// 黙ってスキップします (out-of-order 配信に対する防御)。name は無条件に書き換えます。
+	// UpdateOnboardingStatus は onboarding_status をそのまま書き込む純プリミティブです。
+	// state machine 順序の判定は service 層 (model.CanTransitionOnboardingStatus) の責務。
 	// 行が無ければ ErrNotFound。
-	ApplyOnboardingNameSet(ctx context.Context, playerID, name string) error
-	// ApplyOnboardingFactionSet は selected_faction と onboarding_status を 1 SQL で更新する純プリミティブです。
-	// onboarding_status は state machine 順序で前進する場合のみ書き換え、後進方向の遷移は
-	// 黙ってスキップします。行が無ければ ErrNotFound。
-	ApplyOnboardingFactionSet(ctx context.Context, playerID, faction string) error
-	// ApplyOnboardingCompleted は onboarding_status を 'completed' に書き換える純プリミティブです。
-	// completed は terminal 状態のため state machine 順序チェックは不要 (常に前進)。
-	// 行が無ければ ErrNotFound。
-	ApplyOnboardingCompleted(ctx context.Context, playerID string) error
+	UpdateOnboardingStatus(ctx context.Context, playerID, status string) error
 }
 
 // PlayerSettingsPatch は player_settings の部分更新リクエストを表します。
@@ -77,9 +75,10 @@ func (p *PlayerSettingsPatch) IsEmpty() bool {
 
 // PlayerSettingsRepo はプレイヤー設定の永続化を抽象化するインターフェースです。
 type PlayerSettingsRepo interface {
-	Get(ctx context.Context, playerID string) (*apiaccount.PlayerSettings, error)
 	// Insert は新規行を挿入します。全フィールド必須で、Register 時の初期化に使用します。
 	Insert(ctx context.Context, s *apiaccount.PlayerSettings) error
+	// Get はプレイヤー設定を返します。該当なしは ErrNotFound。
+	Get(ctx context.Context, playerID string) (*apiaccount.PlayerSettings, error)
 	// UpdatePartial は patch で指定された非 nil フィールドのみを更新します（COALESCE 方式）。
 	// 行が存在しない場合は ErrNotFound を返します（通常 Register 時に Insert 済みの前提）。
 	UpdatePartial(ctx context.Context, playerID string, patch *PlayerSettingsPatch) error
@@ -93,8 +92,18 @@ type GameConfigRepo interface {
 
 // FactionRepo はプレイヤーファクションの永続化を抽象化するインターフェースです。
 type FactionRepo interface {
-	AddPlayerFaction(ctx context.Context, playerID, faction, source string) error
+	// AddPlayerFaction は player_factions に is_initial=FALSE で 1 行追加します
+	// (ショップ購入経路など、オンボーディング選択以外の取得用)。
+	// (player_id, faction) 複合 PK の ON CONFLICT DO NOTHING で冪等。
+	AddPlayerFaction(ctx context.Context, playerID, faction string) error
+	// GetPlayerFactions は所持ファクション名の一覧を返します (is_initial 区別なし)。
 	GetPlayerFactions(ctx context.Context, playerID string) ([]string, error)
+	// GetInitialFaction はプレイヤーの initial faction (is_initial=TRUE) を返します。
+	// 未選択なら (nil, nil)。
+	GetInitialFaction(ctx context.Context, playerID string) (*string, error)
+	// SetInitialFaction は (player_id, faction) を is_initial=TRUE で INSERT します。
+	// PK 重複や partial unique index 違反は DB エラーとしてそのまま返します。
+	SetInitialFaction(ctx context.Context, playerID, faction string) error
 }
 
 // ProcessedEventRepo は処理済み Pub/Sub イベントを追跡するインターフェースです。

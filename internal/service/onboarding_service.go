@@ -39,7 +39,9 @@ func NewOnboardingService(
 }
 
 // ApplyNameSet は onboarding-name-set イベントの副作用を反映する。
-// 単一 Tx 内で processed_events 挿入 + name + onboarding_status 更新を実行する。
+// 単一 Tx 内で processed_events 挿入 + name 更新 + state machine 前進判定して
+// onboarding_status を 'name_set' に進める。後進方向は publisher の out-of-order
+// 配信として黙ってスキップする。
 //
 // processed が false のとき、event_id が既に処理済み (重複配信)。呼び出し側は
 // ACK のみで他の副作用は走らない。
@@ -60,7 +62,10 @@ func (s *OnboardingService) ApplyNameSet(
 			return nil
 		}
 		processed = true
-		return s.playerRepo.ApplyOnboardingNameSet(txCtx, playerID, name)
+		if err := s.playerRepo.UpdateName(txCtx, playerID, name); err != nil {
+			return err
+		}
+		return s.advanceOnboardingStatus(txCtx, playerID, model.OnboardingStatusNameSet)
 	}); txErr != nil {
 		return false, txErr
 	}
@@ -68,8 +73,8 @@ func (s *OnboardingService) ApplyNameSet(
 }
 
 // ApplyFactionSet は onboarding-faction-set イベントの副作用を反映する。
-// 単一 Tx 内で processed_events 挿入 + selected_faction + onboarding_status 更新 +
-// player_factions への initial_selection 行 INSERT を実行する。
+// 単一 Tx 内で processed_events 挿入 + initial faction 確定 +
+// state machine 前進判定で onboarding_status を 'faction_set' に進める。
 func (s *OnboardingService) ApplyFactionSet(
 	ctx context.Context,
 	eventID, eventType, playerID, initialFactionID string,
@@ -88,10 +93,23 @@ func (s *OnboardingService) ApplyFactionSet(
 		}
 		processed = true
 
-		if err := s.playerRepo.ApplyOnboardingFactionSet(txCtx, playerID, initialFactionID); err != nil {
-			return err
+		// 「既に initial 確定済みか」のドメイン判定は service の責務。
+		// 同 faction の再送は冪等扱い (UPSERT が is_initial=TRUE を維持)、
+		// 別 faction が確定済みなら publisher のバグとして無視する (state machine が
+		// faction_set 以降に進んでいる前提で、次のイベントは completed のみ)。
+		existing, err := s.factionRepo.GetInitialFaction(txCtx, playerID)
+		if err != nil {
+			return fmt.Errorf("get initial faction: %w", err)
 		}
-		return s.factionRepo.AddPlayerFaction(txCtx, playerID, initialFactionID, FactionSourceInitialSelection)
+		if existing != nil && *existing != initialFactionID {
+			return nil
+		}
+		if existing == nil {
+			if err := s.factionRepo.SetInitialFaction(txCtx, playerID, initialFactionID); err != nil {
+				return fmt.Errorf("set initial faction: %w", err)
+			}
+		}
+		return s.advanceOnboardingStatus(txCtx, playerID, model.OnboardingStatusFactionSet)
 	}); txErr != nil {
 		return false, txErr
 	}
@@ -99,8 +117,10 @@ func (s *OnboardingService) ApplyFactionSet(
 }
 
 // ApplyCompleted は player-onboarded イベントの副作用を反映する。
-// 本 ADR 改訂後は status='completed' への遷移のみが responsibility (selected_faction /
-// player_factions の永続化は ApplyFactionSet が先行して実行している前提)。
+// 本 ADR 改訂後は status='completed' への遷移のみが responsibility (initial faction の
+// 永続化は ApplyFactionSet が先行して実行している前提)。completed は terminal なので
+// 一方向順序チェックは不要だが、共通の advanceOnboardingStatus 経由で進めることで
+// 「未知の現状態に遭遇したらエラー」のセマンティクスを共有する。
 func (s *OnboardingService) ApplyCompleted(
 	ctx context.Context,
 	eventID, eventType, playerID string,
@@ -114,11 +134,32 @@ func (s *OnboardingService) ApplyCompleted(
 			return nil
 		}
 		processed = true
-		return s.playerRepo.ApplyOnboardingCompleted(txCtx, playerID)
+		return s.advanceOnboardingStatus(txCtx, playerID, model.OnboardingStatusCompleted)
 	}); txErr != nil {
 		return false, txErr
 	}
 	return processed, nil
+}
+
+// advanceOnboardingStatus は state machine の一方向遷移を担保しつつ
+// onboarding_status を target に進める。後進方向は黙ってスキップする
+// (out-of-order 配信に対する防御)。
+func (s *OnboardingService) advanceOnboardingStatus(ctx context.Context, playerID, target string) error {
+	current, err := s.playerRepo.GetOnboardingStatus(ctx, playerID)
+	if err != nil {
+		return fmt.Errorf("get onboarding status: %w", err)
+	}
+	canAdvance, err := model.CanTransitionOnboardingStatus(current, target)
+	if err != nil {
+		return fmt.Errorf("check onboarding transition %q -> %q: %w", current, target, err)
+	}
+	if !canAdvance || current == target {
+		return nil
+	}
+	if err := s.playerRepo.UpdateOnboardingStatus(ctx, playerID, target); err != nil {
+		return fmt.Errorf("update onboarding status: %w", err)
+	}
+	return nil
 }
 
 // IsPublisherBug は subscriber が publisher 起源の不整合 (Register 未実施プレイヤーへの

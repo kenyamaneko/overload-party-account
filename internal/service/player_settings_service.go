@@ -20,14 +20,12 @@ func NewPlayerSettingsService(repo port.PlayerSettingsRepo) *PlayerSettingsServi
 
 // Get はプレイヤーの設定を返します。
 // player_settings は Register と同一トランザクションで必ず INSERT される契約のため、
-// 行が無いのは Register 未実施または不整合。デフォルト値で隠さず port.ErrNotFound を返します。
+// 行が無いのは Register 未実施または不整合。デフォルト値で隠さず repo の port.ErrNotFound を
+// そのまま伝播させます。
 func (s *PlayerSettingsService) Get(ctx context.Context, playerID string) (*apiaccount.PlayerSettings, error) {
 	settings, err := s.repo.Get(ctx, playerID)
 	if err != nil {
 		return nil, fmt.Errorf("get player settings: %w", err)
-	}
-	if settings == nil {
-		return nil, fmt.Errorf("player settings for %s: %w", playerID, port.ErrNotFound)
 	}
 	return settings, nil
 }

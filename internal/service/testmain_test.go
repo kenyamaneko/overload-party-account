@@ -55,8 +55,10 @@ func (f *fakeGameConfigRepo) GetInt64(_ context.Context, key string) (int64, err
 	return 0, fmt.Errorf("game config %q: %w", key, port.ErrNotFound)
 }
 
-// seedPlayer は account.players + player_daily_battle + player_progression の最小シードを投入する。
+// seedPlayer は account.players + player_progression の最小シードを投入する。
 // postgres 層テストの helpers_test.go と同じパターン。
+// player_daily_battle はゲーム日単位の履歴台帳になったため seedPlayer では作らない
+// (バトル発生時の IncrementDailyBattleCount で UPSERT される)。
 // 引数 name に "" を渡すと account.players.name を NULL として挿入する
 // (オンボーディング前の name 未確定状態を再現するため)。
 func seedPlayer(t *testing.T, playerID, firebaseUID, name string, isPremium bool) *apiaccount.Player {
@@ -78,10 +80,10 @@ func seedPlayer(t *testing.T, playerID, firebaseUID, name string, isPremium bool
 	}
 	ctx := context.Background()
 	_, err := sharedPg.Pool.Exec(ctx,
-		`INSERT INTO account.players (player_id, firebase_uid, name, is_premium, equipped_icon_no, selected_faction, premium_expires_at, created_at, updated_at)
-		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+		`INSERT INTO account.players (player_id, firebase_uid, name, is_premium, equipped_icon_no, premium_expires_at, created_at, updated_at)
+		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
 		p.PlayerID, p.FirebaseUID, p.Name, p.IsPremium,
-		p.EquippedIconNo, p.SelectedFaction, p.PremiumExpiresAt, p.CreatedAt, p.UpdatedAt)
+		p.EquippedIconNo, p.PremiumExpiresAt, p.CreatedAt, p.UpdatedAt)
 	require.NoError(t, err)
 
 	_, err = sharedPg.Pool.Exec(ctx,
@@ -89,19 +91,15 @@ func seedPlayer(t *testing.T, playerID, firebaseUID, name string, isPremium bool
 		p.PlayerID, p.Level, p.Exp)
 	require.NoError(t, err)
 
-	today := civil.DateOf(now)
-	_, err = sharedPg.Pool.Exec(ctx,
-		`INSERT INTO account.player_daily_battle (player_id, daily_battle_count, last_reset_date)
-		 VALUES ($1, $2, $3)`,
-		p.PlayerID, 0, time.Date(today.Year, today.Month, today.Day, 0, 0, 0, 0, time.UTC))
-	require.NoError(t, err)
 	return p
 }
 
-// seedPlayerWithState は指定の level/exp/daily_battle 状態でシードする。
+// seedPlayerWithState は指定の level/exp 状態でシードし、必要なら指定ゲーム日に
+// player_daily_battle を直接 INSERT する。
 // GetBattleLimit / AwardExp のテスト用。level/exp は player_progression テーブルに入る。
+// dailyCount < 0 のときは player_daily_battle に行を作らない (新ゲーム日でまだバトルしていない状態を再現する)。
 // 引数 name に "" を渡すと account.players.name を NULL として挿入する。
-func seedPlayerWithState(t *testing.T, playerID, firebaseUID, name string, isPremium bool, level, exp int64, count int64, lastReset civil.Date) *apiaccount.Player {
+func seedPlayerWithState(t *testing.T, playerID, firebaseUID, name string, isPremium bool, level, exp int64, dailyCount int64, dailyDate civil.Date) *apiaccount.Player {
 	t.Helper()
 	now := time.Now().UTC()
 	var namePtr *string
@@ -120,10 +118,10 @@ func seedPlayerWithState(t *testing.T, playerID, firebaseUID, name string, isPre
 	}
 	ctx := context.Background()
 	_, err := sharedPg.Pool.Exec(ctx,
-		`INSERT INTO account.players (player_id, firebase_uid, name, is_premium, equipped_icon_no, selected_faction, premium_expires_at, created_at, updated_at)
-		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+		`INSERT INTO account.players (player_id, firebase_uid, name, is_premium, equipped_icon_no, premium_expires_at, created_at, updated_at)
+		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
 		p.PlayerID, p.FirebaseUID, p.Name, p.IsPremium,
-		p.EquippedIconNo, p.SelectedFaction, p.PremiumExpiresAt, p.CreatedAt, p.UpdatedAt)
+		p.EquippedIconNo, p.PremiumExpiresAt, p.CreatedAt, p.UpdatedAt)
 	require.NoError(t, err)
 
 	_, err = sharedPg.Pool.Exec(ctx,
@@ -131,12 +129,16 @@ func seedPlayerWithState(t *testing.T, playerID, firebaseUID, name string, isPre
 		p.PlayerID, p.Level, p.Exp)
 	require.NoError(t, err)
 
-	_, err = sharedPg.Pool.Exec(ctx,
-		`INSERT INTO account.player_daily_battle (player_id, daily_battle_count, last_reset_date)
-		 VALUES ($1, $2, $3)`,
-		p.PlayerID, count,
-		time.Date(lastReset.Year, lastReset.Month, lastReset.Day, 0, 0, 0, 0, time.UTC))
-	require.NoError(t, err)
+	if dailyCount >= 0 {
+		_, err = sharedPg.Pool.Exec(ctx,
+			`INSERT INTO account.player_daily_battle (player_id, game_date, daily_battle_count)
+			 VALUES ($1, $2, $3)`,
+			p.PlayerID,
+			time.Date(dailyDate.Year, dailyDate.Month, dailyDate.Day, 0, 0, 0, 0, time.UTC),
+			dailyCount,
+		)
+		require.NoError(t, err)
+	}
 	return p
 }
 
@@ -161,7 +163,7 @@ func newRealRepos() (*postgres.PlayerRepository, *postgres.FactionRepository, *p
 }
 
 // newProcessedEventRepo は実 PostgreSQL の processed_events リポジトリを返す。
-// FactionService.ApplyOnboardingResult の Tx 境界テスト等で使用する。
+// OnboardingService の冪等ガード Tx 境界テスト等で使用する。
 func newProcessedEventRepo() *postgres.ProcessedEventRepository {
 	return postgres.NewProcessedEventRepository(sharedPg.Pool)
 }

@@ -25,25 +25,6 @@ func NewPlayerSettingsRepository(pool *pgxpool.Pool) *PlayerSettingsRepository {
 	return &PlayerSettingsRepository{pool: pool}
 }
 
-// Get はプレイヤーの設定を返す。該当なしは (nil, nil) を返す。
-func (r *PlayerSettingsRepository) Get(ctx context.Context, playerID string) (*apiaccount.PlayerSettings, error) {
-	row := connFrom(ctx, r.pool).QueryRow(ctx,
-		`SELECT player_id, language, bgm_volume, se_volume, push_enabled, updated_at
-		 FROM account.player_settings WHERE player_id = $1`,
-		playerID,
-	)
-
-	var s apiaccount.PlayerSettings
-	err := row.Scan(&s.PlayerID, &s.Language, &s.BgmVolume, &s.SeVolume, &s.PushEnabled, &s.UpdatedAt)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("get player settings: %w", err)
-	}
-	return &s, nil
-}
-
 // Insert は新規プレイヤー設定行を挿入する。Register 時の初期化で呼び出される前提で、
 // 全フィールドが非ゼロ値のアプリ層デフォルトで埋まっている想定。
 func (r *PlayerSettingsRepository) Insert(ctx context.Context, s *apiaccount.PlayerSettings) error {
@@ -58,6 +39,25 @@ func (r *PlayerSettingsRepository) Insert(ctx context.Context, s *apiaccount.Pla
 	}
 	s.UpdatedAt = now
 	return nil
+}
+
+// Get はプレイヤーの設定を返す。該当なしは port.ErrNotFound でラップして返す。
+func (r *PlayerSettingsRepository) Get(ctx context.Context, playerID string) (*apiaccount.PlayerSettings, error) {
+	row := connFrom(ctx, r.pool).QueryRow(ctx,
+		`SELECT player_id, language, bgm_volume, se_volume, push_enabled, updated_at
+		 FROM account.player_settings WHERE player_id = $1`,
+		playerID,
+	)
+
+	var s apiaccount.PlayerSettings
+	err := row.Scan(&s.PlayerID, &s.Language, &s.BgmVolume, &s.SeVolume, &s.PushEnabled, &s.UpdatedAt)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, port.ErrNotFound
+		}
+		return nil, fmt.Errorf("get player settings: %w", err)
+	}
+	return &s, nil
 }
 
 // UpdatePartial は patch の非 nil フィールドのみを更新する（COALESCE で現状維持）。

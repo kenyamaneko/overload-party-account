@@ -130,29 +130,6 @@ func (h *PlayerHandler) UpdatePremium(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
-// UpdateFaction はプレイヤーの選択ファクションを更新します。
-func (h *PlayerHandler) UpdateFaction(c *gin.Context) {
-	playerID := c.Param("playerId")
-	if playerID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "playerId is required"})
-		return
-	}
-	var req apiaccount.UpdateFactionRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-	if req.Faction == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "faction is required"})
-		return
-	}
-	if err := h.playerService.UpdateFaction(c.Request.Context(), playerID, req.Faction); err != nil {
-		respondError(c, err)
-		return
-	}
-	c.Status(http.StatusNoContent)
-}
-
 // AddExp はプレイヤーに経験値を付与します。
 func (h *PlayerHandler) AddExp(c *gin.Context) {
 	playerID := c.Param("playerId")
@@ -198,11 +175,11 @@ func (h *PlayerHandler) GrantFaction(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	if req.Faction == "" || req.Source == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "faction and source are required"})
+	if req.Faction == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "faction is required"})
 		return
 	}
-	if err := h.playerService.GrantFaction(c.Request.Context(), playerID, req.Faction, req.Source); err != nil {
+	if err := h.playerService.GrantFaction(c.Request.Context(), playerID, req.Faction); err != nil {
 		respondError(c, err)
 		return
 	}

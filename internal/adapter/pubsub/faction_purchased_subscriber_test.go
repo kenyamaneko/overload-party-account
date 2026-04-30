@@ -11,12 +11,10 @@ import (
 	"github.com/kenyamaneko/overload-party-shop/packages/api-shop/apishopfake"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/kenyamaneko/overload-party-account/internal/service"
 )
 
 // TestFactionPurchasedSubscriber_Consumes は「shop 購入起因の faction ロスター追加
-// (selected_faction は変更しない) を 1 イベント単位で冪等に処理する」という仕様を
+// (is_initial=FALSE 固定) を 1 イベント単位で冪等に処理する」という仕様を
 // Start() → stream.Consume → processEvent の経路で固定する。
 //
 // 契約検証は apishopfake 経由で shop 側の publish 型をそのまま使う
@@ -47,7 +45,7 @@ func TestFactionPurchasedSubscriber_Consumes(t *testing.T) {
 				require.Len(t, factionRepo.added, 1)
 				assert.Equal(t, "p-1", factionRepo.added[0].PlayerID)
 				assert.Equal(t, "SHE", factionRepo.added[0].Faction)
-				assert.Equal(t, service.FactionSourceShopPurchase, factionRepo.added[0].Source)
+				assert.False(t, factionRepo.added[0].IsInitial)
 			},
 		},
 		{

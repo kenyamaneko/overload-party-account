@@ -18,8 +18,8 @@ type OnboardingFactionSetApplier interface {
 }
 
 // OnboardingFactionSetSubscriber は onboarding-faction-set subscription を消費し、
-// players.selected_faction + player_factions (initial_selection) +
-// players.onboarding_status='faction_set' を 1 tx で反映する。
+// player_factions の is_initial=TRUE 行 UPSERT + players.onboarding_status='faction_set'
+// を 1 tx で反映する。
 type OnboardingFactionSetSubscriber struct {
 	stream  port.MessageStream
 	applier OnboardingFactionSetApplier

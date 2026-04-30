@@ -2,10 +2,10 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
-	"cloud.google.com/go/civil"
 	"github.com/google/uuid"
 
 	"github.com/kenyamaneko/overload-party-account/internal/model"
@@ -33,12 +33,12 @@ func NewAuthService(playerRepo port.PlayerRepo, playerSettingsRepo port.PlayerSe
 // オンボーディング完了時の player-onboarded イベントで初めて確定します
 // (オンボーディング途中での中断後に再登録を要求しないための分離)。
 func (s *AuthService) Register(ctx context.Context, firebaseUID string) (*apiaccount.Player, error) {
-	existing, err := s.playerRepo.FindByFirebaseUID(ctx, firebaseUID)
-	if err != nil {
-		return nil, fmt.Errorf("check existing player: %w", err)
-	}
-	if existing != nil {
+	_, err := s.playerRepo.FindByFirebaseUID(ctx, firebaseUID)
+	if err == nil {
 		return nil, ErrPlayerAlreadyRegistered
+	}
+	if !errors.Is(err, port.ErrNotFound) {
+		return nil, fmt.Errorf("check existing player: %w", err)
 	}
 
 	now := time.Now()
@@ -52,12 +52,6 @@ func (s *AuthService) Register(ctx context.Context, firebaseUID string) (*apiacc
 		OnboardingStatus: model.OnboardingStatusNotStarted,
 		CreatedAt:        now,
 		UpdatedAt:        now,
-	}
-
-	dailyBattle := &apiaccount.PlayerDailyBattle{
-		PlayerID:         player.PlayerID,
-		DailyBattleCount: 0,
-		LastResetDate:    civil.DateOf(time.Now().UTC()),
 	}
 
 	progression := &apiaccount.PlayerProgression{
@@ -77,7 +71,7 @@ func (s *AuthService) Register(ctx context.Context, firebaseUID string) (*apiacc
 	}
 
 	if err := s.txRunner.RunInTx(ctx, func(ctx context.Context) error {
-		if err := s.playerRepo.Create(ctx, player, dailyBattle, progression); err != nil {
+		if err := s.playerRepo.Create(ctx, player, progression); err != nil {
 			return fmt.Errorf("create player: %w", err)
 		}
 		if err := s.playerSettingsRepo.Insert(ctx, settings); err != nil {
@@ -103,11 +97,11 @@ func (s *AuthService) FindByFirebaseUID(ctx context.Context, firebaseUID string)
 // Login は Firebase UID でプレイヤーを検索しログインします。
 func (s *AuthService) Login(ctx context.Context, firebaseUID string) (*apiaccount.Player, error) {
 	player, err := s.playerRepo.FindByFirebaseUID(ctx, firebaseUID)
+	if errors.Is(err, port.ErrNotFound) {
+		return nil, ErrPlayerNotFound
+	}
 	if err != nil {
 		return nil, fmt.Errorf("find player: %w", err)
-	}
-	if player == nil {
-		return nil, ErrPlayerNotFound
 	}
 	return player, nil
 }

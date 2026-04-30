@@ -38,7 +38,6 @@ func New(
 			players.GET("/battle-limit", playerH.GetBattleLimit)
 			players.POST("/battle-limit/increment", playerH.IncrementBattleCount)
 			players.PUT("/premium", playerH.UpdatePremium)
-			players.PUT("/faction", playerH.UpdateFaction)
 			players.POST("/exp", playerH.AddExp)
 			players.POST("/factions", playerH.GrantFaction)
 			players.POST("/factions/select", factionH.SelectInitialFaction)

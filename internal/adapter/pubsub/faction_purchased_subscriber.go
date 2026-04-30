@@ -13,14 +13,13 @@ import (
 	apishop "github.com/kenyamaneko/overload-party-shop/packages/api-shop"
 
 	"github.com/kenyamaneko/overload-party-account/internal/port"
-	"github.com/kenyamaneko/overload-party-account/internal/service"
 )
 
 // FactionPurchasedSubscriber は faction-purchased subscription からイベントを取得し、
-// player_factions への INSERT を行います。
+// player_factions への INSERT (is_initial=FALSE 固定) を行います。
 //
-// ショップ購入は「ロスターへの追加」のみを意味し、players.selected_faction は
-// 変更しない。アクティブ切り替えは PUT /players/:id/faction の独立した REST で行う。
+// ショップ購入は「ロスターへの追加」のみを意味し、initial faction の確定とは独立。
+// initial の昇格は scenario の onboarding-faction-set のみが行う。
 type FactionPurchasedSubscriber struct {
 	stream      port.MessageStream
 	factionRepo port.FactionRepo
@@ -75,8 +74,7 @@ func (s *FactionPurchasedSubscriber) processEvent(ctx context.Context, data []by
 			return nil // idempotent ack
 		}
 
-		// shop 購入起因のみを扱う契約なので player_factions.source は FactionSourceShopPurchase 固定。
-		if err := s.factionRepo.AddPlayerFaction(txCtx, ev.PlayerID, ev.Faction, service.FactionSourceShopPurchase); err != nil {
+		if err := s.factionRepo.AddPlayerFaction(txCtx, ev.PlayerID, ev.Faction); err != nil {
 			return fmt.Errorf("add player_faction: %w", err)
 		}
 		return nil

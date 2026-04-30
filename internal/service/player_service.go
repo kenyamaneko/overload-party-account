@@ -57,14 +57,9 @@ func (s *PlayerService) UpdatePremium(ctx context.Context, playerID string, isPr
 	return s.playerRepo.UpdatePremium(ctx, playerID, isPremium, expiresAt)
 }
 
-// UpdateFaction は選択ファクションを更新します。
-func (s *PlayerService) UpdateFaction(ctx context.Context, playerID, faction string) error {
-	return s.playerRepo.UpdateFaction(ctx, playerID, faction)
-}
-
 // GrantFaction はプレイヤーにファクションを付与します。
-func (s *PlayerService) GrantFaction(ctx context.Context, playerID, faction, source string) error {
-	return s.factionRepo.AddPlayerFaction(ctx, playerID, faction, source)
+func (s *PlayerService) GrantFaction(ctx context.Context, playerID, faction string) error {
+	return s.factionRepo.AddPlayerFaction(ctx, playerID, faction)
 }
 
 // ListFactions はプレイヤーの所持ファクション一覧を返します。
@@ -132,15 +127,15 @@ func (s *PlayerService) GetBattleLimit(ctx context.Context, playerID string) (*a
 		}, nil
 	}
 
-	db, err := s.playerRepo.GetDailyBattle(ctx, playerID)
+	today := gameDay()
+	db, err := s.playerRepo.GetDailyBattle(ctx, playerID, today)
 	if err != nil {
 		return nil, fmt.Errorf("get daily battle: %w", err)
 	}
 
-	today := gameDay()
-	count := db.DailyBattleCount
-	if db.LastResetDate != today {
-		count = 0 // Will be reset on next increment
+	var count int64
+	if db != nil {
+		count = db.DailyBattleCount
 	}
 
 	freeLimit, err := s.gameConfigRepo.GetInt64(ctx, configKeyFreeDailyBattleLimit)
@@ -158,35 +153,15 @@ func (s *PlayerService) GetBattleLimit(ctx context.Context, playerID string) (*a
 	}, nil
 }
 
-// IncrementBattleCount は日次バトル回数を 1 加算して書き込みます。
-// account が daily_battle の authoritative owner なので、上限不変条件はここで守ります。
-//
-// 仕様:
-//   - last_reset_date がゲーム日と異なる場合、カウントを 1 にリセットする
-//   - free プレイヤーは加算後のカウントが上限を超える場合 ErrBattleLimitExceeded を返す
-//   - premium プレイヤーは上限判定をスキップする（カウント自体は記録する）
-//
-// TOCTOU: GetDailyBattle と UpdateDailyBattleCount の間で別リクエストの書き込みが
-// 入る可能性はあるが、同一アカウントの並行バトルは極めて稀なエッジケースとして許容する。
+// IncrementBattleCount は当日のバトル回数を 1 加算する。
+// 仕様は FEATURE_SPEC §4.3、TOCTOU の判断は ARCHITECTURE.md §4.3 を参照。
 func (s *PlayerService) IncrementBattleCount(ctx context.Context, playerID string) error {
 	player, err := s.playerRepo.FindByID(ctx, playerID)
 	if err != nil {
 		return fmt.Errorf("find player: %w", err)
 	}
 
-	db, err := s.playerRepo.GetDailyBattle(ctx, playerID)
-	if err != nil {
-		return fmt.Errorf("get daily battle: %w", err)
-	}
-	if db == nil {
-		return fmt.Errorf("daily battle for player %s: %w", playerID, port.ErrNotFound)
-	}
-
 	today := gameDay()
-	nextCount := db.DailyBattleCount + 1
-	if db.LastResetDate != today {
-		nextCount = 1
-	}
 
 	if !player.IsPremium {
 		freeLimit, err := s.gameConfigRepo.GetInt64(ctx, configKeyFreeDailyBattleLimit)
@@ -196,13 +171,21 @@ func (s *PlayerService) IncrementBattleCount(ctx context.Context, playerID strin
 		if freeLimit <= 0 {
 			return fmt.Errorf("game config %q is not set", configKeyFreeDailyBattleLimit)
 		}
-		if nextCount > freeLimit {
+		db, err := s.playerRepo.GetDailyBattle(ctx, playerID, today)
+		if err != nil {
+			return fmt.Errorf("get daily battle: %w", err)
+		}
+		var current int64
+		if db != nil {
+			current = db.DailyBattleCount
+		}
+		if current+1 > freeLimit {
 			return ErrBattleLimitExceeded
 		}
 	}
 
-	if err := s.playerRepo.UpdateDailyBattleCount(ctx, playerID, nextCount, today); err != nil {
-		return fmt.Errorf("update daily battle: %w", err)
+	if _, err := s.playerRepo.IncrementDailyBattleCount(ctx, playerID, today); err != nil {
+		return fmt.Errorf("increment daily battle: %w", err)
 	}
 	return nil
 }
@@ -236,9 +219,7 @@ func (s *PlayerService) AwardExp(ctx context.Context, playerID string, expGain i
 	})
 }
 
-// ComputeLevel は経験値獲得後の新レベルを算出します。
-// 現在レベルからの「増加のみ」を行い、減少はしません。係数を後から厳しくしても
-// 既存プレイヤーのレベルが下がらないようにする UX 契約を守るための選択です。
+// ComputeLevel は経験値獲得後の新レベルを算出する。契約は FEATURE_SPEC §6.3 を参照。
 func ComputeLevel(newExp, currentLevel, coeff int64) int64 {
 	level := currentLevel
 	if level < 1 {
@@ -254,13 +235,9 @@ func ComputeLevel(newExp, currentLevel, coeff int64) int64 {
 	return level
 }
 
-// AwardGameExp はゲーム終了後に両プレイヤーに経験値を付与する唯一の入口です。
-//   - draw (reason == WinReasonDraw もしくは winnerNum == 0): 両者 exp_draw
-//   - winnerNum == 1 / 2: 勝者 exp_win、敗者 exp_loss
-//   - matchType == MatchTypeNpc: player2 を NPC とみなし付与をスキップ
-//
-// 分岐に使う matchType / reason / winnerNum はリテラル禁止で共有定数パッケージ
-// (overload-party-common, overload-party-battle) を SSoT として参照します。
+// AwardGameExp はゲーム終了後に両プレイヤーに経験値を付与する唯一の入口。
+// 付与ルール (winnerNum / reason / matchType による分岐) は FEATURE_SPEC §6.1 を参照。
+// 分岐値のリテラル禁止で共有定数パッケージを SSoT として参照する。
 func (s *PlayerService) AwardGameExp(ctx context.Context, player1ID, player2ID string, winnerNum int64, reason, matchType string) error {
 	expWin, err := s.gameConfigRepo.GetInt64(ctx, "exp_win")
 	if err != nil {
@@ -328,7 +305,7 @@ func (s *PlayerService) GetPlayerResponse(ctx context.Context, playerID string) 
 		Exp:              player.Exp,
 		IsPremium:        player.IsPremium,
 		EquippedIconNo:   player.EquippedIconNo,
-		SelectedFaction:  player.SelectedFaction,
+		InitialFaction:   player.InitialFaction,
 		OnboardingStatus: player.OnboardingStatus,
 		PremiumExpiresAt: player.PremiumExpiresAt,
 		CreatedAt:        player.CreatedAt,

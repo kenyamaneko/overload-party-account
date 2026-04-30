@@ -53,58 +53,66 @@ func TestPlayerService_GetBattleLimit(t *testing.T) {
 	ctx := context.Background()
 
 	tests := []struct {
-		name             string
-		isPremium        bool
-		dailyBattleCount int64
-		lastResetDate    civil.Date
-		wantCount        int64
-		wantLimit        int64
-		wantCanBattle    bool
+		name          string
+		isPremium     bool
+		seedCount     int64 // <0 のときは player_daily_battle に行を作らない
+		seedDate      civil.Date
+		wantCount     int64
+		wantLimit     int64
+		wantCanBattle bool
 	}{
 		{
-			name:             "free プレイヤー: 上限未満なら対戦可能",
-			isPremium:        false,
-			dailyBattleCount: 3,
-			lastResetDate:    today(),
-			wantCount:        3,
-			wantLimit:        10,
-			wantCanBattle:    true,
+			name:          "free プレイヤー: 上限未満なら対戦可能",
+			isPremium:     false,
+			seedCount:     3,
+			seedDate:      today(),
+			wantCount:     3,
+			wantLimit:     10,
+			wantCanBattle: true,
 		},
 		{
-			name:             "free プレイヤー: 上限到達で対戦不可",
-			isPremium:        false,
-			dailyBattleCount: 10,
-			lastResetDate:    today(),
-			wantCount:        10,
-			wantLimit:        10,
-			wantCanBattle:    false,
+			name:          "free プレイヤー: 上限到達で対戦不可",
+			isPremium:     false,
+			seedCount:     10,
+			seedDate:      today(),
+			wantCount:     10,
+			wantLimit:     10,
+			wantCanBattle: false,
 		},
 		{
-			name:             "premium プレイヤーは上限なしで常に対戦可能",
-			isPremium:        true,
-			dailyBattleCount: 5,
-			lastResetDate:    today(),
-			wantCount:        0,
-			wantLimit:        -1,
-			wantCanBattle:    true,
+			name:          "premium プレイヤーは上限なしで常に対戦可能",
+			isPremium:     true,
+			seedCount:     5,
+			seedDate:      today(),
+			wantCount:     0,
+			wantLimit:     -1,
+			wantCanBattle: true,
 		},
 		{
-			name:             "日付が変われば free プレイヤーのカウントがリセットされる",
-			isPremium:        false,
-			dailyBattleCount: 7,
-			lastResetDate:    yesterday(),
-			wantCount:        0,
-			wantLimit:        10,
-			wantCanBattle:    true,
+			name:          "free プレイヤー: 当日の行が無ければカウント 0 (新ゲーム日)",
+			isPremium:     false,
+			seedCount:     7,
+			seedDate:      yesterday(), // 別ゲーム日の履歴は当日カウントに影響しない
+			wantCount:     0,
+			wantLimit:     10,
+			wantCanBattle: true,
 		},
 		{
-			name:             "free プレイヤー: 上限超過でも対戦不可",
-			isPremium:        false,
-			dailyBattleCount: 11,
-			lastResetDate:    today(),
-			wantCount:        11,
-			wantLimit:        10,
-			wantCanBattle:    false,
+			name:          "free プレイヤー: 履歴自体が無くてもカウント 0 で対戦可能",
+			isPremium:     false,
+			seedCount:     -1,
+			wantCount:     0,
+			wantLimit:     10,
+			wantCanBattle: true,
+		},
+		{
+			name:          "free プレイヤー: 上限超過でも対戦不可",
+			isPremium:     false,
+			seedCount:     11,
+			seedDate:      today(),
+			wantCount:     11,
+			wantLimit:     10,
+			wantCanBattle: false,
 		},
 	}
 
@@ -112,7 +120,7 @@ func TestPlayerService_GetBattleLimit(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			sharedPg.Truncate(t)
 			seedPlayerWithState(t, testPlayerID1, "uid-1", "Alice",
-				tt.isPremium, 1, 0, tt.dailyBattleCount, tt.lastResetDate)
+				tt.isPremium, 1, 0, tt.seedCount, tt.seedDate)
 
 			svc := newPlayerTestService(nil)
 			resp, err := svc.GetBattleLimit(ctx, testPlayerID1)
@@ -137,7 +145,9 @@ func TestPlayerService_GetBattleLimit_FreeLimitZero_ReturnsError(t *testing.T) {
 }
 
 // IncrementBattleCount の正常系仕様:
-//   - 日付が変わっていれば 1 にリセット
+//   - 当日 (gameDay) の行が無ければ count=1 で発生
+//   - 当日の行があれば +1 加算
+//   - 別ゲーム日の履歴は当日カウントに影響しない (UPSERT が日単位で独立)
 //   - free プレイヤーはインクリメント後のカウントが上限内なら通る
 //   - premium プレイヤーは上限判定をスキップ（カウントは記録する）
 func TestPlayerService_IncrementBattleCount(t *testing.T) {
@@ -146,7 +156,7 @@ func TestPlayerService_IncrementBattleCount(t *testing.T) {
 	tests := []struct {
 		name       string
 		isPremium  bool
-		seedCount  int64
+		seedCount  int64 // <0 のとき seed なし
 		seedDate   civil.Date
 		wantStored int64
 	}{
@@ -165,10 +175,16 @@ func TestPlayerService_IncrementBattleCount(t *testing.T) {
 			wantStored: 10,
 		},
 		{
-			name:       "free: 日付が変わっていればリセットして 1 になる",
+			name:       "free: 当日の行が無ければ 1 で発生する (前日履歴は無関係)",
 			isPremium:  false,
 			seedCount:  9,
 			seedDate:   yesterday(),
+			wantStored: 1,
+		},
+		{
+			name:       "free: 履歴自体が無ければ 1 で発生する",
+			isPremium:  false,
+			seedCount:  -1,
 			wantStored: 1,
 		},
 		{
@@ -190,7 +206,7 @@ func TestPlayerService_IncrementBattleCount(t *testing.T) {
 			require.NoError(t, svc.IncrementBattleCount(ctx, testPlayerID1))
 
 			playerRepo, _, _, _ := newRealRepos()
-			got, err := playerRepo.GetDailyBattle(ctx, testPlayerID1)
+			got, err := playerRepo.GetDailyBattle(ctx, testPlayerID1, today())
 			require.NoError(t, err)
 			require.NotNil(t, got)
 			assert.Equal(t, tt.wantStored, got.DailyBattleCount)
@@ -210,7 +226,7 @@ func TestPlayerService_IncrementBattleCount_OverLimit_ReturnsError(t *testing.T)
 	require.ErrorIs(t, err, ErrBattleLimitExceeded)
 
 	playerRepo, _, _, _ := newRealRepos()
-	got, err := playerRepo.GetDailyBattle(ctx, testPlayerID1)
+	got, err := playerRepo.GetDailyBattle(ctx, testPlayerID1, today())
 	require.NoError(t, err)
 	require.NotNil(t, got)
 	assert.Equal(t, int64(10), got.DailyBattleCount)

@@ -37,12 +37,6 @@ func (h *FactionHandler) SelectInitialFaction(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "faction_id is required"})
 		return
 	}
-	// 将来の source 拡張（admin override 等）に備えてリクエストに含めるが、
-	// 現時点では initial_selection のみ受け付ける。
-	if req.Source != "" && req.Source != service.FactionSourceInitialSelection {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "source must be \"initial_selection\""})
-		return
-	}
 
 	if err := h.factionService.SelectInitialFaction(c.Request.Context(), playerID, req.FactionID); err != nil {
 		respondError(c, err)

@@ -53,10 +53,6 @@ func (h *AuthHandler) GetPlayerByFirebaseUID(c *gin.Context) {
 		respondError(c, err)
 		return
 	}
-	if player == nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "player not found"})
-		return
-	}
 	c.JSON(http.StatusOK, player)
 }
 

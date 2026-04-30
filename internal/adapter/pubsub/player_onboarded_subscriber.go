@@ -19,8 +19,8 @@ type OnboardingCompletedApplier interface {
 
 // PlayerOnboardedSubscriber は player-onboarded subscription を消費し、
 // players.onboarding_status='completed' への遷移のみを反映する。
-// selected_faction / player_factions の永続化は onboarding-faction-set の
-// 先行配信で完了済みである前提。
+// initial faction の永続化 (player_factions の is_initial=TRUE 行) は
+// onboarding-faction-set の先行配信で完了済みである前提。
 type PlayerOnboardedSubscriber struct {
 	stream  port.MessageStream
 	applier OnboardingCompletedApplier
