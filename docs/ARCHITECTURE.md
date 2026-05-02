@@ -25,6 +25,8 @@ account は **プレイヤーの素性（players）と周辺属性（設定・�
 
 プレミアム状態の authoritative は shop 側のサブスクリプション契約。account は `premium-updated` イベントの subscriber として **最終的整合 (eventually consistent) な射影** を保持する。`is_premium` を参照するほぼ全ての REST レスポンスでローカル SELECT の安定性が必要なため、JOIN ではなく射影として持っている。
 
+repository の interface は **書き込み + 単表 SELECT を扱う `PlayerRepo`** と、**JOIN を伴う表示用 Read Model を返す `PlayerViewRepo`** に分けている。`PlayerView` は `players` + `player_progression` + `player_factions` を JOIN で結合した API レスポンス組み立て用ビュー。これは厳密な CQRS (Read 系は全部 View 側に寄せる) ではなく、**JOIN を含む高コストクエリだけを書き込み Repo から物理的に隔離する** ための分割。`FindByID` のような単表 SELECT は `PlayerRepo` 側に残しており、Write モデルへのロード経路として使う。
+
 ### 1.2 他サービス呼び出しの禁則
 
 account は他サービスを直接呼び出さない（gateway / shop / scenario / card / battle 含めて）。

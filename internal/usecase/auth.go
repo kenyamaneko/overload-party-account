@@ -42,12 +42,12 @@ func NewAuthInteractor(
 // Register は新規プレイヤーを登録する。表示名は別途 onboarding-name-set
 // イベントで確定する (オンボード途中中断後に再登録を要求しない設計)。
 func (s *AuthInteractor) Register(ctx context.Context, firebaseUID string) (*apiaccount.PlayerResponse, error) {
-	_, err := s.playerRepo.FindByFirebaseUID(ctx, firebaseUID)
-	if err == nil {
-		return nil, ErrPlayerAlreadyRegistered
-	}
-	if !errors.Is(err, port.ErrNotFound) {
+	exists, err := s.playerRepo.ExistsByFirebaseUID(ctx, firebaseUID)
+	if err != nil {
 		return nil, fmt.Errorf("check existing player: %w", err)
+	}
+	if exists {
+		return nil, ErrPlayerAlreadyRegistered
 	}
 
 	now := time.Now()

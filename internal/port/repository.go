@@ -11,7 +11,10 @@ import (
 
 // PlayerRepo は account.players の識別 (Create / Find / Exists) と name 更新を担う。
 // premium / onboarding_status / progression / daily_battle は責務別の専用 Repo に分離する
-// (Interface Segregation Principle)。複数テーブルの JOIN を伴う参照系は PlayerViewRepo (CQRS)。
+// (Interface Segregation Principle)。
+// 単表 SELECT で済む参照系は本 Repo に置き、複数テーブルの JOIN を伴う表示用クエリ
+// (= API レスポンス組み立てに必要な Read Model) のみ PlayerViewRepo に隔離する。
+// 厳密な CQRS ではなく「JOIN コストの隔離」が分割基準。
 type PlayerRepo interface {
 	// Create は players / player_progression を同一トランザクションで初期化する。
 	// player_daily_battle はゲーム日ごとに発生する履歴台帳のため Create では INSERT しない。
@@ -22,6 +25,9 @@ type PlayerRepo interface {
 	FindByFirebaseUID(ctx context.Context, firebaseUID string) (*domain.Player, error)
 	// Exists は player_id に対応する行の存在のみを確認する。
 	Exists(ctx context.Context, playerID string) (bool, error)
+	// ExistsByFirebaseUID は firebase_uid に対応する行の存在のみを確認する。
+	// Register の重複登録チェック用に Player struct を取らない軽量版として用意する。
+	ExistsByFirebaseUID(ctx context.Context, firebaseUID string) (bool, error)
 	// UpdateName は name のみを更新する。行が無ければ ErrNotFound。
 	UpdateName(ctx context.Context, playerID string, name string) error
 }
@@ -64,7 +70,10 @@ type PlayerBattleRepo interface {
 	IncrementDailyBattleCount(ctx context.Context, playerID string, gameDate civil.Date) (int64, error)
 }
 
-// PlayerViewRepo はプレイヤー情報の Read Model を組み立てる参照専用リポジトリ。
+// PlayerViewRepo は API レスポンス組み立て用の Read Model (players + player_progression
+// + player_factions の JOIN 結果) を返す参照専用リポジトリ。
+// 単表 SELECT は PlayerRepo 側に置く。本 Repo は JOIN を含む表示用クエリのみを扱い、
+// 高コストクエリを書き込み Repo から物理的に隔離する役割を持つ。
 type PlayerViewRepo interface {
 	// FindByID は player_id に対応する Read Model を返す。行が無ければ ErrNotFound。
 	FindByID(ctx context.Context, playerID string) (*domain.PlayerView, error)
