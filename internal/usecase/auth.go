@@ -127,8 +127,5 @@ func (s *AuthInteractor) toResponse(ctx context.Context, view *domain.PlayerView
 	if err != nil {
 		return nil, fmt.Errorf("get exp_formula_coefficient: %w", err)
 	}
-	if coeff <= 0 {
-		return nil, fmt.Errorf("exp_formula_coefficient not configured in game_config")
-	}
 	return BuildPlayerResponse(view, coeff), nil
 }

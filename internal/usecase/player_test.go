@@ -80,11 +80,13 @@ func TestGetBattleLimit(t *testing.T) {
 			wantCanBattle: false,
 		},
 		{
-			name:          "premium プレイヤーは上限なしで常に対戦可能",
+			// premium でも実カウントを返す (limit=-1 / can_battle=true は変わらない)。
+			// データ分析のため count を 0 で潰さない。
+			name:          "premium プレイヤーは上限なしで常に対戦可能、ただしカウントは集計用に返す",
 			isPremium:     true,
 			seedCount:     5,
 			seedDate:      today(),
-			wantCount:     0,
+			wantCount:     5,
 			wantLimit:     -1,
 			wantCanBattle: true,
 		},
@@ -133,19 +135,8 @@ func TestGetBattleLimit(t *testing.T) {
 	}
 }
 
-func TestGetBattleLimit_FreeLimitZero_ReturnsError(t *testing.T) {
-	sharedPg.Truncate(t)
-	seedPlayer(t, testPlayerID1, "uid-1", "Alice", false)
-
-	svc := newPlayerTestInteractor(map[string]int64{configKeyFreeDailyBattleLimit: 0})
-
-	_, err := svc.GetBattleLimit(context.Background(), testPlayerID1)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "game config")
-}
-
 // IncrementBattleCount の正常系仕様:
-//   - 当日 (gameDay) の行が無ければ count=1 で発生
+//   - 当日 (currentGameDay) の行が無ければ count=1 で発生
 //   - 当日の行があれば +1 加算
 //   - 別ゲーム日の履歴は当日カウントに影響しない (UPSERT が日単位で独立)
 //   - free プレイヤーはインクリメント後のカウントが上限内なら通る
@@ -306,6 +297,8 @@ func TestUpdateName_NotFound(t *testing.T) {
 	require.ErrorIs(t, err, port.ErrNotFound)
 }
 
+// AwardExp 固有の責務 (Tx 永続化 + 早期リターン) のみ確認する。
+// レベル算出ロジック自体は ComputeLevel の単体テストで網羅済み。
 func TestAwardExp(t *testing.T) {
 	ctx := context.Background()
 	levelUpThreshold := int64(testExpCoeff * 2 * 2)
@@ -319,28 +312,13 @@ func TestAwardExp(t *testing.T) {
 		wantLevel int64
 	}{
 		{
-			name:      "閾値未満なら同じレベルのまま",
-			initExp:   0,
-			initLevel: 1,
-			gain:      testExpWin,
-			wantExp:   testExpWin,
-			wantLevel: 1,
-		},
-		{
-			name:      "閾値ちょうどでレベルアップする",
+			// レベル算出結果が DB に永続化されることを 1 ケースで担保する。
+			name:      "加算後の exp/level が永続化される",
 			initExp:   levelUpThreshold - testExpWin,
 			initLevel: 1,
 			gain:      testExpWin,
 			wantExp:   levelUpThreshold,
 			wantLevel: 2,
-		},
-		{
-			name:      "一度の加算で複数レベル上がる",
-			initExp:   0,
-			initLevel: 1,
-			gain:      int64(testExpCoeff * 4 * 4),
-			wantExp:   int64(testExpCoeff * 4 * 4),
-			wantLevel: 4,
 		},
 		{
 			name:      "加算量が 0 なら何もしない",
@@ -375,19 +353,6 @@ func TestAwardExp(t *testing.T) {
 			assert.Equal(t, tt.wantLevel, got.Level)
 		})
 	}
-}
-
-func TestAwardExp_MissingCoefficient_ReturnsError(t *testing.T) {
-	sharedPg.Truncate(t)
-	seedPlayer(t, testPlayerID1, "uid-1", "Alice", false)
-
-	playerRepo, playerViewRepo, _, _, tx := newRealRepos()
-	// coefficient を持たない fake を渡す。production では Firestore 読み取り失敗に相当。
-	svc := NewPlayerInteractor(playerRepo, playerViewRepo, newFakeGameConfigRepo(map[string]int64{}), tx)
-
-	err := svc.AwardExp(context.Background(), testPlayerID1, testExpWin)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "exp_formula_coefficient")
 }
 
 func TestAwardGameExp_PvP(t *testing.T) {

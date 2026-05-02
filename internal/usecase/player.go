@@ -83,37 +83,35 @@ func (s *PlayerInteractor) ValidateNameForOnboarding(ctx context.Context, player
 }
 
 // GetBattleLimit はプレイヤーの日次バトル制限情報を返す。
+// プレミアム会員でも実カウントを返す: 上限を持たない (limit=-1) ため CanBattle 判定では
+// 不要だが、データ分析のためカウント自体は free と同じく集計対象として読み出す。
 func (s *PlayerInteractor) GetBattleLimit(ctx context.Context, playerID string) (*apiaccount.BattleLimitResponse, error) {
 	player, err := s.playerRepo.FindByID(ctx, playerID)
 	if err != nil {
 		return nil, fmt.Errorf("find player: %w", err)
 	}
 
-	if player.IsPremium {
-		return &apiaccount.BattleLimitResponse{
-			DailyBattleCount: 0,
-			DailyBattleLimit: -1,
-			CanBattle:        true,
-		}, nil
-	}
-
-	today := gameDay()
+	today := currentGameDay()
 	db, err := s.playerRepo.GetDailyBattle(ctx, playerID, today)
 	if err != nil {
 		return nil, fmt.Errorf("get daily battle: %w", err)
 	}
-
 	var count int64
 	if db != nil {
 		count = db.DailyBattleCount
 	}
 
+	if player.IsPremium {
+		return &apiaccount.BattleLimitResponse{
+			DailyBattleCount: count,
+			DailyBattleLimit: -1,
+			CanBattle:        true,
+		}, nil
+	}
+
 	freeLimit, err := s.gameConfigRepo.GetInt64(ctx, configKeyFreeDailyBattleLimit)
 	if err != nil {
 		return nil, fmt.Errorf("get free battle limit: %w", err)
-	}
-	if freeLimit == 0 {
-		return nil, fmt.Errorf("game config %q is not set", configKeyFreeDailyBattleLimit)
 	}
 
 	return &apiaccount.BattleLimitResponse{
@@ -124,38 +122,45 @@ func (s *PlayerInteractor) GetBattleLimit(ctx context.Context, playerID string) 
 }
 
 // IncrementBattleCount は当日のバトル回数を 1 加算する。
-// 仕様は FEATURE_SPEC §4.3、TOCTOU の判断は ARCHITECTURE.md §4.3 を参照。
+// プレミアム会員も含め全プレイヤーで加算する (集計用)。free 上限の判定は
+// ensureWithinFreeBattleLimit に分離。TOCTOU の判断は ARCHITECTURE.md を参照。
 func (s *PlayerInteractor) IncrementBattleCount(ctx context.Context, playerID string) error {
 	player, err := s.playerRepo.FindByID(ctx, playerID)
 	if err != nil {
 		return fmt.Errorf("find player: %w", err)
 	}
+	today := currentGameDay()
 
-	today := gameDay()
-
-	if !player.IsPremium {
-		freeLimit, err := s.gameConfigRepo.GetInt64(ctx, configKeyFreeDailyBattleLimit)
-		if err != nil {
-			return fmt.Errorf("get free battle limit: %w", err)
-		}
-		if freeLimit <= 0 {
-			return fmt.Errorf("game config %q is not set", configKeyFreeDailyBattleLimit)
-		}
-		db, err := s.playerRepo.GetDailyBattle(ctx, playerID, today)
-		if err != nil {
-			return fmt.Errorf("get daily battle: %w", err)
-		}
-		var current int64
-		if db != nil {
-			current = db.DailyBattleCount
-		}
-		if current+1 > freeLimit {
-			return ErrBattleLimitExceeded
-		}
+	if err := s.ensureWithinFreeBattleLimit(ctx, player, today); err != nil {
+		return err
 	}
 
 	if _, err := s.playerRepo.IncrementDailyBattleCount(ctx, playerID, today); err != nil {
 		return fmt.Errorf("increment daily battle: %w", err)
+	}
+	return nil
+}
+
+// ensureWithinFreeBattleLimit は free プレイヤーが当日もう 1 戦できるかを検証する。
+// プレミアム会員は短絡で許可。上限到達時は ErrBattleLimitExceeded を返す。
+func (s *PlayerInteractor) ensureWithinFreeBattleLimit(ctx context.Context, player *domain.Player, today civil.Date) error {
+	if player.IsPremium {
+		return nil
+	}
+	freeLimit, err := s.gameConfigRepo.GetInt64(ctx, configKeyFreeDailyBattleLimit)
+	if err != nil {
+		return fmt.Errorf("get free battle limit: %w", err)
+	}
+	db, err := s.playerRepo.GetDailyBattle(ctx, player.PlayerID, today)
+	if err != nil {
+		return fmt.Errorf("get daily battle: %w", err)
+	}
+	var current int64
+	if db != nil {
+		current = db.DailyBattleCount
+	}
+	if current+1 > freeLimit {
+		return ErrBattleLimitExceeded
 	}
 	return nil
 }
@@ -170,9 +175,6 @@ func (s *PlayerInteractor) AwardExp(ctx context.Context, playerID string, expGai
 	coeff, err := s.gameConfigRepo.GetInt64(ctx, ConfigKeyExpFormulaCoefficient)
 	if err != nil {
 		return fmt.Errorf("get exp_formula_coefficient: %w", err)
-	}
-	if coeff <= 0 {
-		return fmt.Errorf("exp_formula_coefficient not configured in game_config")
 	}
 
 	return s.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
@@ -189,7 +191,7 @@ func (s *PlayerInteractor) AwardExp(ctx context.Context, playerID string, expGai
 	})
 }
 
-// ComputeLevel は経験値獲得後の新レベルを算出する。契約は FEATURE_SPEC §6.3 を参照。
+// ComputeLevel は経験値獲得後の新レベルを算出する。
 func ComputeLevel(newExp, currentLevel, coeff int64) int64 {
 	level := currentLevel
 	if level < 1 {
@@ -206,19 +208,19 @@ func ComputeLevel(newExp, currentLevel, coeff int64) int64 {
 }
 
 // AwardGameExp はゲーム終了後に両プレイヤーに経験値を付与する唯一の入口。
-// 付与ルール (winnerNum / reason / matchType による分岐) は FEATURE_SPEC §6.1 を参照。
+// 付与ルール (winnerNum / reason / matchType による分岐) は FEATURE_SPEC を参照。
 func (s *PlayerInteractor) AwardGameExp(ctx context.Context, player1ID, player2ID string, winnerNum int64, reason, matchType string) error {
-	expWin, err := s.gameConfigRepo.GetInt64(ctx, "exp_win")
+	expWin, err := s.gameConfigRepo.GetInt64(ctx, gameConfigKeyExpWin)
 	if err != nil {
-		return fmt.Errorf("read exp_win: %w", err)
+		return fmt.Errorf("read %s: %w", gameConfigKeyExpWin, err)
 	}
-	expLoss, err := s.gameConfigRepo.GetInt64(ctx, "exp_loss")
+	expLoss, err := s.gameConfigRepo.GetInt64(ctx, gameConfigKeyExpLoss)
 	if err != nil {
-		return fmt.Errorf("read exp_loss: %w", err)
+		return fmt.Errorf("read %s: %w", gameConfigKeyExpLoss, err)
 	}
-	expDraw, err := s.gameConfigRepo.GetInt64(ctx, "exp_draw")
+	expDraw, err := s.gameConfigRepo.GetInt64(ctx, gameConfigKeyExpDraw)
 	if err != nil {
-		return fmt.Errorf("read exp_draw: %w", err)
+		return fmt.Errorf("read %s: %w", gameConfigKeyExpDraw, err)
 	}
 
 	isNpc := matchType == gamedesign.MatchTypeNpc
@@ -266,22 +268,7 @@ func (s *PlayerInteractor) GetPlayerResponse(ctx context.Context, playerID strin
 	if err != nil {
 		return nil, fmt.Errorf("get exp_formula_coefficient: %w", err)
 	}
-	if coeff <= 0 {
-		return nil, fmt.Errorf("exp_formula_coefficient not configured in game_config")
-	}
 	return BuildPlayerResponse(view, coeff), nil
-}
-
-// GetLevelProgress は指定レベル・経験値のレベル進捗を返す。
-func (s *PlayerInteractor) GetLevelProgress(ctx context.Context, level, exp int64) (*LevelProgress, error) {
-	coeff, err := s.gameConfigRepo.GetInt64(ctx, ConfigKeyExpFormulaCoefficient)
-	if err != nil {
-		return nil, fmt.Errorf("get exp_formula_coefficient: %w", err)
-	}
-	if coeff <= 0 {
-		return nil, fmt.Errorf("exp_formula_coefficient not configured in game_config")
-	}
-	return ComputeLevelProgress(level, exp, coeff), nil
 }
 
 // ComputeLevelProgress は現在レベル内の経験値進捗を計算する。
@@ -294,6 +281,6 @@ func ComputeLevelProgress(level, exp, coeff int64) *LevelProgress {
 	}
 }
 
-func gameDay() civil.Date {
+func currentGameDay() civil.Date {
 	return civil.DateOf(time.Now().UTC().Add(gameDayOffset))
 }

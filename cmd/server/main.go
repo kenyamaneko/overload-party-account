@@ -108,6 +108,9 @@ func run() error {
 	playerViewRepo := postgres.NewPlayerViewRepository(pool)
 	playerSettingsRepo := postgres.NewPlayerSettingsRepository(pool)
 	gameConfigRepo := accountfirestore.NewGameConfigRepository(fsClient)
+	if err := usecase.ValidateGameConfig(ctx, gameConfigRepo); err != nil {
+		return fmt.Errorf("validate game_config: %w", err)
+	}
 	factionRepo := postgres.NewFactionRepository(pool)
 	eventRepo := postgres.NewProcessedEventRepository(pool)
 
