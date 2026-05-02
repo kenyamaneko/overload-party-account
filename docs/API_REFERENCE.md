@@ -1,4 +1,4 @@
-<!-- 自動生成 — 直接編集しない (scripts/generate_constants.py) -->
+<!-- 手書き。型テーブルは scripts/generate_api_docs.py が `<!-- BEGIN/END GENERATED -->` マーカー間を更新する（マーカー未設置の表は手で同期する）。 -->
 
 # Account Service API Reference
 
@@ -31,6 +31,7 @@
 | `IsPremium` | `bool` | `is_premium` |  |
 | `EquippedIconNo` | `*int64` | `equipped_icon_no,omitempty` |  |
 | `InitialFaction` | `*string` | `initial_faction,omitempty` | オンボーディングで選択した faction (player_factions.is_initial=TRUE から導出) |
+| `OnboardingStatus` | `string` | `onboarding_status` | オンボーディング進捗 (`not_started` / `name_set` / `faction_set` / `completed`) |
 | `PremiumExpiresAt` | `*time.Time` | `premium_expires_at,omitempty` |  |
 | `CreatedAt` | `time.Time` | `created_at` |  |
 | `UpdatedAt` | `time.Time` | `updated_at` |  |
@@ -69,6 +70,7 @@ Firebase UID でログイン（プレイヤー情報を返す）
 | `IsPremium` | `bool` | `is_premium` |  |
 | `EquippedIconNo` | `*int64` | `equipped_icon_no,omitempty` |  |
 | `InitialFaction` | `*string` | `initial_faction,omitempty` | オンボーディングで選択した faction (player_factions.is_initial=TRUE から導出) |
+| `OnboardingStatus` | `string` | `onboarding_status` | オンボーディング進捗 (`not_started` / `name_set` / `faction_set` / `completed`) |
 | `PremiumExpiresAt` | `*time.Time` | `premium_expires_at,omitempty` |  |
 | `CreatedAt` | `time.Time` | `created_at` |  |
 | `UpdatedAt` | `time.Time` | `updated_at` |  |
@@ -101,6 +103,7 @@ Firebase UID からプレイヤーを検索する（gateway などサービス�
 | `IsPremium` | `bool` | `is_premium` |  |
 | `EquippedIconNo` | `*int64` | `equipped_icon_no,omitempty` |  |
 | `InitialFaction` | `*string` | `initial_faction,omitempty` | オンボーディングで選択した faction (player_factions.is_initial=TRUE から導出) |
+| `OnboardingStatus` | `string` | `onboarding_status` | オンボーディング進捗 (`not_started` / `name_set` / `faction_set` / `completed`) |
 | `PremiumExpiresAt` | `*time.Time` | `premium_expires_at,omitempty` |  |
 | `CreatedAt` | `time.Time` | `created_at` |  |
 | `UpdatedAt` | `time.Time` | `updated_at` |  |
@@ -159,6 +162,7 @@ Firebase UID からプレイヤーを検索する（gateway などサービス�
 | `IsPremium` | `bool` | `is_premium` |  |
 | `EquippedIconNo` | `*int64` | `equipped_icon_no,omitempty` |  |
 | `InitialFaction` | `*string` | `initial_faction,omitempty` | オンボーディングで選択した faction (player_factions.is_initial=TRUE から導出) |
+| `OnboardingStatus` | `string` | `onboarding_status` | オンボーディング進捗 (`not_started` / `name_set` / `faction_set` / `completed`) |
 | `PremiumExpiresAt` | `*time.Time` | `premium_expires_at,omitempty` |  |
 | `CreatedAt` | `time.Time` | `created_at` |  |
 | `UpdatedAt` | `time.Time` | `updated_at` |  |
@@ -197,6 +201,7 @@ Firebase UID からプレイヤーを検索する（gateway などサービス�
 | `IsPremium` | `bool` | `is_premium` |  |
 | `EquippedIconNo` | `*int64` | `equipped_icon_no,omitempty` |  |
 | `InitialFaction` | `*string` | `initial_faction,omitempty` | オンボーディングで選択した faction (player_factions.is_initial=TRUE から導出) |
+| `OnboardingStatus` | `string` | `onboarding_status` | オンボーディング進捗 (`not_started` / `name_set` / `faction_set` / `completed`) |
 | `PremiumExpiresAt` | `*time.Time` | `premium_expires_at,omitempty` |  |
 | `CreatedAt` | `time.Time` | `created_at` |  |
 | `UpdatedAt` | `time.Time` | `updated_at` |  |
@@ -208,6 +213,28 @@ Firebase UID からプレイヤーを検索する（gateway などサービス�
 | ステータス | 説明 |
 |---|---|
 | 400 | playerId が空 / name が空 |
+| 404 | プレイヤーが存在しない |
+| 500 | DB 接続エラー |
+
+---
+
+### `POST /internal/v1/players/{playerId}/onboarding/name/validate`
+
+オンボード内 name 入力ステップで scenario が呼ぶ表示名バリデーション（書き込みなし）
+
+> 成功時 204 No Content。バリデーション SSoT は account の `internal/domain/name.go`。書き込みは `onboarding-name-set` subscriber が行う
+
+#### リクエスト
+
+| フィールド | 型 | JSON | 説明 |
+|---|---|---|---|
+| `Name` | `string` | `name` |  |
+
+#### エラー
+
+| ステータス | 説明 |
+|---|---|
+| 400 | name が空 / 全空白 / 制御文字 / 上限超 |
 | 404 | プレイヤーが存在しない |
 | 500 | DB 接続エラー |
 

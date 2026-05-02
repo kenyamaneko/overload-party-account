@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 
 	"github.com/kenyamaneko/overload-party-account/internal/domain"
 	"github.com/kenyamaneko/overload-party-account/internal/port"
@@ -128,7 +129,9 @@ func (s *OnboardingInteractor) ApplyCompleted(
 }
 
 // advanceOnboardingStatus は onboarding_status を target に進める。
-// 後進方向は out-of-order 配信に対する防御として黙ってスキップする。
+// 後進方向は out-of-order 配信に対する防御として副作用なくスキップするが、
+// 多発時に運用で気づけるよう Warn ログを残す。current == target は冪等な
+// 再適用なので無音。
 func (s *OnboardingInteractor) advanceOnboardingStatus(ctx context.Context, playerID, target string) error {
 	current, err := s.onboardingRepo.GetOnboardingStatus(ctx, playerID)
 	if err != nil {
@@ -138,7 +141,12 @@ func (s *OnboardingInteractor) advanceOnboardingStatus(ctx context.Context, play
 	if err != nil {
 		return fmt.Errorf("check onboarding transition %q -> %q: %w", current, target, err)
 	}
-	if !canAdvance || current == target {
+	if !canAdvance {
+		slog.WarnContext(ctx, "onboarding status backward transition skipped",
+			"player_id", playerID, "current", current, "target", target)
+		return nil
+	}
+	if current == target {
 		return nil
 	}
 	if err := s.onboardingRepo.UpdateOnboardingStatus(ctx, playerID, target); err != nil {

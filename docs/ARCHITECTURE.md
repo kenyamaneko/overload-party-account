@@ -16,7 +16,7 @@ account は **プレイヤーの素性（players）と周辺属性（設定・�
 | レベル / 経験値 | `account.player_progression` (account) | authoritative。1:1 子テーブルとして分離 |
 | プレイヤー設定 | `account.player_settings` (account) | authoritative |
 | デイリーバトル回数 | `account.player_daily_battle` (account) | authoritative |
-| ファクション所有 | `account.player_factions` (account) | authoritative。shop が `shop.player_owned_factions` で同一状態の read model を持つ |
+| ファクション所有 | `account.player_factions` (account) | authoritative（shop 側でも購入判定用の read model を保持しているが、その構造は shop 側設計を参照） |
 | プレミアム状態 | `shop.subscriptions` (shop) | `players.is_premium` / `premium_expires_at` は account 側の射影 |
 | ゲームバランス定数 | Cloud Firestore `game_config` | read-only。起動時・リクエスト時に参照 |
 | ファクションマスター | `common/data/factions.yaml` | code-generate された定数を参照 |
@@ -238,6 +238,8 @@ Pub/Sub の Exactly-Once 配信がインフラ層の第一防御。`processed_ev
 | DB エラー / トランザクション失敗 | NACK（一時的障害としてリトライさせる） |
 
 未知の `event_type` を ACK するのは、将来 publisher 側で新しいイベント種別を追加した際に account の subscriber を止めないため。既知の event_type のペイロードが壊れているケースは JSON デシリアライズ失敗側に分岐する。
+
+`ApplyFactionSet` は `processed_events` を Insert した後に `ErrFactionConflict`（同一プレイヤーに別 faction で再到着）を検出すると Tx 全体をロールバックする。`processed_events` 行も巻き戻るため再配信のたびに同じ衝突が再発し、最終的に DLQ へ流れる挙動になる。これは publisher 側のバグ（同一プレイヤーへの矛盾する faction-set publish）でしか起きない想定で、自動リカバリせず DLQ で滞留させて運用に検知させる設計。救出は publisher 側の不整合を是正したうえで、DLQ メッセージを破棄するか正しいペイロードに差し替えて replay する。
 
 ## 7. 経験値・レベル計算: 係数の SSoT は Firestore
 

@@ -80,6 +80,7 @@ Login と同じルックアップだが、ログインという業務イベン�
 |---|---|---|
 | GET | `/internal/v1/players/:playerId` | プレイヤー情報 + レベル進捗を返す |
 | PUT | `/internal/v1/players/:playerId/name` | name 更新 |
+| POST | `/internal/v1/players/:playerId/onboarding/name/validate` | オンボード内 name 入力ステップでの表示名バリデーション（書き込みなし。詳細は §5.1） |
 | PUT | `/internal/v1/players/:playerId/premium` | プレミアムステータス更新（battle 等の内部呼び出し用） |
 | POST | `/internal/v1/players/:playerId/factions` | ファクションの明示的付与（運用用） |
 | GET | `/internal/v1/players/:playerId/factions` | 所持ファクション一覧 |

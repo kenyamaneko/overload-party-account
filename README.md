@@ -43,7 +43,7 @@ Secret:
 
 | 変数名 | 説明 |
 |---|---|
-| `DATABASE_URL` | PostgreSQL 接続文字列（pgx が解釈できる URL / libpq 形式） |
+| `DATABASE_CONN` | PostgreSQL 接続文字列（pgx が解釈できる URL / libpq 形式） |
 
 ConfigMap:
 

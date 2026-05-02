@@ -70,7 +70,9 @@ func (s *PlayerInteractor) UpdatePremium(ctx context.Context, playerID string, i
 
 // UpdateName はプレイヤー名を更新し、更新後の PlayerResponse を返す。
 // UPDATE と PlayerView 取得は同 Tx で囲まない: 同一プレイヤーが 100ms 程度の間に
-// 名前変更を多重に投げる挙動は実用上想定しないため、read-after-write の整合性は許容する。
+// 名前変更を多重に投げる挙動は実用上想定しないため、Tx 一体化のコストを払わない。
+// (PostgreSQL の Read Committed では別 connection でも commit 済みは見えるので
+// read-after-write が壊れる訳ではなく、あくまで「同 Tx で読み直す保証は取らない」設計判断)。
 func (s *PlayerInteractor) UpdateName(ctx context.Context, playerID string, name string) (*apiaccount.PlayerResponse, error) {
 	if err := domain.ValidateName(name); err != nil {
 		return nil, err
@@ -136,6 +138,9 @@ func (s *PlayerInteractor) GetBattleLimit(ctx context.Context, playerID string) 
 // IncrementBattleCount は当日のバトル回数を 1 加算する。
 // プレミアム会員も含め全プレイヤーで加算する (集計用)。free 上限の判定は
 // ensureWithinFreeBattleLimit に分離。TOCTOU の判断は ARCHITECTURE.md を参照。
+// FindByID (premium 判定用) と ensureWithinFreeBattleLimit 内の GetDailyBattle
+// (上限判定用) で SELECT が 2 回走るのは TOCTOU を許容する代わりに事前判定の
+// 簡潔さを優先したため。Tx で囲んで 1 回にまとめる価値はないと判断している。
 func (s *PlayerInteractor) IncrementBattleCount(ctx context.Context, playerID string) error {
 	player, err := s.playerRepo.FindByID(ctx, playerID)
 	if err != nil {

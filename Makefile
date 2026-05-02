@@ -32,7 +32,7 @@ db-reset: ## Drop volume and recreate DB
 
 run: db-up ## Run account server locally against compose Postgres (local env 込み)
 	PORT=9005 \
-	DATABASE_URL="postgres://account:account@localhost:5432/account?sslmode=disable" \
+	DATABASE_CONN="postgres://account:account@localhost:5432/account?sslmode=disable" \
 	PUBSUB_PROJECT_ID=account-local \
 	FIRESTORE_PROJECT_ID=account-local \
 	FACTION_PURCHASED_SUBSCRIPTION=faction-purchased-account-sub \
