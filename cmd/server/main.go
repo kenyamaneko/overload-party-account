@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -164,7 +165,7 @@ func runHTTPAndSubscribers(ctx context.Context, srv *http.Server, subscribers ..
 	g, gCtx := errgroup.WithContext(ctx)
 
 	g.Go(func() error {
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			return fmt.Errorf("http server: %w", err)
 		}
 		return nil
