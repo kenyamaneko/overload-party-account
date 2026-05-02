@@ -172,7 +172,6 @@ func runHTTPAndSubscribers(ctx context.Context, srv *http.Server, subscribers ..
 	})
 
 	for _, sub := range subscribers {
-		sub := sub
 		g.Go(func() error {
 			if err := sub.Start(gCtx); err != nil && gCtx.Err() == nil {
 				return fmt.Errorf("subscriber: %w", err)
