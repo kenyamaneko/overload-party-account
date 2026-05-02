@@ -12,12 +12,12 @@ import (
 
 // PlayerSettingsHandler はプレイヤー設定の REST エンドポイントを処理する。
 type PlayerSettingsHandler struct {
-	svc *usecase.PlayerSettingsInteractor
+	settingsInteractor *usecase.PlayerSettingsInteractor
 }
 
 // NewPlayerSettingsHandler は PlayerSettingsHandler を生成する。
-func NewPlayerSettingsHandler(svc *usecase.PlayerSettingsInteractor) *PlayerSettingsHandler {
-	return &PlayerSettingsHandler{svc: svc}
+func NewPlayerSettingsHandler(settingsInteractor *usecase.PlayerSettingsInteractor) *PlayerSettingsHandler {
+	return &PlayerSettingsHandler{settingsInteractor: settingsInteractor}
 }
 
 // GetSettings はプレイヤーの設定を返す。
@@ -28,7 +28,7 @@ func (h *PlayerSettingsHandler) GetSettings(c *gin.Context) {
 		return
 	}
 
-	s, err := h.svc.Get(c.Request.Context(), playerID)
+	s, err := h.settingsInteractor.Get(c.Request.Context(), playerID)
 	if err != nil {
 		respondError(c, err)
 		return
@@ -62,12 +62,12 @@ func (h *PlayerSettingsHandler) UpdateSettings(c *gin.Context) {
 		return
 	}
 
-	if err := h.svc.Update(c.Request.Context(), playerID, patch); err != nil {
+	if err := h.settingsInteractor.Update(c.Request.Context(), playerID, patch); err != nil {
 		respondError(c, err)
 		return
 	}
 
-	updated, err := h.svc.Get(c.Request.Context(), playerID)
+	updated, err := h.settingsInteractor.Get(c.Request.Context(), playerID)
 	if err != nil {
 		respondError(c, err)
 		return

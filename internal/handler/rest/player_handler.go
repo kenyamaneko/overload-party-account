@@ -11,12 +11,12 @@ import (
 
 // PlayerHandler はプレイヤー情報の REST エンドポイントを処理する。
 type PlayerHandler struct {
-	playerService *usecase.PlayerInteractor
+	playerInteractor *usecase.PlayerInteractor
 }
 
 // NewPlayerHandler は PlayerHandler を生成する。
-func NewPlayerHandler(playerService *usecase.PlayerInteractor) *PlayerHandler {
-	return &PlayerHandler{playerService: playerService}
+func NewPlayerHandler(playerInteractor *usecase.PlayerInteractor) *PlayerHandler {
+	return &PlayerHandler{playerInteractor: playerInteractor}
 }
 
 // GetPlayer はプレイヤー情報を返す。
@@ -26,7 +26,7 @@ func (h *PlayerHandler) GetPlayer(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "playerId is required"})
 		return
 	}
-	resp, err := h.playerService.GetPlayerResponse(c.Request.Context(), playerID)
+	resp, err := h.playerInteractor.GetPlayerResponse(c.Request.Context(), playerID)
 	if err != nil {
 		respondError(c, err)
 		return
@@ -48,7 +48,7 @@ func (h *PlayerHandler) UpdateName(c *gin.Context) {
 		return
 	}
 
-	player, err := h.playerService.UpdateName(c.Request.Context(), playerID, req.Name)
+	player, err := h.playerInteractor.UpdateName(c.Request.Context(), playerID, req.Name)
 	if err != nil {
 		respondError(c, err)
 		return
@@ -72,7 +72,7 @@ func (h *PlayerHandler) ValidateNameForOnboarding(c *gin.Context) {
 		return
 	}
 
-	if err := h.playerService.ValidateNameForOnboarding(c.Request.Context(), playerID, req.Name); err != nil {
+	if err := h.playerInteractor.ValidateNameForOnboarding(c.Request.Context(), playerID, req.Name); err != nil {
 		respondError(c, err)
 		return
 	}
@@ -86,7 +86,7 @@ func (h *PlayerHandler) GetBattleLimit(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "playerId is required"})
 		return
 	}
-	result, err := h.playerService.GetBattleLimit(c.Request.Context(), playerID)
+	result, err := h.playerInteractor.GetBattleLimit(c.Request.Context(), playerID)
 	if err != nil {
 		respondError(c, err)
 		return
@@ -101,7 +101,7 @@ func (h *PlayerHandler) IncrementBattleCount(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "playerId is required"})
 		return
 	}
-	if err := h.playerService.IncrementBattleCount(c.Request.Context(), playerID); err != nil {
+	if err := h.playerInteractor.IncrementBattleCount(c.Request.Context(), playerID); err != nil {
 		respondError(c, err)
 		return
 	}
@@ -120,7 +120,7 @@ func (h *PlayerHandler) UpdatePremium(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	if err := h.playerService.UpdatePremium(c.Request.Context(), playerID, req.IsPremium, req.ExpiresAtMillis); err != nil {
+	if err := h.playerInteractor.UpdatePremium(c.Request.Context(), playerID, req.IsPremium, req.ExpiresAtMillis); err != nil {
 		respondError(c, err)
 		return
 	}
@@ -139,7 +139,7 @@ func (h *PlayerHandler) AddExp(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	if err := h.playerService.AwardExp(c.Request.Context(), playerID, req.ExpGain); err != nil {
+	if err := h.playerInteractor.AwardExp(c.Request.Context(), playerID, req.ExpGain); err != nil {
 		respondError(c, err)
 		return
 	}
@@ -153,7 +153,7 @@ func (h *PlayerHandler) AwardGameExp(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	if err := h.playerService.AwardGameExp(c.Request.Context(), req.Player1ID, req.Player2ID, req.WinnerNum, req.Reason, req.MatchType); err != nil {
+	if err := h.playerInteractor.AwardGameExp(c.Request.Context(), req.Player1ID, req.Player2ID, req.WinnerNum, req.Reason, req.MatchType); err != nil {
 		respondError(c, err)
 		return
 	}

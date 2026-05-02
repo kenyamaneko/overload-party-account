@@ -11,12 +11,12 @@ import (
 
 // AuthHandler は認証関連の REST エンドポイントを処理する。
 type AuthHandler struct {
-	authService *usecase.AuthInteractor
+	authInteractor *usecase.AuthInteractor
 }
 
 // NewAuthHandler は AuthHandler を生成する。
-func NewAuthHandler(authService *usecase.AuthInteractor) *AuthHandler {
-	return &AuthHandler{authService: authService}
+func NewAuthHandler(authInteractor *usecase.AuthInteractor) *AuthHandler {
+	return &AuthHandler{authInteractor: authInteractor}
 }
 
 // Register は新規プレイヤー登録を処理する。
@@ -31,7 +31,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		return
 	}
 
-	player, err := h.authService.Register(c.Request.Context(), req.FirebaseUID)
+	player, err := h.authInteractor.Register(c.Request.Context(), req.FirebaseUID)
 	if err != nil {
 		respondError(c, err)
 		return
@@ -47,7 +47,7 @@ func (h *AuthHandler) GetPlayerByFirebaseUID(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "firebaseUID is required"})
 		return
 	}
-	player, err := h.authService.FindByFirebaseUID(c.Request.Context(), firebaseUID)
+	player, err := h.authInteractor.FindByFirebaseUID(c.Request.Context(), firebaseUID)
 	if err != nil {
 		respondError(c, err)
 		return
@@ -67,7 +67,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		return
 	}
 
-	player, err := h.authService.Login(c.Request.Context(), req.FirebaseUID)
+	player, err := h.authInteractor.Login(c.Request.Context(), req.FirebaseUID)
 	if err != nil {
 		respondError(c, err)
 		return

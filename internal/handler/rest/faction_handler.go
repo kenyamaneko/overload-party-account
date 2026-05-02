@@ -11,12 +11,12 @@ import (
 
 // FactionHandler は初期ファクション選択フローの REST エンドポイントを処理する。
 type FactionHandler struct {
-	factionService *usecase.FactionInteractor
+	factionInteractor *usecase.FactionInteractor
 }
 
 // NewFactionHandler は FactionHandler を生成する。
-func NewFactionHandler(factionService *usecase.FactionInteractor) *FactionHandler {
-	return &FactionHandler{factionService: factionService}
+func NewFactionHandler(factionInteractor *usecase.FactionInteractor) *FactionHandler {
+	return &FactionHandler{factionInteractor: factionInteractor}
 }
 
 // SelectInitialFaction は初期ファクション選択を処理する。
@@ -37,7 +37,7 @@ func (h *FactionHandler) SelectInitialFaction(c *gin.Context) {
 		return
 	}
 
-	if err := h.factionService.SelectInitialFaction(c.Request.Context(), playerID, req.FactionID); err != nil {
+	if err := h.factionInteractor.SelectInitialFaction(c.Request.Context(), playerID, req.FactionID); err != nil {
 		respondError(c, err)
 		return
 	}
@@ -60,7 +60,7 @@ func (h *FactionHandler) GrantFaction(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "faction is required"})
 		return
 	}
-	if err := h.factionService.GrantFaction(c.Request.Context(), playerID, req.Faction); err != nil {
+	if err := h.factionInteractor.GrantFaction(c.Request.Context(), playerID, req.Faction); err != nil {
 		respondError(c, err)
 		return
 	}
@@ -74,7 +74,7 @@ func (h *FactionHandler) ListFactions(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "playerId is required"})
 		return
 	}
-	factions, err := h.factionService.ListFactions(c.Request.Context(), playerID)
+	factions, err := h.factionInteractor.ListFactions(c.Request.Context(), playerID)
 	if err != nil {
 		respondError(c, err)
 		return

@@ -119,16 +119,16 @@ func run() error {
 	// playerRepo (*postgres.PlayerRepository) は責務別 interface
 	// (PlayerRepo / PlayerPremiumRepo / PlayerOnboardingRepo / PlayerProgressionRepo / PlayerBattleRepo)
 	// すべてを暗黙的に満たすため、同じインスタンスを複数引数に渡せる (Go の structural typing)。
-	authSvc := usecase.NewAuthInteractor(playerRepo, playerViewRepo, playerSettingsRepo, gameConfigRepo, txManager)
-	playerSvc := usecase.NewPlayerInteractor(playerRepo, playerRepo, playerRepo, playerRepo, playerViewRepo, gameConfigRepo, txManager)
-	factionSvc := usecase.NewFactionInteractor(playerRepo, factionRepo, txManager)
-	onboardingSvc := usecase.NewOnboardingInteractor(playerRepo, playerRepo, factionRepo, eventRepo, txManager)
-	settingsSvc := usecase.NewPlayerSettingsInteractor(playerSettingsRepo)
+	authInteractor := usecase.NewAuthInteractor(playerRepo, playerViewRepo, playerSettingsRepo, gameConfigRepo, txManager)
+	playerInteractor := usecase.NewPlayerInteractor(playerRepo, playerRepo, playerRepo, playerRepo, playerViewRepo, gameConfigRepo, txManager)
+	factionInteractor := usecase.NewFactionInteractor(playerRepo, factionRepo, txManager)
+	onboardingInteractor := usecase.NewOnboardingInteractor(playerRepo, playerRepo, factionRepo, eventRepo, txManager)
+	settingsInteractor := usecase.NewPlayerSettingsInteractor(playerSettingsRepo)
 
-	authH := rest.NewAuthHandler(authSvc)
-	playerH := rest.NewPlayerHandler(playerSvc)
-	factionH := rest.NewFactionHandler(factionSvc)
-	settingsH := rest.NewPlayerSettingsHandler(settingsSvc)
+	authH := rest.NewAuthHandler(authInteractor)
+	playerH := rest.NewPlayerHandler(playerInteractor)
+	factionH := rest.NewFactionHandler(factionInteractor)
+	settingsH := rest.NewPlayerSettingsHandler(settingsInteractor)
 
 	r := router.New(authH, playerH, factionH, settingsH)
 
@@ -146,9 +146,9 @@ func run() error {
 
 	factionSub := pubsubadapter.NewFactionPurchasedSubscriber(streams.FactionPurchased, factionRepo, txManager, eventRepo)
 	premiumSub := pubsubadapter.NewPremiumUpdatedSubscriber(streams.PremiumUpdated, playerRepo, txManager, eventRepo)
-	onboardedSub := pubsubadapter.NewPlayerOnboardedSubscriber(streams.PlayerOnboarded, onboardingSvc)
-	nameSetSub := pubsubadapter.NewOnboardingNameSetSubscriber(streams.OnboardingNameSet, onboardingSvc)
-	factionSetSub := pubsubadapter.NewOnboardingFactionSetSubscriber(streams.OnboardingFactionSet, onboardingSvc)
+	onboardedSub := pubsubadapter.NewPlayerOnboardedSubscriber(streams.PlayerOnboarded, onboardingInteractor)
+	nameSetSub := pubsubadapter.NewOnboardingNameSetSubscriber(streams.OnboardingNameSet, onboardingInteractor)
+	factionSetSub := pubsubadapter.NewOnboardingFactionSetSubscriber(streams.OnboardingFactionSet, onboardingInteractor)
 
 	slog.Info("account starting",
 		"addr", srv.Addr,
