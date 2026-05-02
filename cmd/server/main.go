@@ -136,61 +136,17 @@ func run() error {
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
-	factionStream, err := pubsubadapter.NewStream(ctx, cfg.PubsubProjectID, cfg.FactionPurchasedSubscription)
+	streams, closeStreams, err := openSubscriptionStreams(ctx, cfg)
 	if err != nil {
-		return fmt.Errorf("faction-purchased stream: %w", err)
+		return err
 	}
-	defer func() {
-		if cerr := factionStream.Close(); cerr != nil {
-			slog.Warn("faction-purchased stream close", "error", cerr)
-		}
-	}()
+	defer closeStreams()
 
-	premiumStream, err := pubsubadapter.NewStream(ctx, cfg.PubsubProjectID, cfg.PremiumUpdatedSubscription)
-	if err != nil {
-		return fmt.Errorf("premium-updated stream: %w", err)
-	}
-	defer func() {
-		if cerr := premiumStream.Close(); cerr != nil {
-			slog.Warn("premium-updated stream close", "error", cerr)
-		}
-	}()
-
-	onboardedStream, err := pubsubadapter.NewStream(ctx, cfg.PubsubProjectID, cfg.PlayerOnboardedSubscription)
-	if err != nil {
-		return fmt.Errorf("player-onboarded stream: %w", err)
-	}
-	defer func() {
-		if cerr := onboardedStream.Close(); cerr != nil {
-			slog.Warn("player-onboarded stream close", "error", cerr)
-		}
-	}()
-
-	nameSetStream, err := pubsubadapter.NewStream(ctx, cfg.PubsubProjectID, cfg.OnboardingNameSetSubscription)
-	if err != nil {
-		return fmt.Errorf("onboarding-name-set stream: %w", err)
-	}
-	defer func() {
-		if cerr := nameSetStream.Close(); cerr != nil {
-			slog.Warn("onboarding-name-set stream close", "error", cerr)
-		}
-	}()
-
-	factionSetStream, err := pubsubadapter.NewStream(ctx, cfg.PubsubProjectID, cfg.OnboardingFactionSetSubscription)
-	if err != nil {
-		return fmt.Errorf("onboarding-faction-set stream: %w", err)
-	}
-	defer func() {
-		if cerr := factionSetStream.Close(); cerr != nil {
-			slog.Warn("onboarding-faction-set stream close", "error", cerr)
-		}
-	}()
-
-	factionSub := pubsubadapter.NewFactionPurchasedSubscriber(factionStream, factionRepo, txManager, eventRepo)
-	premiumSub := pubsubadapter.NewPremiumUpdatedSubscriber(premiumStream, playerRepo, txManager, eventRepo)
-	onboardedSub := pubsubadapter.NewPlayerOnboardedSubscriber(onboardedStream, onboardingSvc)
-	nameSetSub := pubsubadapter.NewOnboardingNameSetSubscriber(nameSetStream, onboardingSvc)
-	factionSetSub := pubsubadapter.NewOnboardingFactionSetSubscriber(factionSetStream, onboardingSvc)
+	factionSub := pubsubadapter.NewFactionPurchasedSubscriber(streams.FactionPurchased, factionRepo, txManager, eventRepo)
+	premiumSub := pubsubadapter.NewPremiumUpdatedSubscriber(streams.PremiumUpdated, playerRepo, txManager, eventRepo)
+	onboardedSub := pubsubadapter.NewPlayerOnboardedSubscriber(streams.PlayerOnboarded, onboardingSvc)
+	nameSetSub := pubsubadapter.NewOnboardingNameSetSubscriber(streams.OnboardingNameSet, onboardingSvc)
+	factionSetSub := pubsubadapter.NewOnboardingFactionSetSubscriber(streams.OnboardingFactionSet, onboardingSvc)
 
 	slog.Info("account starting",
 		"addr", srv.Addr,
@@ -240,4 +196,61 @@ func runHTTPAndSubscribers(ctx context.Context, srv *http.Server, subscribers ..
 // subscriber は Pub/Sub subscriber の起動インターフェース。
 type subscriber interface {
 	Start(ctx context.Context) error
+}
+
+// subscriptionStreams は account サービスが購読する 5 つの Pub/Sub stream を束ねる。
+// stream ごとの defer Close を main から消し、一括 close 関数を返すための受け皿。
+type subscriptionStreams struct {
+	FactionPurchased     *pubsubadapter.Stream
+	PremiumUpdated       *pubsubadapter.Stream
+	PlayerOnboarded      *pubsubadapter.Stream
+	OnboardingNameSet    *pubsubadapter.Stream
+	OnboardingFactionSet *pubsubadapter.Stream
+}
+
+// openSubscriptionStreams は 5 つの Pub/Sub stream を順次 Open し、一括 close 関数と
+// 共に返す。途中で失敗した場合はそれまでに開いた stream を逆順に Close してから
+// エラーを返すため、リーク無しに run() の早期 return が可能。
+func openSubscriptionStreams(ctx context.Context, cfg *config.Config) (*subscriptionStreams, func(), error) {
+	specs := []struct {
+		name           string
+		subscriptionID string
+		assign         func(*subscriptionStreams, *pubsubadapter.Stream)
+	}{
+		{"faction-purchased", cfg.FactionPurchasedSubscription, func(s *subscriptionStreams, st *pubsubadapter.Stream) { s.FactionPurchased = st }},
+		{"premium-updated", cfg.PremiumUpdatedSubscription, func(s *subscriptionStreams, st *pubsubadapter.Stream) { s.PremiumUpdated = st }},
+		{"player-onboarded", cfg.PlayerOnboardedSubscription, func(s *subscriptionStreams, st *pubsubadapter.Stream) { s.PlayerOnboarded = st }},
+		{"onboarding-name-set", cfg.OnboardingNameSetSubscription, func(s *subscriptionStreams, st *pubsubadapter.Stream) { s.OnboardingNameSet = st }},
+		{"onboarding-faction-set", cfg.OnboardingFactionSetSubscription, func(s *subscriptionStreams, st *pubsubadapter.Stream) { s.OnboardingFactionSet = st }},
+	}
+
+	streams := &subscriptionStreams{}
+	opened := make([]struct {
+		name   string
+		stream *pubsubadapter.Stream
+	}, 0, len(specs))
+
+	closeAll := func() {
+		// 逆順 Close: 後から開いた SDK リソースを先に解放する慣用。
+		for i := len(opened) - 1; i >= 0; i-- {
+			if cerr := opened[i].stream.Close(); cerr != nil {
+				slog.Warn("pubsub stream close", "name", opened[i].name, "error", cerr)
+			}
+		}
+	}
+
+	for _, spec := range specs {
+		st, err := pubsubadapter.NewStream(ctx, cfg.PubsubProjectID, spec.subscriptionID)
+		if err != nil {
+			closeAll()
+			return nil, nil, fmt.Errorf("%s stream: %w", spec.name, err)
+		}
+		spec.assign(streams, st)
+		opened = append(opened, struct {
+			name   string
+			stream *pubsubadapter.Stream
+		}{name: spec.name, stream: st})
+	}
+
+	return streams, closeAll, nil
 }
