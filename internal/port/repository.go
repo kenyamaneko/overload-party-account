@@ -9,8 +9,9 @@ import (
 	"github.com/kenyamaneko/overload-party-account/internal/domain"
 )
 
-// PlayerRepo は account.players を中心とした Write 集約を抽象化する。
-// 複数テーブルの JOIN を伴う参照系は PlayerViewRepo に分離する (CQRS)。
+// PlayerRepo は account.players の識別 (Create / Find / Exists) と name 更新を担う。
+// premium / onboarding_status / progression / daily_battle は責務別の専用 Repo に分離する
+// (Interface Segregation Principle)。複数テーブルの JOIN を伴う参照系は PlayerViewRepo (CQRS)。
 type PlayerRepo interface {
 	// Create は players / player_progression を同一トランザクションで初期化する。
 	// player_daily_battle はゲーム日ごとに発生する履歴台帳のため Create では INSERT しない。
@@ -21,25 +22,46 @@ type PlayerRepo interface {
 	FindByFirebaseUID(ctx context.Context, firebaseUID string) (*domain.Player, error)
 	// Exists は player_id に対応する行の存在のみを確認する。
 	Exists(ctx context.Context, playerID string) (bool, error)
-	// GetDailyBattle は (player_id, gameDate) の行を返す。該当なしは (nil, nil)。
-	GetDailyBattle(ctx context.Context, playerID string, gameDate civil.Date) (*domain.PlayerDailyBattle, error)
+	// UpdateName は name のみを更新する。行が無ければ ErrNotFound。
+	UpdateName(ctx context.Context, playerID string, name string) error
+}
+
+// PlayerPremiumRepo は players.is_premium / premium_expires_at の書き込みを担う。
+// premium-updated subscriber が UpdatePremium のみ要求するため独立させ、
+// テスト時に他のメソッドの panic スタブを書かなくて済むようにする。
+type PlayerPremiumRepo interface {
+	// UpdatePremium は is_premium と premium_expires_at を更新する。行が無ければ ErrNotFound。
+	UpdatePremium(ctx context.Context, playerID string, isPremium bool, expiresAt *time.Time) error
+}
+
+// PlayerOnboardingRepo は players.onboarding_status の参照・更新を担う。
+// オンボード進行イベントの副作用は OnboardingInteractor で 1 Tx に束ねる。
+type PlayerOnboardingRepo interface {
+	// GetOnboardingStatus は onboarding_status を返す。行が無ければ ErrNotFound。
+	GetOnboardingStatus(ctx context.Context, playerID string) (string, error)
+	// UpdateOnboardingStatus は onboarding_status をそのまま書き込む。行が無ければ ErrNotFound。
+	UpdateOnboardingStatus(ctx context.Context, playerID, status string) error
+}
+
+// PlayerProgressionRepo は account.player_progression (level / exp) の参照・更新を担う。
+// 並行 AwardExp のロストアップデート防止に SELECT ... FOR UPDATE を備える。
+type PlayerProgressionRepo interface {
 	// GetProgression は account.player_progression の現在値を返す。行が無ければ ErrNotFound。
 	GetProgression(ctx context.Context, playerID string) (*domain.PlayerProgression, error)
 	// GetProgressionForUpdate は SELECT ... FOR UPDATE で行ロックを取得して返す。
 	// 呼び出し側が TxRunner.RunInTx 配下で使う責務を負う。行が無ければ ErrNotFound。
 	GetProgressionForUpdate(ctx context.Context, playerID string) (*domain.PlayerProgression, error)
-	// GetOnboardingStatus は onboarding_status を返す。行が無ければ ErrNotFound。
-	GetOnboardingStatus(ctx context.Context, playerID string) (string, error)
-	// UpdateName は name のみを更新する。行が無ければ ErrNotFound。
-	UpdateName(ctx context.Context, playerID string, name string) error
-	// UpdatePremium は is_premium と premium_expires_at を更新する。
-	UpdatePremium(ctx context.Context, playerID string, isPremium bool, expiresAt *time.Time) error
-	// IncrementDailyBattleCount は (player_id, gameDate) のカウントを 1 加算した結果を返す。
-	IncrementDailyBattleCount(ctx context.Context, playerID string, gameDate civil.Date) (int64, error)
 	// UpdateProgression は exp と level をそのまま書き込む。行が無ければ ErrNotFound。
 	UpdateProgression(ctx context.Context, playerID string, exp, level int64) (*domain.PlayerProgression, error)
-	// UpdateOnboardingStatus は onboarding_status をそのまま書き込む。行が無ければ ErrNotFound。
-	UpdateOnboardingStatus(ctx context.Context, playerID, status string) error
+}
+
+// PlayerBattleRepo は account.player_daily_battle (ゲーム日単位のバトル履歴台帳) を担う。
+// premium 会員も含め全プレイヤー分が集計用に保持される。
+type PlayerBattleRepo interface {
+	// GetDailyBattle は (player_id, gameDate) の行を返す。該当なしは (nil, nil)。
+	GetDailyBattle(ctx context.Context, playerID string, gameDate civil.Date) (*domain.PlayerDailyBattle, error)
+	// IncrementDailyBattleCount は (player_id, gameDate) のカウントを 1 加算した結果を返す。
+	IncrementDailyBattleCount(ctx context.Context, playerID string, gameDate civil.Date) (int64, error)
 }
 
 // PlayerViewRepo はプレイヤー情報の Read Model を組み立てる参照専用リポジトリ。

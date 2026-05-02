@@ -31,7 +31,7 @@ func TestConsumes_PremiumUpdated(t *testing.T) {
 		updateErr     error
 		insertErr     error
 		wantAck       bool
-		assertRepos   func(t *testing.T, playerRepo *fakePlayerRepo)
+		assertRepos   func(t *testing.T, premiumRepo *fakePremiumRepo)
 	}{
 		{
 			name: "正常系: premium=true + expiry を players に反映して ACK",
@@ -43,8 +43,8 @@ func TestConsumes_PremiumUpdated(t *testing.T) {
 				})
 			},
 			wantAck: true,
-			assertRepos: func(t *testing.T, playerRepo *fakePlayerRepo) {
-				state, ok := playerRepo.premium["p-1"]
+			assertRepos: func(t *testing.T, premiumRepo *fakePremiumRepo) {
+				state, ok := premiumRepo.premium["p-1"]
 				require.True(t, ok, "p-1 の premium 状態が反映されている")
 				assert.True(t, state.IsPremium)
 				require.NotNil(t, state.ExpiresAt)
@@ -60,8 +60,8 @@ func TestConsumes_PremiumUpdated(t *testing.T) {
 				})
 			},
 			wantAck: true,
-			assertRepos: func(t *testing.T, playerRepo *fakePlayerRepo) {
-				state, ok := playerRepo.premium["p-2"]
+			assertRepos: func(t *testing.T, premiumRepo *fakePremiumRepo) {
+				state, ok := premiumRepo.premium["p-2"]
 				require.True(t, ok)
 				assert.False(t, state.IsPremium)
 				assert.Nil(t, state.ExpiresAt)
@@ -78,8 +78,8 @@ func TestConsumes_PremiumUpdated(t *testing.T) {
 			},
 			seedProcessed: map[string]string{existingEventID: apishop.EventTypePremiumUpdated},
 			wantAck:       true,
-			assertRepos: func(t *testing.T, playerRepo *fakePlayerRepo) {
-				_, ok := playerRepo.premium["p-3"]
+			assertRepos: func(t *testing.T, premiumRepo *fakePremiumRepo) {
+				_, ok := premiumRepo.premium["p-3"]
 				assert.False(t, ok, "冪等スキップ時は player 状態が更新されない")
 			},
 		},
@@ -89,8 +89,8 @@ func TestConsumes_PremiumUpdated(t *testing.T) {
 				broker.Publish(apishop.TopicPremiumUpdated, []byte("{malformed"))
 			},
 			wantAck: false,
-			assertRepos: func(t *testing.T, playerRepo *fakePlayerRepo) {
-				assert.Empty(t, playerRepo.premium, "JSON parse 失敗時は副作用が残らない")
+			assertRepos: func(t *testing.T, premiumRepo *fakePremiumRepo) {
+				assert.Empty(t, premiumRepo.premium, "JSON parse 失敗時は副作用が残らない")
 			},
 		},
 		{
@@ -104,8 +104,8 @@ func TestConsumes_PremiumUpdated(t *testing.T) {
 				broker.Publish(apishop.TopicPremiumUpdated, payload)
 			},
 			wantAck: true,
-			assertRepos: func(t *testing.T, playerRepo *fakePlayerRepo) {
-				_, ok := playerRepo.premium["p-4"]
+			assertRepos: func(t *testing.T, premiumRepo *fakePremiumRepo) {
+				_, ok := premiumRepo.premium["p-4"]
 				assert.False(t, ok)
 			},
 		},
@@ -119,8 +119,8 @@ func TestConsumes_PremiumUpdated(t *testing.T) {
 			},
 			insertErr: errors.New("db unavailable"),
 			wantAck:   false,
-			assertRepos: func(t *testing.T, playerRepo *fakePlayerRepo) {
-				assert.Empty(t, playerRepo.premium, "processed_events INSERT 失敗時は UpdatePremium まで到達しない")
+			assertRepos: func(t *testing.T, premiumRepo *fakePremiumRepo) {
+				assert.Empty(t, premiumRepo.premium, "processed_events INSERT 失敗時は UpdatePremium まで到達しない")
 			},
 		},
 		{
@@ -133,8 +133,8 @@ func TestConsumes_PremiumUpdated(t *testing.T) {
 			},
 			updateErr: errors.New("row not found"),
 			wantAck:   false,
-			assertRepos: func(t *testing.T, playerRepo *fakePlayerRepo) {
-				assert.Empty(t, playerRepo.premium, "UpdatePremium 失敗時は tx rollback により副作用が残らない")
+			assertRepos: func(t *testing.T, premiumRepo *fakePremiumRepo) {
+				assert.Empty(t, premiumRepo.premium, "UpdatePremium 失敗時は tx rollback により副作用が残らない")
 			},
 		},
 	}
@@ -145,15 +145,15 @@ func TestConsumes_PremiumUpdated(t *testing.T) {
 			pub := apishopfake.NewPublisher(broker)
 			stream := apishopfake.NewStream(apishopfake.NewSubscriber(broker), apishop.TopicPremiumUpdated)
 
-			playerRepo := newFakePlayerRepo()
-			playerRepo.updatePremiumErr = tt.updateErr
+			premiumRepo := newFakePremiumRepo()
+			premiumRepo.updatePremiumErr = tt.updateErr
 			eventRepo := newFakeProcessedEventRepo()
 			eventRepo.insertErr = tt.insertErr
 			for k, v := range tt.seedProcessed {
 				eventRepo.seen[k] = v
 			}
 
-			sub := NewPremiumUpdatedSubscriber(stream, playerRepo, fakeTxRunner{}, eventRepo)
+			sub := NewPremiumUpdatedSubscriber(stream, premiumRepo, fakeTxRunner{}, eventRepo)
 
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
@@ -170,7 +170,7 @@ func TestConsumes_PremiumUpdated(t *testing.T) {
 			handlerErr := stream.ExpectHandled(t, time.Second)
 			assert.Equal(t, tt.wantAck, handlerErr == nil, "ack 判定 (nil=ack, err=%v)", handlerErr)
 
-			tt.assertRepos(t, playerRepo)
+			tt.assertRepos(t, premiumRepo)
 		})
 	}
 }

@@ -46,7 +46,7 @@ func newPlayerTestInteractor(overrides map[string]int64) *PlayerInteractor {
 		defaultValues[k] = v
 	}
 	playerRepo, playerViewRepo, _, _, tx := newRealRepos()
-	return NewPlayerInteractor(playerRepo, playerViewRepo, newFakeGameConfigRepo(defaultValues), tx)
+	return NewPlayerInteractor(playerRepo, playerRepo, playerRepo, playerRepo, playerViewRepo, newFakeGameConfigRepo(defaultValues), tx)
 }
 
 func TestGetBattleLimit(t *testing.T) {

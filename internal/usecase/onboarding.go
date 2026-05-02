@@ -12,24 +12,27 @@ import (
 // OnboardingInteractor はオンボード進行イベントの副作用を 1 Tx で反映する。
 // 冪等ガード (processed_events) と業務データの永続化を同 Tx で束ねる責務はここが持つ。
 type OnboardingInteractor struct {
-	playerRepo  port.PlayerRepo
-	factionRepo port.FactionRepo
-	eventRepo   port.ProcessedEventRepo
-	txRunner    port.TxRunner
+	playerRepo     port.PlayerRepo
+	onboardingRepo port.PlayerOnboardingRepo
+	factionRepo    port.FactionRepo
+	eventRepo      port.ProcessedEventRepo
+	txRunner       port.TxRunner
 }
 
 // NewOnboardingInteractor は OnboardingInteractor を生成する。
 func NewOnboardingInteractor(
 	playerRepo port.PlayerRepo,
+	onboardingRepo port.PlayerOnboardingRepo,
 	factionRepo port.FactionRepo,
 	eventRepo port.ProcessedEventRepo,
 	txRunner port.TxRunner,
 ) *OnboardingInteractor {
 	return &OnboardingInteractor{
-		playerRepo:  playerRepo,
-		factionRepo: factionRepo,
-		eventRepo:   eventRepo,
-		txRunner:    txRunner,
+		playerRepo:     playerRepo,
+		onboardingRepo: onboardingRepo,
+		factionRepo:    factionRepo,
+		eventRepo:      eventRepo,
+		txRunner:       txRunner,
 	}
 }
 
@@ -127,7 +130,7 @@ func (s *OnboardingInteractor) ApplyCompleted(
 // advanceOnboardingStatus は onboarding_status を target に進める。
 // 後進方向は out-of-order 配信に対する防御として黙ってスキップする。
 func (s *OnboardingInteractor) advanceOnboardingStatus(ctx context.Context, playerID, target string) error {
-	current, err := s.playerRepo.GetOnboardingStatus(ctx, playerID)
+	current, err := s.onboardingRepo.GetOnboardingStatus(ctx, playerID)
 	if err != nil {
 		return fmt.Errorf("get onboarding status: %w", err)
 	}
@@ -138,7 +141,7 @@ func (s *OnboardingInteractor) advanceOnboardingStatus(ctx context.Context, play
 	if !canAdvance || current == target {
 		return nil
 	}
-	if err := s.playerRepo.UpdateOnboardingStatus(ctx, playerID, target); err != nil {
+	if err := s.onboardingRepo.UpdateOnboardingStatus(ctx, playerID, target); err != nil {
 		return fmt.Errorf("update onboarding status: %w", err)
 	}
 	return nil

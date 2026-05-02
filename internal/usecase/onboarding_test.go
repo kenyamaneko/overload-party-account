@@ -21,7 +21,7 @@ func TestApplyFactionSet_NameIndependent(t *testing.T) {
 
 	playerRepo, _, factionRepo, _, tx := newRealRepos()
 	eventRepo := newProcessedEventRepo()
-	svc := NewOnboardingInteractor(playerRepo, factionRepo, eventRepo, tx)
+	svc := NewOnboardingInteractor(playerRepo, playerRepo, factionRepo, eventRepo, tx)
 
 	processed, err := svc.ApplyFactionSet(
 		ctx,

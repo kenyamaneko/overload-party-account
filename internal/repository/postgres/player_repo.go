@@ -14,7 +14,15 @@ import (
 	"github.com/kenyamaneko/overload-party-account/internal/port"
 )
 
-var _ port.PlayerRepo = (*PlayerRepository)(nil)
+// 単一の PlayerRepository が責務別 interface 群すべてを暗黙的に満たすことを
+// コンパイル時に保証する (Go の structural typing による多 interface 充足)。
+var (
+	_ port.PlayerRepo            = (*PlayerRepository)(nil)
+	_ port.PlayerPremiumRepo     = (*PlayerRepository)(nil)
+	_ port.PlayerOnboardingRepo  = (*PlayerRepository)(nil)
+	_ port.PlayerProgressionRepo = (*PlayerRepository)(nil)
+	_ port.PlayerBattleRepo      = (*PlayerRepository)(nil)
+)
 
 // PlayerRepository は port.PlayerRepo の PostgreSQL 実装。
 type PlayerRepository struct {

@@ -13,24 +13,24 @@ import (
 
 // PremiumUpdatedSubscriber は premium-updated subscription を消費する。
 type PremiumUpdatedSubscriber struct {
-	stream     port.MessageStream
-	playerRepo port.PlayerRepo
-	txRunner   port.TxRunner
-	eventRepo  port.ProcessedEventRepo
+	stream      port.MessageStream
+	premiumRepo port.PlayerPremiumRepo
+	txRunner    port.TxRunner
+	eventRepo   port.ProcessedEventRepo
 }
 
 // NewPremiumUpdatedSubscriber は PremiumUpdatedSubscriber を生成する。
 func NewPremiumUpdatedSubscriber(
 	stream port.MessageStream,
-	playerRepo port.PlayerRepo,
+	premiumRepo port.PlayerPremiumRepo,
 	txRunner port.TxRunner,
 	eventRepo port.ProcessedEventRepo,
 ) *PremiumUpdatedSubscriber {
 	return &PremiumUpdatedSubscriber{
-		stream:     stream,
-		playerRepo: playerRepo,
-		txRunner:   txRunner,
-		eventRepo:  eventRepo,
+		stream:      stream,
+		premiumRepo: premiumRepo,
+		txRunner:    txRunner,
+		eventRepo:   eventRepo,
 	}
 }
 
@@ -59,7 +59,7 @@ func (s *PremiumUpdatedSubscriber) processEvent(ctx context.Context, data []byte
 		if !inserted {
 			return nil
 		}
-		if err := s.playerRepo.UpdatePremium(txCtx, ev.PlayerID, ev.IsPremium, ev.PremiumExpiresAt); err != nil {
+		if err := s.premiumRepo.UpdatePremium(txCtx, ev.PlayerID, ev.IsPremium, ev.PremiumExpiresAt); err != nil {
 			return fmt.Errorf("update premium: %w", err)
 		}
 		return nil

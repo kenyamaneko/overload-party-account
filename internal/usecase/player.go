@@ -25,24 +25,33 @@ const (
 
 // PlayerInteractor はプレイヤー情報の参照・更新を提供する。
 type PlayerInteractor struct {
-	playerRepo     port.PlayerRepo
-	playerViewRepo port.PlayerViewRepo
-	gameConfigRepo port.GameConfigRepo
-	txRunner       port.TxRunner
+	playerRepo      port.PlayerRepo
+	premiumRepo     port.PlayerPremiumRepo
+	progressionRepo port.PlayerProgressionRepo
+	battleRepo      port.PlayerBattleRepo
+	playerViewRepo  port.PlayerViewRepo
+	gameConfigRepo  port.GameConfigRepo
+	txRunner        port.TxRunner
 }
 
 // NewPlayerInteractor は PlayerInteractor を生成する。
 func NewPlayerInteractor(
 	playerRepo port.PlayerRepo,
+	premiumRepo port.PlayerPremiumRepo,
+	progressionRepo port.PlayerProgressionRepo,
+	battleRepo port.PlayerBattleRepo,
 	playerViewRepo port.PlayerViewRepo,
 	gameConfigRepo port.GameConfigRepo,
 	txRunner port.TxRunner,
 ) *PlayerInteractor {
 	return &PlayerInteractor{
-		playerRepo:     playerRepo,
-		playerViewRepo: playerViewRepo,
-		gameConfigRepo: gameConfigRepo,
-		txRunner:       txRunner,
+		playerRepo:      playerRepo,
+		premiumRepo:     premiumRepo,
+		progressionRepo: progressionRepo,
+		battleRepo:      battleRepo,
+		playerViewRepo:  playerViewRepo,
+		gameConfigRepo:  gameConfigRepo,
+		txRunner:        txRunner,
 	}
 }
 
@@ -53,7 +62,7 @@ func (s *PlayerInteractor) UpdatePremium(ctx context.Context, playerID string, i
 		t := time.UnixMilli(*expiresAtMillis)
 		expiresAt = &t
 	}
-	return s.playerRepo.UpdatePremium(ctx, playerID, isPremium, expiresAt)
+	return s.premiumRepo.UpdatePremium(ctx, playerID, isPremium, expiresAt)
 }
 
 // UpdateName はプレイヤー名を更新し、更新後の PlayerResponse を返す。
@@ -92,7 +101,7 @@ func (s *PlayerInteractor) GetBattleLimit(ctx context.Context, playerID string) 
 	}
 
 	today := currentGameDay()
-	db, err := s.playerRepo.GetDailyBattle(ctx, playerID, today)
+	db, err := s.battleRepo.GetDailyBattle(ctx, playerID, today)
 	if err != nil {
 		return nil, fmt.Errorf("get daily battle: %w", err)
 	}
@@ -135,7 +144,7 @@ func (s *PlayerInteractor) IncrementBattleCount(ctx context.Context, playerID st
 		return err
 	}
 
-	if _, err := s.playerRepo.IncrementDailyBattleCount(ctx, playerID, today); err != nil {
+	if _, err := s.battleRepo.IncrementDailyBattleCount(ctx, playerID, today); err != nil {
 		return fmt.Errorf("increment daily battle: %w", err)
 	}
 	return nil
@@ -151,7 +160,7 @@ func (s *PlayerInteractor) ensureWithinFreeBattleLimit(ctx context.Context, play
 	if err != nil {
 		return fmt.Errorf("get free battle limit: %w", err)
 	}
-	db, err := s.playerRepo.GetDailyBattle(ctx, player.PlayerID, today)
+	db, err := s.battleRepo.GetDailyBattle(ctx, player.PlayerID, today)
 	if err != nil {
 		return fmt.Errorf("get daily battle: %w", err)
 	}
@@ -178,13 +187,13 @@ func (s *PlayerInteractor) AwardExp(ctx context.Context, playerID string, expGai
 	}
 
 	return s.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
-		prog, err := s.playerRepo.GetProgressionForUpdate(txCtx, playerID)
+		prog, err := s.progressionRepo.GetProgressionForUpdate(txCtx, playerID)
 		if err != nil {
 			return fmt.Errorf("load progression: %w", err)
 		}
 		newExp := prog.Exp + expGain
 		newLevel := ComputeLevel(newExp, prog.Level, coeff)
-		if _, err := s.playerRepo.UpdateProgression(txCtx, playerID, newExp, newLevel); err != nil {
+		if _, err := s.progressionRepo.UpdateProgression(txCtx, playerID, newExp, newLevel); err != nil {
 			return fmt.Errorf("persist progression: %w", err)
 		}
 		return nil

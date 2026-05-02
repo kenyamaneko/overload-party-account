@@ -114,10 +114,13 @@ func run() error {
 	factionRepo := postgres.NewFactionRepository(pool)
 	eventRepo := postgres.NewProcessedEventRepository(pool)
 
+	// playerRepo (*postgres.PlayerRepository) は責務別 interface
+	// (PlayerRepo / PlayerPremiumRepo / PlayerOnboardingRepo / PlayerProgressionRepo / PlayerBattleRepo)
+	// すべてを暗黙的に満たすため、同じインスタンスを複数引数に渡せる (Go の structural typing)。
 	authSvc := usecase.NewAuthInteractor(playerRepo, playerViewRepo, playerSettingsRepo, gameConfigRepo, txManager)
-	playerSvc := usecase.NewPlayerInteractor(playerRepo, playerViewRepo, gameConfigRepo, txManager)
+	playerSvc := usecase.NewPlayerInteractor(playerRepo, playerRepo, playerRepo, playerRepo, playerViewRepo, gameConfigRepo, txManager)
 	factionSvc := usecase.NewFactionInteractor(playerRepo, factionRepo, txManager)
-	onboardingSvc := usecase.NewOnboardingInteractor(playerRepo, factionRepo, eventRepo, txManager)
+	onboardingSvc := usecase.NewOnboardingInteractor(playerRepo, playerRepo, factionRepo, eventRepo, txManager)
 	settingsSvc := usecase.NewPlayerSettingsInteractor(playerSettingsRepo)
 
 	authH := rest.NewAuthHandler(authSvc)
