@@ -17,6 +17,7 @@ import (
 	pubsubadapter "github.com/kenyamaneko/overload-party-account/internal/adapter/pubsub"
 	"github.com/kenyamaneko/overload-party-account/internal/config"
 	"github.com/kenyamaneko/overload-party-account/internal/handler/rest"
+	"github.com/kenyamaneko/overload-party-account/internal/port"
 	accountfirestore "github.com/kenyamaneko/overload-party-account/internal/repository/firestore"
 	"github.com/kenyamaneko/overload-party-account/internal/repository/postgres"
 	"github.com/kenyamaneko/overload-party-account/internal/router"
@@ -159,7 +160,7 @@ func run() error {
 
 // runHTTPAndSubscribers は HTTP server と Pub/Sub subscriber 群を並行起動し、
 // どれかの失敗・シグナル到来で全体を graceful に停止する。
-func runHTTPAndSubscribers(ctx context.Context, srv *http.Server, subscribers ...subscriber) error {
+func runHTTPAndSubscribers(ctx context.Context, srv *http.Server, subscribers ...port.EventSubscriber) error {
 	g, gCtx := errgroup.WithContext(ctx)
 
 	g.Go(func() error {
@@ -191,11 +192,6 @@ func runHTTPAndSubscribers(ctx context.Context, srv *http.Server, subscribers ..
 	})
 
 	return g.Wait()
-}
-
-// subscriber は Pub/Sub subscriber の起動インターフェース。
-type subscriber interface {
-	Start(ctx context.Context) error
 }
 
 // subscriptionStreams は account サービスが購読する 5 つの Pub/Sub stream を束ねる。
