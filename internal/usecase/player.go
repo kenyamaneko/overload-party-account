@@ -204,6 +204,9 @@ func (s *PlayerInteractor) AwardExp(ctx context.Context, playerID string, expGai
 }
 
 // ComputeLevel は経験値獲得後の新レベルを算出する。
+// coeff * (level+1)^2 を逐次比較するため、ゲームデザイン上の妥当な
+// coeff (~数百) と level (~数百) の範囲では int64 内で安全に動作する。
+// 過大 coeff の検証は ValidateGameConfig の責務 (現状は > 0 のみ)。
 func ComputeLevel(newExp, currentLevel, coeff int64) int64 {
 	level := currentLevel
 	if level < 1 {
