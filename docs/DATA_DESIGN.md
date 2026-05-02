@@ -58,7 +58,7 @@ account スキーマはプレイヤーの基本情報・デイリーバトル回
 
 **設計判断:**
 - players に埋め込まず別テーブルにしているのは、バトル回数チェック / increment が高頻度で走るのに対し、players 本体の更新 (name / is_premium 等) とは独立しているため。更新競合を分離する目的
-- リセット境界は JST 05:00。`game_date` は service 層が `gameDay()` で算出する civil.Date。詳細は [ARCHITECTURE.md §4.1](ARCHITECTURE.md)
+- リセット境界は JST 05:00。`game_date` は usecase 層が `gameDay()` で算出する civil.Date。詳細は [ARCHITECTURE.md §4.1](ARCHITECTURE.md)
 - 1 行/日で履歴を残すのは、将来 BigQuery エクスポートでプレイヤーごとの日次バトル回数を分析できるようにするため。これがアプリ内で履歴が残る唯一の場所
 - 当日の行が無ければカウント 0 とみなす (新ゲーム日でまだバトルしていない状態)。Register 時には INSERT せず、初回バトルの UPSERT で行が発生する
 
@@ -105,7 +105,7 @@ account スキーマはプレイヤーの基本情報・デイリーバトル回
 <!-- END GENERATED: player_settings -->
 
 **設計判断:**
-- デフォルト値は DB 側の DEFAULT ではなくアプリ層 (`internal/model/defaults.go`) で制御する。理由は言語判定をクライアントの Accept-Language 等と揃える余地を残すため
+- デフォルト値は DB 側の DEFAULT ではなくアプリ層 (`internal/domain/defaults.go`) で制御する。理由は言語判定をクライアントの Accept-Language 等と揃える余地を残すため
 - 登録時（Register）に `player_settings` 行をアプリ層デフォルトで INSERT する
 
 ### 5. player_progression

@@ -11,9 +11,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/kenyamaneko/overload-party-account/internal/domain"
 	"github.com/kenyamaneko/overload-party-account/internal/port"
 	"github.com/kenyamaneko/overload-party-account/internal/repository/postgres"
-	apiaccount "github.com/kenyamaneko/overload-party-account/packages/api-account"
 )
 
 const (
@@ -23,22 +23,22 @@ const (
 
 func TestPlayerRepository_Create_Then_FindByID(t *testing.T) {
 	repo := postgres.NewPlayerRepository(sharedPg.Pool)
+	viewRepo := postgres.NewPlayerViewRepository(sharedPg.Pool)
 	ctx := context.Background()
 
 	sharedPg.Truncate(t)
 	now := time.Now().UTC()
 	alice := "Alice"
-	p := &apiaccount.Player{
-		PlayerID:    testPlayerID1,
-		FirebaseUID: "uid-1",
-		Name:        &alice,
-		Level:       1,
-		Exp:         0,
-		IsPremium:   false,
-		CreatedAt:   now,
-		UpdatedAt:   now,
+	p := &domain.Player{
+		PlayerID:         testPlayerID1,
+		FirebaseUID:      "uid-1",
+		Name:             &alice,
+		IsPremium:        false,
+		OnboardingStatus: domain.OnboardingStatusNotStarted,
+		CreatedAt:        now,
+		UpdatedAt:        now,
 	}
-	prog := &apiaccount.PlayerProgression{
+	prog := &domain.PlayerProgression{
 		PlayerID:  p.PlayerID,
 		Level:     1,
 		Exp:       0,
@@ -50,8 +50,11 @@ func TestPlayerRepository_Create_Then_FindByID(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, got.Name)
 	assert.Equal(t, "Alice", *got.Name)
-	assert.Equal(t, int64(1), got.Level)
-	assert.Equal(t, int64(0), got.Exp)
+
+	view, err := viewRepo.FindByID(ctx, testPlayerID1)
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), view.Level)
+	assert.Equal(t, int64(0), view.Exp)
 }
 
 // FindByID の契約: シード済み player_id なら Player を返し、未シードなら ErrNotFound。
@@ -173,12 +176,12 @@ func TestPlayerRepository_GetDailyBattle(t *testing.T) {
 	tests := []struct {
 		name      string
 		seedCount []int64 // 0 件 = 未シード、1 件 = その count をシード
-		want      *apiaccount.PlayerDailyBattle
+		want      *domain.PlayerDailyBattle
 	}{
 		{
 			name:      "該当行があれば永続層の値をそのまま返す",
 			seedCount: []int64{5},
-			want: &apiaccount.PlayerDailyBattle{
+			want: &domain.PlayerDailyBattle{
 				PlayerID:         testPlayerID1,
 				GameDate:         today,
 				DailyBattleCount: 5,
@@ -209,7 +212,7 @@ func TestPlayerRepository_GetDailyBattle(t *testing.T) {
 // GetProgressionForUpdate の契約: RunInTx 配下で現在値を返す純プリミティブ。
 // シード済みなら現在値を返し、未シードなら ErrNotFound。FOR UPDATE による行ロック取得自体の
 // 検証はせず、行取得経路とエラー伝播のみを repo テストの責務とする
-// (加算・レベル計算は service 層の責務)。
+// (加算・レベル計算は usecase 層の責務)。
 func TestPlayerRepository_GetProgressionForUpdate(t *testing.T) {
 	repo := postgres.NewPlayerRepository(sharedPg.Pool)
 	txMgr := postgres.NewTxManager(sharedPg.Pool)
@@ -413,7 +416,7 @@ func TestPlayerRepository_IncrementDailyBattleCount(t *testing.T) {
 }
 
 // UpdateProgression の契約: シード済みなら受け取った exp / level をそのまま書き込み、
-// 未シードなら ErrNotFound。永続化は FindByID 経由 (JOIN) で反映されることまで確認する。
+// 未シードなら ErrNotFound。永続化は GetProgression 経由で反映されることまで確認する。
 func TestPlayerRepository_UpdateProgression(t *testing.T) {
 	repo := postgres.NewPlayerRepository(sharedPg.Pool)
 	ctx := context.Background()
@@ -450,8 +453,8 @@ func TestPlayerRepository_UpdateProgression(t *testing.T) {
 			assert.Equal(t, tt.wantLevel, gotLevel)
 			assert.Equal(t, tt.wantExp, gotExp)
 
-			got, _ := repo.FindByID(ctx, tt.lookupID)
-			persistedLevel, persistedExp := playerProgression(got)
+			persisted, _ := repo.GetProgression(ctx, tt.lookupID)
+			persistedLevel, persistedExp := progressionLevelExp(persisted)
 			assert.Equal(t, tt.wantLevel, persistedLevel)
 			assert.Equal(t, tt.wantExp, persistedExp)
 		})

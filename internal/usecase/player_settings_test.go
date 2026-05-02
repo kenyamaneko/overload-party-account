@@ -1,6 +1,6 @@
 //go:build integration
 
-package service
+package usecase
 
 import (
 	"context"
@@ -16,13 +16,13 @@ import (
 // ptr はテスト内でポインタリテラルを書きやすくするヘルパ。
 func ptr[T any](v T) *T { return &v }
 
-// newPlayerSettingsTestService は実 PostgreSQL repository で PlayerSettingsService を組む。
-func newPlayerSettingsTestService() *PlayerSettingsService {
-	_, _, playerSettingsRepo, _ := newRealRepos()
-	return NewPlayerSettingsService(playerSettingsRepo)
+// newPlayerSettingsTestService は実 PostgreSQL repository で PlayerSettingsInteractor を組む。
+func newPlayerSettingsTestService() *PlayerSettingsInteractor {
+	_, _, _, playerSettingsRepo, _ := newRealRepos()
+	return NewPlayerSettingsInteractor(playerSettingsRepo)
 }
 
-func TestPlayerSettingsService_Get_Seeded(t *testing.T) {
+func TestPlayerSettingsInteractor_Get_Seeded(t *testing.T) {
 	ctx := context.Background()
 
 	tests := []struct {
@@ -70,7 +70,7 @@ func TestPlayerSettingsService_Get_Seeded(t *testing.T) {
 // player_settings 行が存在しない場合 Get は port.ErrNotFound を返し、
 // デフォルト値での隠蔽は行わない（Register と同一 Tx で必ず INSERT されている契約のため、
 // 行が無いのは Register 未実施または不整合の症状であり、エラーとして扱う）。
-func TestPlayerSettingsService_Get_Unseeded_ReturnsErrNotFound(t *testing.T) {
+func TestPlayerSettingsInteractor_Get_Unseeded_ReturnsErrNotFound(t *testing.T) {
 	ctx := context.Background()
 	sharedPg.Truncate(t)
 	seedPlayer(t, testPlayerID1, "uid-1", "Alice", false)
@@ -82,7 +82,7 @@ func TestPlayerSettingsService_Get_Unseeded_ReturnsErrNotFound(t *testing.T) {
 
 // Update は patch の非 nil フィールドだけを更新する（部分更新契約）。
 // nil フィールドは現状維持、複数指定は同時に書き換え。
-func TestPlayerSettingsService_Update(t *testing.T) {
+func TestPlayerSettingsInteractor_Update(t *testing.T) {
 	ctx := context.Background()
 
 	tests := []struct {
@@ -138,7 +138,7 @@ func TestPlayerSettingsService_Update(t *testing.T) {
 
 // player_settings 行が未登録なら Update は ErrNotFound を返す。
 // 通常は Register で Insert されているので発生しないが、契約として担保する。
-func TestPlayerSettingsService_Update_NotFound(t *testing.T) {
+func TestPlayerSettingsInteractor_Update_NotFound(t *testing.T) {
 	ctx := context.Background()
 	sharedPg.Truncate(t)
 	seedPlayer(t, testPlayerID1, "uid-1", "Alice", false)
@@ -150,7 +150,7 @@ func TestPlayerSettingsService_Update_NotFound(t *testing.T) {
 
 // 既存行の updated_at が Update で必ず前進することを検証する（監査やキャッシュ無効化の基盤）。
 // 実際の更新は BEFORE UPDATE トリガー trg_player_settings_updated_at が now() に書き換える。
-func TestPlayerSettingsService_Update_AdvancesUpdatedAt(t *testing.T) {
+func TestPlayerSettingsInteractor_Update_AdvancesUpdatedAt(t *testing.T) {
 	ctx := context.Background()
 	sharedPg.Truncate(t)
 	seedPlayer(t, testPlayerID1, "uid-1", "Alice", false)

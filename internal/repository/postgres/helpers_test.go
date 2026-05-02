@@ -10,31 +10,41 @@ import (
 	"cloud.google.com/go/civil"
 	"github.com/stretchr/testify/require"
 
-	apiaccount "github.com/kenyamaneko/overload-party-account/packages/api-account"
+	"github.com/kenyamaneko/overload-party-account/internal/domain"
 )
+
+// seededPlayer はテスト helper の戻り値専用の集約ビュー (Player + Level/Exp)。
+// account.players と account.player_progression の両テーブルを 1 シードで作るため、
+// 検証側で「name を確認したい」「level/exp を確認したい」が 1 つのオブジェクトで済む。
+type seededPlayer struct {
+	domain.Player
+	Level int64
+	Exp   int64
+}
 
 // seedPlayer は account.players + player_progression の最小シードを投入する。
 // テストで頻繁に必要な「ログイン済みプレイヤー」の状態を 1 行で作る。
-// Level/Exp は Player アグリゲートに詰めて返すが、物理的には player_progression に INSERT される。
 // player_daily_battle はゲーム日単位の履歴台帳になったため seedPlayer では作らない
 // (バトル発生時に IncrementDailyBattleCount で UPSERT される)。
 // 引数 name に "" を渡すと name を NULL として挿入する (オンボーディング前の未確定状態を再現する用途)。
-func seedPlayer(t *testing.T, playerID, firebaseUID, name string, isPremium bool) *apiaccount.Player {
+func seedPlayer(t *testing.T, playerID, firebaseUID, name string, isPremium bool) *seededPlayer {
 	t.Helper()
 	now := time.Now().UTC()
 	var namePtr *string
 	if name != "" {
 		namePtr = &name
 	}
-	p := &apiaccount.Player{
-		PlayerID:    playerID,
-		FirebaseUID: firebaseUID,
-		Name:        namePtr,
-		Level:       1,
-		Exp:         0,
-		IsPremium:   isPremium,
-		CreatedAt:   now,
-		UpdatedAt:   now,
+	p := &seededPlayer{
+		Player: domain.Player{
+			PlayerID:    playerID,
+			FirebaseUID: firebaseUID,
+			Name:        namePtr,
+			IsPremium:   isPremium,
+			CreatedAt:   now,
+			UpdatedAt:   now,
+		},
+		Level: 1,
+		Exp:   0,
 	}
 	ctx := context.Background()
 	_, err := sharedPg.Pool.Exec(ctx,
@@ -54,7 +64,7 @@ func seedPlayer(t *testing.T, playerID, firebaseUID, name string, isPremium bool
 }
 
 // seedPlayerDailyBattle は account.player_daily_battle に 1 行追加する。
-// service の上限判定のように「すでに当日カウントが N」の状態を直接作るために使う。
+// usecase の上限判定のように「すでに当日カウントが N」の状態を直接作るために使う。
 func seedPlayerDailyBattle(t *testing.T, playerID string, gameDate civil.Date, count int64) {
 	t.Helper()
 	_, err := sharedPg.Pool.Exec(context.Background(),
@@ -89,7 +99,7 @@ func seedPlayerSettings(t *testing.T, playerID, language string, bgm, se int64, 
 // playerNamePtr は nil を許容して Player.Name (*string) を取り出すテスト用アクセサ。
 // 「該当行なし → 名前なし」を *string の nil で表現するため、テスト本体に if を持ち込まずに
 // 有/無パターンを assert.Equal で比較できるようにする。
-func playerNamePtr(p *apiaccount.Player) *string {
+func playerNamePtr(p *domain.Player) *string {
 	if p == nil {
 		return nil
 	}
@@ -98,29 +108,29 @@ func playerNamePtr(p *apiaccount.Player) *string {
 
 // playerIsPremium は nil を許容して Player.IsPremium を取り出すテスト用アクセサ。
 // 該当行なしは false で表現する (UpdatePremium の有/無パターン用)。
-func playerIsPremium(p *apiaccount.Player) bool {
+func playerIsPremium(p *domain.Player) bool {
 	if p == nil {
 		return false
 	}
 	return p.IsPremium
 }
 
-// playerProgression は nil を許容して Player から Level/Exp を取り出すテスト用アクセサ。
-// 該当行なしは (0, 0) で表現する (UpdateProgression の有/無パターン用)。
-func playerProgression(p *apiaccount.Player) (level, exp int64) {
+// progressionLevelExp は nil を許容して PlayerProgression から Level/Exp を取り出す。
+// 該当行なしは (0, 0)。
+func progressionLevelExp(p *domain.PlayerProgression) (level, exp int64) {
 	if p == nil {
 		return 0, 0
 	}
 	return p.Level, p.Exp
 }
 
-// progressionLevelExp は nil を許容して PlayerProgression から Level/Exp を取り出す。
-// 該当行なしは (0, 0)。
-func progressionLevelExp(p *apiaccount.PlayerProgression) (level, exp int64) {
-	if p == nil {
+// viewLevelExp は nil を許容して PlayerView から Level/Exp を取り出す。
+// 該当行なしは (0, 0)。FindByID 経由 (JOIN) の永続化検証で使う。
+func viewLevelExp(v *domain.PlayerView) (level, exp int64) {
+	if v == nil {
 		return 0, 0
 	}
-	return p.Level, p.Exp
+	return v.Level, v.Exp
 }
 
 // settingsSnapshot は PlayerSettings の比較対象フィールド (UpdatedAt を除く) を
@@ -136,7 +146,7 @@ type settingsSnapshot struct {
 // snapshotSettings は nil を許容して PlayerSettings をスナップショット化する。
 // 該当行なしは nil で表現し、テスト本体に if を持ち込まずに有/無パターンを
 // assert.Equal で比較できるようにする。
-func snapshotSettings(s *apiaccount.PlayerSettings) *settingsSnapshot {
+func snapshotSettings(s *domain.PlayerSettings) *settingsSnapshot {
 	if s == nil {
 		return nil
 	}

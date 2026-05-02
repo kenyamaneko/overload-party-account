@@ -9,11 +9,11 @@ import (
 	apiscenario "github.com/kenyamaneko/overload-party-scenario/packages/api-scenario"
 
 	"github.com/kenyamaneko/overload-party-account/internal/port"
-	"github.com/kenyamaneko/overload-party-account/internal/service"
+	"github.com/kenyamaneko/overload-party-account/internal/usecase"
 )
 
-// OnboardingNameSetApplier は OnboardingService.ApplyNameSet に対する最小インターフェース。
-// adapter 層が service の具象に直接依存しないために port 風に切る。
+// OnboardingNameSetApplier は OnboardingInteractor.ApplyNameSet に対する最小インターフェース。
+// adapter 層が usecase の具象に直接依存しないために port 風に切る。
 type OnboardingNameSetApplier interface {
 	ApplyNameSet(ctx context.Context, eventID, eventType, playerID, name string) (processed bool, err error)
 }
@@ -55,7 +55,7 @@ func (s *OnboardingNameSetSubscriber) processEvent(ctx context.Context, data []b
 
 	processed, err := s.applier.ApplyNameSet(ctx, ev.EventID, ev.EventType, ev.PlayerID, ev.Name)
 	if err != nil {
-		if service.IsPublisherBug(err) {
+		if usecase.IsPublisherBug(err) {
 			slog.Error("onboarding-name-set subscriber: player not found (publisher bug)",
 				"event_id", ev.EventID, "player_id", ev.PlayerID, "error", err)
 			return fmt.Errorf("onboarding-name-set: player not found: %w", err)

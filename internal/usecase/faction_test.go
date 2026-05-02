@@ -1,6 +1,6 @@
 //go:build integration
 
-package service
+package usecase
 
 import (
 	"context"
@@ -13,17 +13,17 @@ import (
 )
 
 // newFactionTestService は実 DB に playerID をシードし、実 repository で
-// FactionService を組む。shop 流の「service テストも sharedPg で組む」方針。
-func newFactionTestService(t *testing.T, playerID string) *FactionService {
+// FactionInteractor を組む。shop 流の「usecase テストも sharedPg で組む」方針。
+func newFactionTestService(t *testing.T, playerID string) *FactionInteractor {
 	t.Helper()
 	sharedPg.Truncate(t)
 	seedPlayer(t, playerID, "uid-"+playerID, "tester", false)
 
-	playerRepo, factionRepo, _, tx := newRealRepos()
-	return NewFactionService(playerRepo, factionRepo, tx)
+	playerRepo, _, factionRepo, _, tx := newRealRepos()
+	return NewFactionInteractor(playerRepo, factionRepo, tx)
 }
 
-func TestFactionService_SelectInitialFaction_Success(t *testing.T) {
+func TestFactionInteractor_SelectInitialFaction_Success(t *testing.T) {
 	ctx := context.Background()
 
 	tests := []struct {
@@ -46,23 +46,23 @@ func TestFactionService_SelectInitialFaction_Success(t *testing.T) {
 
 			require.NoError(t, svc.SelectInitialFaction(ctx, testPlayerID1, tt.faction))
 
-			playerRepo, factionRepo, _, _ := newRealRepos()
+			_, _, factionRepo, _, _ := newRealRepos()
 
 			factions, err := factionRepo.GetPlayerFactions(ctx, testPlayerID1)
 			require.NoError(t, err)
 			assert.ElementsMatch(t, []string{tt.faction}, factions)
 
-			p, err := playerRepo.FindByID(ctx, testPlayerID1)
+			initial, err := factionRepo.GetInitialFaction(ctx, testPlayerID1)
 			require.NoError(t, err)
-			require.NotNil(t, p.InitialFaction)
-			assert.Equal(t, tt.faction, *p.InitialFaction)
+			require.NotNil(t, initial)
+			assert.Equal(t, tt.faction, *initial)
 		})
 	}
 }
 
 // ショップで所持していない faction を initial 選択すると成立する。
 // ショップで所持している faction と同一のものを initial 選択すると PK 重複でエラー。
-func TestFactionService_SelectInitialFaction_WithShopOwnedFaction(t *testing.T) {
+func TestFactionInteractor_SelectInitialFaction_WithShopOwnedFaction(t *testing.T) {
 	ctx := context.Background()
 
 	tests := []struct {
@@ -82,7 +82,7 @@ func TestFactionService_SelectInitialFaction_WithShopOwnedFaction(t *testing.T) 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			svc := newFactionTestService(t, testPlayerID1)
-			playerRepo, factionRepo, _, _ := newRealRepos()
+			_, _, factionRepo, _, _ := newRealRepos()
 
 			require.NoError(t, factionRepo.AddPlayerFaction(ctx, testPlayerID1, tt.shopFaction))
 			require.NoError(t, svc.SelectInitialFaction(ctx, testPlayerID1, tt.initialChoice))
@@ -91,15 +91,15 @@ func TestFactionService_SelectInitialFaction_WithShopOwnedFaction(t *testing.T) 
 			require.NoError(t, err)
 			assert.ElementsMatch(t, tt.wantOwned, factions)
 
-			p, err := playerRepo.FindByID(ctx, testPlayerID1)
+			initial, err := factionRepo.GetInitialFaction(ctx, testPlayerID1)
 			require.NoError(t, err)
-			require.NotNil(t, p.InitialFaction)
-			assert.Equal(t, tt.initialChoice, *p.InitialFaction)
+			require.NotNil(t, initial)
+			assert.Equal(t, tt.initialChoice, *initial)
 		})
 	}
 }
 
-func TestFactionService_SelectInitialFaction_SameAsShopOwned_ReturnsError(t *testing.T) {
+func TestFactionInteractor_SelectInitialFaction_SameAsShopOwned_ReturnsError(t *testing.T) {
 	ctx := context.Background()
 
 	tests := []struct {
@@ -112,7 +112,7 @@ func TestFactionService_SelectInitialFaction_SameAsShopOwned_ReturnsError(t *tes
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			svc := newFactionTestService(t, testPlayerID1)
-			_, factionRepo, _, _ := newRealRepos()
+			_, _, factionRepo, _, _ := newRealRepos()
 
 			require.NoError(t, factionRepo.AddPlayerFaction(ctx, testPlayerID1, tt.faction))
 
@@ -122,7 +122,7 @@ func TestFactionService_SelectInitialFaction_SameAsShopOwned_ReturnsError(t *tes
 	}
 }
 
-func TestFactionService_SelectInitialFaction_AlreadySelected_ReturnsError(t *testing.T) {
+func TestFactionInteractor_SelectInitialFaction_AlreadySelected_ReturnsError(t *testing.T) {
 	ctx := context.Background()
 	svc := newFactionTestService(t, testPlayerID1)
 
@@ -132,19 +132,19 @@ func TestFactionService_SelectInitialFaction_AlreadySelected_ReturnsError(t *tes
 	require.ErrorIs(t, err, ErrFactionAlreadySelected)
 
 	// 二度目は副作用を起こしていない (faction 一覧・initial faction ともに初回のまま)。
-	playerRepo, factionRepo, _, _ := newRealRepos()
+	_, _, factionRepo, _, _ := newRealRepos()
 
 	factions, err := factionRepo.GetPlayerFactions(ctx, testPlayerID1)
 	require.NoError(t, err)
 	assert.ElementsMatch(t, []string{"Tenki"}, factions)
 
-	p, err := playerRepo.FindByID(ctx, testPlayerID1)
+	initial, err := factionRepo.GetInitialFaction(ctx, testPlayerID1)
 	require.NoError(t, err)
-	require.NotNil(t, p.InitialFaction)
-	assert.Equal(t, "Tenki", *p.InitialFaction)
+	require.NotNil(t, initial)
+	assert.Equal(t, "Tenki", *initial)
 }
 
-func TestFactionService_SelectInitialFaction_InvalidFaction_ReturnsError(t *testing.T) {
+func TestFactionInteractor_SelectInitialFaction_InvalidFaction_ReturnsError(t *testing.T) {
 	ctx := context.Background()
 
 	tests := []struct {
@@ -173,37 +173,37 @@ func TestFactionService_SelectInitialFaction_InvalidFaction_ReturnsError(t *test
 			require.ErrorIs(t, err, ErrInvalidFaction)
 
 			// 不正入力は永続化しない。
-			playerRepo, factionRepo, _, _ := newRealRepos()
+			_, _, factionRepo, _, _ := newRealRepos()
 
 			factions, err := factionRepo.GetPlayerFactions(ctx, testPlayerID1)
 			require.NoError(t, err)
 			assert.Empty(t, factions)
 
-			p, err := playerRepo.FindByID(ctx, testPlayerID1)
+			initial, err := factionRepo.GetInitialFaction(ctx, testPlayerID1)
 			require.NoError(t, err)
-			assert.Nil(t, p.InitialFaction)
+			assert.Nil(t, initial)
 		})
 	}
 }
 
-func TestFactionService_SelectInitialFaction_EmptyPlayerID_ReturnsError(t *testing.T) {
+func TestFactionInteractor_SelectInitialFaction_EmptyPlayerID_ReturnsError(t *testing.T) {
 	ctx := context.Background()
 	// 空 playerID は入力検証で弾かれるため、player をシードしなくても良い。
 	sharedPg.Truncate(t)
-	playerRepo, factionRepo, _, tx := newRealRepos()
-	svc := NewFactionService(playerRepo, factionRepo, tx)
+	playerRepo, _, factionRepo, _, tx := newRealRepos()
+	svc := NewFactionInteractor(playerRepo, factionRepo, tx)
 
 	err := svc.SelectInitialFaction(ctx, "", "SHE")
 	require.ErrorIs(t, err, ErrInvalidFaction)
 }
 
 // プレイヤーが存在しない場合は ErrNotFound を返す。
-// repo 層は「行が更新されたか」しか返さないため、service が Exists で識別する責務を持つ。
-func TestFactionService_SelectInitialFaction_PlayerNotFound_ReturnsErrNotFound(t *testing.T) {
+// repo 層は「行が更新されたか」しか返さないため、usecase が Exists で識別する責務を持つ。
+func TestFactionInteractor_SelectInitialFaction_PlayerNotFound_ReturnsErrNotFound(t *testing.T) {
 	ctx := context.Background()
 	sharedPg.Truncate(t)
-	playerRepo, factionRepo, _, tx := newRealRepos()
-	svc := NewFactionService(playerRepo, factionRepo, tx)
+	playerRepo, _, factionRepo, _, tx := newRealRepos()
+	svc := NewFactionInteractor(playerRepo, factionRepo, tx)
 
 	err := svc.SelectInitialFaction(ctx, "99999999-9999-9999-9999-999999999999", "SHE")
 	require.ErrorIs(t, err, port.ErrNotFound)

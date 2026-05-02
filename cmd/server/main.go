@@ -20,7 +20,7 @@ import (
 	accountfirestore "github.com/kenyamaneko/overload-party-account/internal/repository/firestore"
 	"github.com/kenyamaneko/overload-party-account/internal/repository/postgres"
 	"github.com/kenyamaneko/overload-party-account/internal/router"
-	"github.com/kenyamaneko/overload-party-account/internal/service"
+	"github.com/kenyamaneko/overload-party-account/internal/usecase"
 )
 
 func main() {
@@ -106,16 +106,17 @@ func run() error {
 
 	txManager := postgres.NewTxManager(pool)
 	playerRepo := postgres.NewPlayerRepository(pool)
+	playerViewRepo := postgres.NewPlayerViewRepository(pool)
 	playerSettingsRepo := postgres.NewPlayerSettingsRepository(pool)
 	gameConfigRepo := accountfirestore.NewGameConfigRepository(fsClient)
 	factionRepo := postgres.NewFactionRepository(pool)
 	eventRepo := postgres.NewProcessedEventRepository(pool)
 
-	authSvc := service.NewAuthService(playerRepo, playerSettingsRepo, txManager)
-	playerSvc := service.NewPlayerService(playerRepo, gameConfigRepo, factionRepo, txManager)
-	factionSvc := service.NewFactionService(playerRepo, factionRepo, txManager)
-	onboardingSvc := service.NewOnboardingService(playerRepo, factionRepo, eventRepo, txManager)
-	settingsSvc := service.NewPlayerSettingsService(playerSettingsRepo)
+	authSvc := usecase.NewAuthInteractor(playerRepo, playerViewRepo, playerSettingsRepo, gameConfigRepo, txManager)
+	playerSvc := usecase.NewPlayerInteractor(playerRepo, playerViewRepo, gameConfigRepo, factionRepo, txManager)
+	factionSvc := usecase.NewFactionInteractor(playerRepo, factionRepo, txManager)
+	onboardingSvc := usecase.NewOnboardingInteractor(playerRepo, factionRepo, eventRepo, txManager)
+	settingsSvc := usecase.NewPlayerSettingsInteractor(playerSettingsRepo)
 
 	authH := rest.NewAuthHandler(authSvc)
 	playerH := rest.NewPlayerHandler(playerSvc)

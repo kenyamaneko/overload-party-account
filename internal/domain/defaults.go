@@ -1,4 +1,4 @@
-package model
+package domain
 
 // Default values applied when creating new PlayerSettings at registration time.
 const (

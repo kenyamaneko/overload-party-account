@@ -1,4 +1,4 @@
-package service
+package usecase
 
 import (
 	"errors"
@@ -20,6 +20,6 @@ var (
 	ErrFactionAlreadySelected = errors.New("initial faction already selected")
 	// ErrBattleLimitExceeded は当日のバトル回数が上限に達しているとき IncrementBattleCount が返します。
 	// account が daily_battle の authoritative owner として上限不変条件を守る責務を持つため、
-	// service 層で判定し、REST handler は HTTP 429 にマップします。
+	// usecase 層で判定し、REST handler は HTTP 429 にマップします。
 	ErrBattleLimitExceeded = errors.New("daily battle limit exceeded")
 )

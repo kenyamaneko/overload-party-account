@@ -6,17 +6,17 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/kenyamaneko/overload-party-account/internal/port"
-	"github.com/kenyamaneko/overload-party-account/internal/service"
+	"github.com/kenyamaneko/overload-party-account/internal/usecase"
 	apiaccount "github.com/kenyamaneko/overload-party-account/packages/api-account"
 )
 
 // PlayerSettingsHandler はプレイヤー設定の REST エンドポイントを処理します。
 type PlayerSettingsHandler struct {
-	svc *service.PlayerSettingsService
+	svc *usecase.PlayerSettingsInteractor
 }
 
 // NewPlayerSettingsHandler は PlayerSettingsHandler を生成します。
-func NewPlayerSettingsHandler(svc *service.PlayerSettingsService) *PlayerSettingsHandler {
+func NewPlayerSettingsHandler(svc *usecase.PlayerSettingsInteractor) *PlayerSettingsHandler {
 	return &PlayerSettingsHandler{svc: svc}
 }
 

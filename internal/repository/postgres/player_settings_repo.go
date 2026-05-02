@@ -9,8 +9,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/kenyamaneko/overload-party-account/internal/domain"
 	"github.com/kenyamaneko/overload-party-account/internal/port"
-	apiaccount "github.com/kenyamaneko/overload-party-account/packages/api-account"
 )
 
 var _ port.PlayerSettingsRepo = (*PlayerSettingsRepository)(nil)
@@ -27,7 +27,7 @@ func NewPlayerSettingsRepository(pool *pgxpool.Pool) *PlayerSettingsRepository {
 
 // Insert は新規プレイヤー設定行を挿入する。Register 時の初期化で呼び出される前提で、
 // 全フィールドが非ゼロ値のアプリ層デフォルトで埋まっている想定。
-func (r *PlayerSettingsRepository) Insert(ctx context.Context, s *apiaccount.PlayerSettings) error {
+func (r *PlayerSettingsRepository) Insert(ctx context.Context, s *domain.PlayerSettings) error {
 	now := time.Now()
 	_, err := connFrom(ctx, r.pool).Exec(ctx,
 		`INSERT INTO account.player_settings (player_id, language, bgm_volume, se_volume, push_enabled, updated_at)
@@ -42,14 +42,14 @@ func (r *PlayerSettingsRepository) Insert(ctx context.Context, s *apiaccount.Pla
 }
 
 // Get はプレイヤーの設定を返す。該当なしは port.ErrNotFound でラップして返す。
-func (r *PlayerSettingsRepository) Get(ctx context.Context, playerID string) (*apiaccount.PlayerSettings, error) {
+func (r *PlayerSettingsRepository) Get(ctx context.Context, playerID string) (*domain.PlayerSettings, error) {
 	row := connFrom(ctx, r.pool).QueryRow(ctx,
 		`SELECT player_id, language, bgm_volume, se_volume, push_enabled, updated_at
 		 FROM account.player_settings WHERE player_id = $1`,
 		playerID,
 	)
 
-	var s apiaccount.PlayerSettings
+	var s domain.PlayerSettings
 	err := row.Scan(&s.PlayerID, &s.Language, &s.BgmVolume, &s.SeVolume, &s.PushEnabled, &s.UpdatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {

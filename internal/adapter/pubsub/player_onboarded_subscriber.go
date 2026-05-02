@@ -9,10 +9,10 @@ import (
 	apiscenario "github.com/kenyamaneko/overload-party-scenario/packages/api-scenario"
 
 	"github.com/kenyamaneko/overload-party-account/internal/port"
-	"github.com/kenyamaneko/overload-party-account/internal/service"
+	"github.com/kenyamaneko/overload-party-account/internal/usecase"
 )
 
-// OnboardingCompletedApplier は OnboardingService.ApplyCompleted に対する最小インターフェース。
+// OnboardingCompletedApplier は OnboardingInteractor.ApplyCompleted に対する最小インターフェース。
 type OnboardingCompletedApplier interface {
 	ApplyCompleted(ctx context.Context, eventID, eventType, playerID string) (processed bool, err error)
 }
@@ -56,7 +56,7 @@ func (s *PlayerOnboardedSubscriber) processEvent(ctx context.Context, data []byt
 
 	processed, err := s.applier.ApplyCompleted(ctx, ev.EventID, ev.EventType, ev.PlayerID)
 	if err != nil {
-		if service.IsPublisherBug(err) {
+		if usecase.IsPublisherBug(err) {
 			slog.Error("player-onboarded subscriber: player not found (publisher bug)",
 				"event_id", ev.EventID, "player_id", ev.PlayerID, "error", err)
 			return fmt.Errorf("player-onboarded: player not found: %w", err)

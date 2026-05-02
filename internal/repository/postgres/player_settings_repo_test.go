@@ -9,9 +9,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/kenyamaneko/overload-party-account/internal/domain"
 	"github.com/kenyamaneko/overload-party-account/internal/port"
 	"github.com/kenyamaneko/overload-party-account/internal/repository/postgres"
-	apiaccount "github.com/kenyamaneko/overload-party-account/packages/api-account"
 )
 
 // ptr はテスト内でポインタリテラルを書きやすくするヘルパ。
@@ -25,7 +25,7 @@ func TestPlayerSettingsRepository_Insert(t *testing.T) {
 	sharedPg.Truncate(t)
 	seedPlayer(t, testPlayerID1, "uid-1", "Alice", false)
 
-	payload := &apiaccount.PlayerSettings{
+	payload := &domain.PlayerSettings{
 		PlayerID:    testPlayerID1,
 		Language:    "ja",
 		BgmVolume:   30,
@@ -51,13 +51,13 @@ func TestPlayerSettingsRepository_Get(t *testing.T) {
 
 	tests := []struct {
 		name    string
-		seeds   []apiaccount.PlayerSettings // 0 件 = 未シード, 1 件 = その値をシード
+		seeds   []domain.PlayerSettings // 0 件 = 未シード, 1 件 = その値をシード
 		want    *settingsSnapshot
 		wantErr error
 	}{
 		{
 			name: "シード済みなら永続層の値をそのまま返す",
-			seeds: []apiaccount.PlayerSettings{
+			seeds: []domain.PlayerSettings{
 				{Language: "ja", BgmVolume: 50, SeVolume: 60, PushEnabled: true},
 			},
 			want: &settingsSnapshot{Language: "ja", BgmVolume: 50, SeVolume: 60, PushEnabled: true},
@@ -99,14 +99,14 @@ func TestPlayerSettingsRepository_UpdatePartial(t *testing.T) {
 
 	tests := []struct {
 		name    string
-		seeds   []apiaccount.PlayerSettings // 0 件 = 未シード
+		seeds   []domain.PlayerSettings // 0 件 = 未シード
 		patch   *port.PlayerSettingsPatch
 		want    *settingsSnapshot
 		wantErr error
 	}{
 		{
 			name: "言語だけ更新すると他のフィールドは現状維持される",
-			seeds: []apiaccount.PlayerSettings{
+			seeds: []domain.PlayerSettings{
 				{Language: "ja", BgmVolume: 50, SeVolume: 60, PushEnabled: true},
 			},
 			patch: &port.PlayerSettingsPatch{Language: ptr("en")},
@@ -114,7 +114,7 @@ func TestPlayerSettingsRepository_UpdatePartial(t *testing.T) {
 		},
 		{
 			name: "BGM 音量だけ更新しても言語はシード値のまま",
-			seeds: []apiaccount.PlayerSettings{
+			seeds: []domain.PlayerSettings{
 				{Language: "ja", BgmVolume: 50, SeVolume: 60, PushEnabled: true},
 			},
 			patch: &port.PlayerSettingsPatch{BgmVolume: ptr(int64(80))},
@@ -122,7 +122,7 @@ func TestPlayerSettingsRepository_UpdatePartial(t *testing.T) {
 		},
 		{
 			name: "複数フィールド同時指定でまとめて更新される",
-			seeds: []apiaccount.PlayerSettings{
+			seeds: []domain.PlayerSettings{
 				{Language: "ja", BgmVolume: 50, SeVolume: 60, PushEnabled: true},
 			},
 			patch: &port.PlayerSettingsPatch{

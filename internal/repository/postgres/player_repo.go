@@ -10,16 +10,16 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/kenyamaneko/overload-party-account/internal/domain"
 	"github.com/kenyamaneko/overload-party-account/internal/port"
-	apiaccount "github.com/kenyamaneko/overload-party-account/packages/api-account"
 )
 
 var _ port.PlayerRepo = (*PlayerRepository)(nil)
 
-// PlayerRepository は PostgreSQL を使用した PlayerRepo の実装である。
-// account.players + 1:1 子の account.player_progression を「プレイヤー」アグリゲートとして
-// JOIN で結合し、呼び出し元には物理分割を見せない。
-// account.player_daily_battle はゲーム日単位の履歴台帳で、専用プリミティブで操作する。
+// PlayerRepository は port.PlayerRepo の PostgreSQL 実装。
+// account.players (Write 集約) と、密結合の 1:1 子テーブル player_progression /
+// 履歴台帳 player_daily_battle に対するプリミティブを束ねる。
+// JOIN を伴う Read Model 取得は PlayerViewRepository に分離する。
 type PlayerRepository struct {
 	pool *pgxpool.Pool
 }
@@ -33,7 +33,7 @@ func NewPlayerRepository(pool *pgxpool.Pool) *PlayerRepository {
 // player_daily_battle はゲーム日ごとに発生する履歴行のため Create では作らない
 // (初回バトルの IncrementDailyBattleCount UPSERT で当日の行が発生する)。
 // context にトランザクションがあればそれに参加し、なければ独自トランザクションを使用する。
-func (r *PlayerRepository) Create(ctx context.Context, player *apiaccount.Player, progression *apiaccount.PlayerProgression) error {
+func (r *PlayerRepository) Create(ctx context.Context, player *domain.Player, progression *domain.PlayerProgression) error {
 	if txFromContext(ctx) != nil {
 		return r.createInner(ctx, connFrom(ctx, r.pool), player, progression)
 	}
@@ -49,15 +49,16 @@ func (r *PlayerRepository) Create(ctx context.Context, player *apiaccount.Player
 	return tx.Commit(ctx)
 }
 
-func (r *PlayerRepository) createInner(ctx context.Context, db dbtx, player *apiaccount.Player, progression *apiaccount.PlayerProgression) error {
+func (r *PlayerRepository) createInner(ctx context.Context, db dbtx, player *domain.Player, progression *domain.PlayerProgression) error {
 	_, err := db.Exec(ctx,
-		`INSERT INTO account.players (player_id, firebase_uid, name, is_premium, equipped_icon_no, premium_expires_at, created_at, updated_at)
-		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+		`INSERT INTO account.players (player_id, firebase_uid, name, is_premium, equipped_icon_no, onboarding_status, premium_expires_at, created_at, updated_at)
+		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
 		player.PlayerID,
 		player.FirebaseUID,
 		player.Name,
 		player.IsPremium,
 		player.EquippedIconNo,
+		player.OnboardingStatus,
 		player.PremiumExpiresAt,
 		player.CreatedAt,
 		player.UpdatedAt,
@@ -80,16 +81,14 @@ func (r *PlayerRepository) createInner(ctx context.Context, db dbtx, player *api
 	return nil
 }
 
-// FindByID はプレイヤー ID で検索する。該当なしは port.ErrNotFound でラップして返す。
-func (r *PlayerRepository) FindByID(ctx context.Context, playerID string) (*apiaccount.Player, error) {
+// FindByID は account.players の 1 行を返す。Level/Exp 等の派生情報は含まない。
+// 該当なしは port.ErrNotFound でラップして返す。
+func (r *PlayerRepository) FindByID(ctx context.Context, playerID string) (*domain.Player, error) {
 	row := connFrom(ctx, r.pool).QueryRow(ctx,
-		`SELECT p.player_id, p.firebase_uid, p.name, pp.level, pp.exp,
-		        p.is_premium, p.equipped_icon_no, pf.faction, p.onboarding_status,
-		        p.premium_expires_at, p.created_at, p.updated_at
-		   FROM account.players p
-		   JOIN account.player_progression pp ON p.player_id = pp.player_id
-		   LEFT JOIN account.player_factions pf ON pf.player_id = p.player_id AND pf.is_initial
-		  WHERE p.player_id = $1`,
+		`SELECT player_id, firebase_uid, name, is_premium, equipped_icon_no,
+		        onboarding_status, premium_expires_at, created_at, updated_at
+		   FROM account.players
+		  WHERE player_id = $1`,
 		playerID,
 	)
 
@@ -103,17 +102,15 @@ func (r *PlayerRepository) FindByID(ctx context.Context, playerID string) (*apia
 	return p, nil
 }
 
-// FindByFirebaseUID は Firebase UID で検索する。該当なしは port.ErrNotFound でラップして返す。
+// FindByFirebaseUID は firebase_uid で account.players の 1 行を返す。
+// 該当なしは port.ErrNotFound でラップして返す。
 // 業務分岐 (Register での既登録検出など) は呼び出し側で errors.Is(err, port.ErrNotFound) を判定する。
-func (r *PlayerRepository) FindByFirebaseUID(ctx context.Context, firebaseUID string) (*apiaccount.Player, error) {
+func (r *PlayerRepository) FindByFirebaseUID(ctx context.Context, firebaseUID string) (*domain.Player, error) {
 	row := connFrom(ctx, r.pool).QueryRow(ctx,
-		`SELECT p.player_id, p.firebase_uid, p.name, pp.level, pp.exp,
-		        p.is_premium, p.equipped_icon_no, pf.faction, p.onboarding_status,
-		        p.premium_expires_at, p.created_at, p.updated_at
-		   FROM account.players p
-		   JOIN account.player_progression pp ON p.player_id = pp.player_id
-		   LEFT JOIN account.player_factions pf ON pf.player_id = p.player_id AND pf.is_initial
-		  WHERE p.firebase_uid = $1 LIMIT 1`,
+		`SELECT player_id, firebase_uid, name, is_premium, equipped_icon_no,
+		        onboarding_status, premium_expires_at, created_at, updated_at
+		   FROM account.players
+		  WHERE firebase_uid = $1 LIMIT 1`,
 		firebaseUID,
 	)
 
@@ -141,7 +138,7 @@ func (r *PlayerRepository) Exists(ctx context.Context, playerID string) (bool, e
 
 // GetDailyBattle は (player_id, gameDate) の行を返す。該当なしは (nil, nil)。
 // 「指定ゲーム日にまだバトルしていない」を nil で表現する。
-func (r *PlayerRepository) GetDailyBattle(ctx context.Context, playerID string, gameDate civil.Date) (*apiaccount.PlayerDailyBattle, error) {
+func (r *PlayerRepository) GetDailyBattle(ctx context.Context, playerID string, gameDate civil.Date) (*domain.PlayerDailyBattle, error) {
 	row := connFrom(ctx, r.pool).QueryRow(ctx,
 		`SELECT player_id, game_date, daily_battle_count
 		 FROM account.player_daily_battle WHERE player_id = $1 AND game_date = $2`,
@@ -159,7 +156,7 @@ func (r *PlayerRepository) GetDailyBattle(ctx context.Context, playerID string, 
 }
 
 // GetProgression は player_progression の現在値を返す。該当なしは port.ErrNotFound でラップ。
-func (r *PlayerRepository) GetProgression(ctx context.Context, playerID string) (*apiaccount.PlayerProgression, error) {
+func (r *PlayerRepository) GetProgression(ctx context.Context, playerID string) (*domain.PlayerProgression, error) {
 	row := connFrom(ctx, r.pool).QueryRow(ctx,
 		`SELECT player_id, level, exp, updated_at
 		 FROM account.player_progression WHERE player_id = $1`,
@@ -179,7 +176,7 @@ func (r *PlayerRepository) GetProgression(ctx context.Context, playerID string) 
 // GetProgressionForUpdate は player_progression に SELECT ... FOR UPDATE で行ロックを取得する。
 // FOR UPDATE の効果はトランザクション寿命に依存するため、呼び出し側が TxRunner.RunInTx 配下で
 // 呼ぶ責務を持つ（pool 直接呼び出しでは autocommit で直ちにロックが解放される）。
-func (r *PlayerRepository) GetProgressionForUpdate(ctx context.Context, playerID string) (*apiaccount.PlayerProgression, error) {
+func (r *PlayerRepository) GetProgressionForUpdate(ctx context.Context, playerID string) (*domain.PlayerProgression, error) {
 	row := connFrom(ctx, r.pool).QueryRow(ctx,
 		`SELECT player_id, level, exp, updated_at
 		 FROM account.player_progression WHERE player_id = $1 FOR UPDATE`,
@@ -227,16 +224,19 @@ func (r *PlayerRepository) UpdateName(ctx context.Context, playerID string, name
 	return nil
 }
 
-// UpdatePremium はプレミアムステータスを更新する。
+// UpdatePremium はプレミアムステータスを更新する。行が存在しない場合は port.ErrNotFound を返す
+// (他の Update 系プリミティブと契約を揃え、未存在を握りつぶさない)。
 func (r *PlayerRepository) UpdatePremium(ctx context.Context, playerID string, isPremium bool, expiresAt *time.Time) error {
-	db := connFrom(ctx, r.pool)
-	_, err := db.Exec(ctx,
+	ct, err := connFrom(ctx, r.pool).Exec(ctx,
 		`UPDATE account.players SET is_premium = $1, premium_expires_at = $2, updated_at = $3
 		 WHERE player_id = $4`,
 		isPremium, expiresAt, time.Now(), playerID,
 	)
 	if err != nil {
 		return fmt.Errorf("update player premium: %w", err)
+	}
+	if ct.RowsAffected() == 0 {
+		return fmt.Errorf("player %s: %w", playerID, port.ErrNotFound)
 	}
 	return nil
 }
@@ -261,8 +261,8 @@ func (r *PlayerRepository) IncrementDailyBattleCount(ctx context.Context, player
 }
 
 // UpdateProgression は exp / level をそのまま書き込む純プリミティブ。
-// 加算やレベル計算は service 層の責務で、ここでは受け取った値を反映するだけ。
-func (r *PlayerRepository) UpdateProgression(ctx context.Context, playerID string, exp, level int64) (*apiaccount.PlayerProgression, error) {
+// 加算やレベル計算は usecase 層の責務で、ここでは受け取った値を反映するだけ。
+func (r *PlayerRepository) UpdateProgression(ctx context.Context, playerID string, exp, level int64) (*domain.PlayerProgression, error) {
 	row := connFrom(ctx, r.pool).QueryRow(ctx,
 		`UPDATE account.player_progression SET exp = $2, level = $3
 		 WHERE player_id = $1
@@ -280,7 +280,7 @@ func (r *PlayerRepository) UpdateProgression(ctx context.Context, playerID strin
 }
 
 // UpdateOnboardingStatus は onboarding_status をそのまま書き込む純プリミティブ。
-// state machine 順序の判定は service 層が事前に行う責務。
+// state machine 順序の判定は usecase 層が事前に行う責務。
 func (r *PlayerRepository) UpdateOnboardingStatus(ctx context.Context, playerID, status string) error {
 	ct, err := connFrom(ctx, r.pool).Exec(ctx,
 		`UPDATE account.players SET onboarding_status = $1, updated_at = NOW() WHERE player_id = $2`,
@@ -295,17 +295,14 @@ func (r *PlayerRepository) UpdateOnboardingStatus(ctx context.Context, playerID,
 	return nil
 }
 
-func scanPlayer(row pgx.Row) (*apiaccount.Player, error) {
-	var p apiaccount.Player
+func scanPlayer(row pgx.Row) (*domain.Player, error) {
+	var p domain.Player
 	err := row.Scan(
 		&p.PlayerID,
 		&p.FirebaseUID,
 		&p.Name,
-		&p.Level,
-		&p.Exp,
 		&p.IsPremium,
 		&p.EquippedIconNo,
-		&p.InitialFaction,
 		&p.OnboardingStatus,
 		&p.PremiumExpiresAt,
 		&p.CreatedAt,
@@ -317,8 +314,8 @@ func scanPlayer(row pgx.Row) (*apiaccount.Player, error) {
 	return &p, nil
 }
 
-func scanProgression(row pgx.Row) (*apiaccount.PlayerProgression, error) {
-	var p apiaccount.PlayerProgression
+func scanProgression(row pgx.Row) (*domain.PlayerProgression, error) {
+	var p domain.PlayerProgression
 	err := row.Scan(&p.PlayerID, &p.Level, &p.Exp, &p.UpdatedAt)
 	if err != nil {
 		return nil, err
@@ -327,8 +324,8 @@ func scanProgression(row pgx.Row) (*apiaccount.PlayerProgression, error) {
 }
 
 // PostgreSQL の DATE カラムは time.Time としてスキャンし civil.Date に変換する。
-func scanDailyBattle(row pgx.Row) (*apiaccount.PlayerDailyBattle, error) {
-	var db apiaccount.PlayerDailyBattle
+func scanDailyBattle(row pgx.Row) (*domain.PlayerDailyBattle, error) {
+	var db domain.PlayerDailyBattle
 	var gameDateTime time.Time
 	err := row.Scan(
 		&db.PlayerID,

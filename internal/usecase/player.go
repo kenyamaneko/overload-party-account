@@ -1,4 +1,4 @@
-package service
+package usecase
 
 import (
 	"context"
@@ -10,7 +10,7 @@ import (
 	gamelogic "github.com/kenyamaneko/overload-party-battle/packages/game-logic-constants-go"
 	gamedesign "github.com/kenyamaneko/overload-party-common/packages/game-design-constants"
 
-	"github.com/kenyamaneko/overload-party-account/internal/model"
+	"github.com/kenyamaneko/overload-party-account/internal/domain"
 	"github.com/kenyamaneko/overload-party-account/internal/port"
 	apiaccount "github.com/kenyamaneko/overload-party-account/packages/api-account"
 )
@@ -24,23 +24,26 @@ const (
 	gameDayOffset = 4 * time.Hour
 )
 
-// PlayerService はプレイヤー情報の参照・更新を提供します。
-type PlayerService struct {
+// PlayerInteractor はプレイヤー情報の参照・更新を提供します。
+type PlayerInteractor struct {
 	playerRepo     port.PlayerRepo
+	playerViewRepo port.PlayerViewRepo
 	gameConfigRepo port.GameConfigRepo
 	factionRepo    port.FactionRepo
 	txRunner       port.TxRunner
 }
 
-// NewPlayerService は PlayerService を生成します。
-func NewPlayerService(
+// NewPlayerInteractor は PlayerInteractor を生成します。
+func NewPlayerInteractor(
 	playerRepo port.PlayerRepo,
+	playerViewRepo port.PlayerViewRepo,
 	gameConfigRepo port.GameConfigRepo,
 	factionRepo port.FactionRepo,
 	txRunner port.TxRunner,
-) *PlayerService {
-	return &PlayerService{
+) *PlayerInteractor {
+	return &PlayerInteractor{
 		playerRepo:     playerRepo,
+		playerViewRepo: playerViewRepo,
 		gameConfigRepo: gameConfigRepo,
 		factionRepo:    factionRepo,
 		txRunner:       txRunner,
@@ -48,7 +51,7 @@ func NewPlayerService(
 }
 
 // UpdatePremium はプレミアムステータスを更新します。
-func (s *PlayerService) UpdatePremium(ctx context.Context, playerID string, isPremium bool, expiresAtMillis *int64) error {
+func (s *PlayerInteractor) UpdatePremium(ctx context.Context, playerID string, isPremium bool, expiresAtMillis *int64) error {
 	var expiresAt *time.Time
 	if expiresAtMillis != nil {
 		t := time.UnixMilli(*expiresAtMillis)
@@ -58,41 +61,37 @@ func (s *PlayerService) UpdatePremium(ctx context.Context, playerID string, isPr
 }
 
 // GrantFaction はプレイヤーにファクションを付与します。
-func (s *PlayerService) GrantFaction(ctx context.Context, playerID, faction string) error {
+func (s *PlayerInteractor) GrantFaction(ctx context.Context, playerID, faction string) error {
 	return s.factionRepo.AddPlayerFaction(ctx, playerID, faction)
 }
 
 // ListFactions はプレイヤーの所持ファクション一覧を返します。
-func (s *PlayerService) ListFactions(ctx context.Context, playerID string) ([]string, error) {
+func (s *PlayerInteractor) ListFactions(ctx context.Context, playerID string) ([]string, error) {
 	return s.factionRepo.GetPlayerFactions(ctx, playerID)
 }
 
-// UpdateName はプレイヤー名を更新し、更新後の Player アグリゲートを返します。
-// repo の write プリミティブは name のみを書き、ここで FindByID して
-// サーバー側で組み立てた最新の Player をクライアントに返す
+// UpdateName はプレイヤー名を更新し、更新後の PlayerResponse を返します。
+// repo の write プリミティブは name のみを書き、ここで PlayerView を再ロードして
+// サーバー側で組み立てた最新状態をクライアントに返す
 // (「server を信じる」原則。クライアントに整合の責任を押し付けない)。
 //
-// UPDATE と FindByID は別操作 (TX で囲っていない)。同一プレイヤーが
+// UPDATE と PlayerView 取得は別操作 (TX で囲っていない)。同一プレイヤーが
 // 100ms 程度の間に名前変更を多重に投げる挙動は実用上想定しないため、
 // read-after-write の整合性は許容する。問題が出たら txRunner で囲む。
-func (s *PlayerService) UpdateName(ctx context.Context, playerID string, name string) (*apiaccount.Player, error) {
-	if err := model.ValidateName(name); err != nil {
+func (s *PlayerInteractor) UpdateName(ctx context.Context, playerID string, name string) (*apiaccount.PlayerResponse, error) {
+	if err := domain.ValidateName(name); err != nil {
 		return nil, err
 	}
 	if err := s.playerRepo.UpdateName(ctx, playerID, name); err != nil {
 		return nil, fmt.Errorf("update name: %w", err)
 	}
-	player, err := s.playerRepo.FindByID(ctx, playerID)
-	if err != nil {
-		return nil, fmt.Errorf("reload player: %w", err)
-	}
-	return player, nil
+	return s.GetPlayerResponse(ctx, playerID)
 }
 
 // ValidateOnboardingName は表示名のバリデーションのみを行い、書き込みは行いません。
 // scenario が onboarding-name-set publish 前に呼び、4xx を同期にユーザーへ返すための
 // 専用エントリです。プレイヤーの存在確認も行い、Register 未実施なら 404 を返します。
-func (s *PlayerService) ValidateOnboardingName(ctx context.Context, playerID, name string) error {
+func (s *PlayerInteractor) ValidateOnboardingName(ctx context.Context, playerID, name string) error {
 	exists, err := s.playerRepo.Exists(ctx, playerID)
 	if err != nil {
 		return fmt.Errorf("check player exists: %w", err)
@@ -100,20 +99,11 @@ func (s *PlayerService) ValidateOnboardingName(ctx context.Context, playerID, na
 	if !exists {
 		return fmt.Errorf("player %s: %w", playerID, port.ErrNotFound)
 	}
-	return model.ValidateName(name)
-}
-
-// GetPlayer はプレイヤー情報を返します。
-func (s *PlayerService) GetPlayer(ctx context.Context, playerID string) (*apiaccount.Player, error) {
-	player, err := s.playerRepo.FindByID(ctx, playerID)
-	if err != nil {
-		return nil, fmt.Errorf("find player: %w", err)
-	}
-	return player, nil
+	return domain.ValidateName(name)
 }
 
 // GetBattleLimit はプレイヤーの日次バトル制限情報を返します。
-func (s *PlayerService) GetBattleLimit(ctx context.Context, playerID string) (*apiaccount.BattleLimitResponse, error) {
+func (s *PlayerInteractor) GetBattleLimit(ctx context.Context, playerID string) (*apiaccount.BattleLimitResponse, error) {
 	player, err := s.playerRepo.FindByID(ctx, playerID)
 	if err != nil {
 		return nil, fmt.Errorf("find player: %w", err)
@@ -155,7 +145,7 @@ func (s *PlayerService) GetBattleLimit(ctx context.Context, playerID string) (*a
 
 // IncrementBattleCount は当日のバトル回数を 1 加算する。
 // 仕様は FEATURE_SPEC §4.3、TOCTOU の判断は ARCHITECTURE.md §4.3 を参照。
-func (s *PlayerService) IncrementBattleCount(ctx context.Context, playerID string) error {
+func (s *PlayerInteractor) IncrementBattleCount(ctx context.Context, playerID string) error {
 	player, err := s.playerRepo.FindByID(ctx, playerID)
 	if err != nil {
 		return fmt.Errorf("find player: %w", err)
@@ -193,7 +183,7 @@ func (s *PlayerService) IncrementBattleCount(ctx context.Context, playerID strin
 // AwardExp はプレイヤーに経験値を付与しレベルを再計算します。
 // 取得 → 計算 → 書き込み を同一トランザクションで直列化し、並行 AwardExp による
 // ロストアップデートを SELECT FOR UPDATE の行ロックで防ぎます。
-func (s *PlayerService) AwardExp(ctx context.Context, playerID string, expGain int64) error {
+func (s *PlayerInteractor) AwardExp(ctx context.Context, playerID string, expGain int64) error {
 	if expGain <= 0 {
 		return nil
 	}
@@ -238,7 +228,7 @@ func ComputeLevel(newExp, currentLevel, coeff int64) int64 {
 // AwardGameExp はゲーム終了後に両プレイヤーに経験値を付与する唯一の入口。
 // 付与ルール (winnerNum / reason / matchType による分岐) は FEATURE_SPEC §6.1 を参照。
 // 分岐値のリテラル禁止で共有定数パッケージを SSoT として参照する。
-func (s *PlayerService) AwardGameExp(ctx context.Context, player1ID, player2ID string, winnerNum int64, reason, matchType string) error {
+func (s *PlayerInteractor) AwardGameExp(ctx context.Context, player1ID, player2ID string, winnerNum int64, reason, matchType string) error {
 	expWin, err := s.gameConfigRepo.GetInt64(ctx, "exp_win")
 	if err != nil {
 		return fmt.Errorf("read exp_win: %w", err)
@@ -288,35 +278,24 @@ type LevelProgress struct {
 }
 
 // GetPlayerResponse はレベル進捗を付与したプレイヤー情報を返します。
-func (s *PlayerService) GetPlayerResponse(ctx context.Context, playerID string) (*apiaccount.PlayerResponse, error) {
-	player, err := s.GetPlayer(ctx, playerID)
+// PlayerViewRepo で Read Model を取得し、BuildPlayerResponse で API DTO に組み立てます。
+func (s *PlayerInteractor) GetPlayerResponse(ctx context.Context, playerID string) (*apiaccount.PlayerResponse, error) {
+	view, err := s.playerViewRepo.FindByID(ctx, playerID)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("find player view: %w", err)
 	}
-	progress, err := s.GetLevelProgress(ctx, player.Level, player.Exp)
+	coeff, err := s.gameConfigRepo.GetInt64(ctx, ConfigKeyExpFormulaCoefficient)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("get exp_formula_coefficient: %w", err)
 	}
-	return &apiaccount.PlayerResponse{
-		PlayerID:         player.PlayerID,
-		FirebaseUID:      player.FirebaseUID,
-		Name:             player.Name,
-		Level:            player.Level,
-		Exp:              player.Exp,
-		IsPremium:        player.IsPremium,
-		EquippedIconNo:   player.EquippedIconNo,
-		InitialFaction:   player.InitialFaction,
-		OnboardingStatus: player.OnboardingStatus,
-		PremiumExpiresAt: player.PremiumExpiresAt,
-		CreatedAt:        player.CreatedAt,
-		UpdatedAt:        player.UpdatedAt,
-		LevelExpCurrent:  progress.LevelExpCurrent,
-		LevelExpRequired: progress.LevelExpRequired,
-	}, nil
+	if coeff <= 0 {
+		return nil, fmt.Errorf("exp_formula_coefficient not configured in game_config")
+	}
+	return BuildPlayerResponse(view, coeff), nil
 }
 
 // GetLevelProgress は指定レベル・経験値のレベル進捗を返します。
-func (s *PlayerService) GetLevelProgress(ctx context.Context, level, exp int64) (*LevelProgress, error) {
+func (s *PlayerInteractor) GetLevelProgress(ctx context.Context, level, exp int64) (*LevelProgress, error) {
 	coeff, err := s.gameConfigRepo.GetInt64(ctx, ConfigKeyExpFormulaCoefficient)
 	if err != nil {
 		return nil, fmt.Errorf("get exp_formula_coefficient: %w", err)

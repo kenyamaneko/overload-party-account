@@ -30,20 +30,20 @@ type Server struct {
 	mu  sync.Mutex
 	srv *httptest.Server
 
-	// RegisterFn: POST /internal/v1/auth/register。既定は 201 + 空 Player。
+	// RegisterFn: POST /internal/v1/auth/register。既定は 201 + 空 PlayerResponse。
 	RegisterFn func(req apiaccount.RegisterRequest) (int, any)
 
-	// LoginFn: POST /internal/v1/auth/login。既定は 200 + 空 Player。
+	// LoginFn: POST /internal/v1/auth/login。既定は 200 + 空 PlayerResponse。
 	LoginFn func(req apiaccount.LoginRequest) (int, any)
 
 	// FindByFirebaseUIDFn: GET /internal/v1/auth/by-firebase-uid/{uid}。
-	// 既定は 200 + 空 Player。未登録を擬似したい場合は Fn で 404 を返す。
+	// 既定は 200 + 空 PlayerResponse。未登録を擬似したい場合は Fn で 404 を返す。
 	FindByFirebaseUIDFn func(firebaseUID string) (int, any)
 
 	// GetPlayerFn: GET /internal/v1/players/{playerID}。既定は 200 + 空 PlayerResponse。
 	GetPlayerFn func(playerID string) (int, any)
 
-	// UpdateNameFn: PUT /internal/v1/players/{playerID}/name。既定は 200 + 空 Player。
+	// UpdateNameFn: PUT /internal/v1/players/{playerID}/name。既定は 200 + 空 PlayerResponse。
 	UpdateNameFn func(playerID string, req apiaccount.UpdateNameRequest) (int, any)
 
 	// GetBattleLimitFn: GET /internal/v1/players/{playerID}/battle-limit。
@@ -180,7 +180,7 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	fn := s.RegisterFn
 	s.mu.Unlock()
 	if fn == nil {
-		writeJSON(w, http.StatusCreated, apiaccount.Player{})
+		writeJSON(w, http.StatusCreated, apiaccount.PlayerResponse{})
 		return
 	}
 	status, body := fn(req)
@@ -194,7 +194,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	fn := s.LoginFn
 	s.mu.Unlock()
 	if fn == nil {
-		writeJSON(w, http.StatusOK, apiaccount.Player{})
+		writeJSON(w, http.StatusOK, apiaccount.PlayerResponse{})
 		return
 	}
 	status, body := fn(req)
@@ -206,7 +206,7 @@ func (s *Server) handleFindByFirebaseUID(w http.ResponseWriter, _ *http.Request,
 	fn := s.FindByFirebaseUIDFn
 	s.mu.Unlock()
 	if fn == nil {
-		writeJSON(w, http.StatusOK, apiaccount.Player{})
+		writeJSON(w, http.StatusOK, apiaccount.PlayerResponse{})
 		return
 	}
 	status, body := fn(firebaseUID)
@@ -232,7 +232,7 @@ func (s *Server) handleUpdateName(w http.ResponseWriter, r *http.Request, player
 	fn := s.UpdateNameFn
 	s.mu.Unlock()
 	if fn == nil {
-		writeJSON(w, http.StatusOK, apiaccount.Player{})
+		writeJSON(w, http.StatusOK, apiaccount.PlayerResponse{})
 		return
 	}
 	status, body := fn(playerID, req)
@@ -336,7 +336,7 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, _ *http.Request, playe
 	fn := s.GetSettingsFn
 	s.mu.Unlock()
 	if fn == nil {
-		writeJSON(w, http.StatusOK, apiaccount.PlayerSettings{})
+		writeJSON(w, http.StatusOK, apiaccount.PlayerSettingsResponse{})
 		return
 	}
 	status, body := fn(playerID)
@@ -350,7 +350,7 @@ func (s *Server) handleUpdateSettings(w http.ResponseWriter, r *http.Request, pl
 	fn := s.UpdateSettingsFn
 	s.mu.Unlock()
 	if fn == nil {
-		writeJSON(w, http.StatusOK, apiaccount.PlayerSettings{})
+		writeJSON(w, http.StatusOK, apiaccount.PlayerSettingsResponse{})
 		return
 	}
 	status, body := fn(playerID, req)

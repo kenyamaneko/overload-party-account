@@ -21,7 +21,7 @@ account は以下の機能ドメインを所有する。
 | ファクション所有 | onboarding 完了時の初期 faction 登録（`player-onboarded` イベント）と shop 購入時の追加（`faction-purchased` イベント）を `player_factions` に射影 |
 | 経験値・レベル | `AwardGameExp` による両プレイヤー同時付与。係数変更時もレベルは下がらない |
 | プレミアムステータス | `premium-updated` イベントから `is_premium` を射影保持 |
-| 表示名の検証・反映 | `PUT /players/:id/name` で表示名を受け、業務ルール (空・空白のみ・制御文字・`MaxNameRunes` 超) を [model.ValidateName](../internal/model/name.go) で検証して `players.name` を UPDATE |
+| 表示名の検証・反映 | `PUT /players/:id/name` で表示名を受け、業務ルール (空・空白のみ・制御文字・`MaxNameRunes` 超) を [domain.ValidateName](../internal/domain/name.go) で検証して `players.name` を UPDATE |
 | ユーザー設定 | 言語・音量・通知フラグの参照/更新 |
 
 account は **account スキーマの DB 行と Pub/Sub から取り込んだ状態を唯一の真実とし**、他サービスを直接呼び出さず、自らイベントを publish もしない。
@@ -272,10 +272,10 @@ handler 層が `errors.Is` でセンチネルを分類して HTTP に変換す�
 
 | センチネル | HTTP | 契約 |
 |---|---|---|
-| `port.ErrNotFound` / `service.ErrPlayerNotFound` | 404 | リソース不在 |
-| `service.ErrPlayerAlreadyRegistered` | 409 | Register は非冪等。gateway が Login にフォールバック |
-| `service.ErrFactionAlreadySelected` | 409 | 冪等な成功扱い。クライアントはエラー表示しない |
-| `service.ErrInvalidFaction` | 400 | 許可集合 (`gamedesign.SelectableFactions`) 外 |
+| `port.ErrNotFound` / `usecase.ErrPlayerNotFound` | 404 | リソース不在 |
+| `usecase.ErrPlayerAlreadyRegistered` | 409 | Register は非冪等。gateway が Login にフォールバック |
+| `usecase.ErrFactionAlreadySelected` | 409 | 冪等な成功扱い。クライアントはエラー表示しない |
+| `usecase.ErrInvalidFaction` | 400 | 許可集合 (`gamedesign.SelectableFactions`) 外 |
 | JSON bind 失敗 / 必須フィールド欠落 | 400 | ハンドラ手前で弾く |
 | その他 wrap されたエラー | 500 | DB 接続断・Firestore 読み取り失敗等 |
 

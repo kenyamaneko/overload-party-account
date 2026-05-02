@@ -1,4 +1,4 @@
-package service
+package usecase
 
 import (
 	"context"
@@ -9,23 +9,23 @@ import (
 	"github.com/kenyamaneko/overload-party-account/internal/port"
 )
 
-// FactionService は REST 経路 (`POST /players/:playerId/factions/select`) からの
+// FactionInteractor は REST 経路 (`POST /players/:playerId/factions/select`) からの
 // 初期ファクション選択を管理します。Pub/Sub 起点のオンボード faction-set 処理は
-// OnboardingService.ApplyFactionSet が担います。
+// OnboardingInteractor.ApplyFactionSet が担います。
 // カード配布は card サービスの Pub/Sub subscriber が独立して処理します。
-type FactionService struct {
+type FactionInteractor struct {
 	playerRepo  port.PlayerRepo
 	factionRepo port.FactionRepo
 	txRunner    port.TxRunner
 }
 
-// NewFactionService は FactionService を生成します。
-func NewFactionService(
+// NewFactionInteractor は FactionInteractor を生成します。
+func NewFactionInteractor(
 	playerRepo port.PlayerRepo,
 	factionRepo port.FactionRepo,
 	txRunner port.TxRunner,
-) *FactionService {
-	return &FactionService{
+) *FactionInteractor {
+	return &FactionInteractor{
 		playerRepo:  playerRepo,
 		factionRepo: factionRepo,
 		txRunner:    txRunner,
@@ -36,7 +36,7 @@ func NewFactionService(
 // SSoT は player_factions.is_initial=TRUE の行で、1 プレイヤーに最大 1 つ
 // (partial unique index で保証)。ショップ先行で同 faction を所持していても
 // is_initial=TRUE への昇格として成立します。
-func (s *FactionService) SelectInitialFaction(ctx context.Context, playerID, faction string) error {
+func (s *FactionInteractor) SelectInitialFaction(ctx context.Context, playerID, faction string) error {
 	if playerID == "" {
 		return fmt.Errorf("%w: playerID is empty", ErrInvalidFaction)
 	}

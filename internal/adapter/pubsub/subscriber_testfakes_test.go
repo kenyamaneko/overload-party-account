@@ -10,7 +10,7 @@ import (
 	"cloud.google.com/go/civil"
 	"github.com/stretchr/testify/require"
 
-	apiaccount "github.com/kenyamaneko/overload-party-account/packages/api-account"
+	"github.com/kenyamaneko/overload-party-account/internal/domain"
 	"github.com/kenyamaneko/overload-party-account/internal/port"
 )
 
@@ -114,7 +114,7 @@ func (r *fakeFactionRepo) GetPlayerFactions(_ context.Context, playerID string) 
 }
 
 // fakePlayerRepo は premium_updated subscriber 等、port.PlayerRepo を要求する
-// subscriber 用の最小実装。onboarded subscriber は service.FactionService を
+// subscriber 用の最小実装。onboarded subscriber は usecase.FactionInteractor を
 // 経由して repo に触れるため、fakePlayerRepo は参照されない。
 // 将来 premium_updated のテストを書く際に使えるよう骨格だけ残す。
 type fakePlayerRepo struct {
@@ -136,16 +136,16 @@ func newFakePlayerRepo() *fakePlayerRepo {
 	}
 }
 
-func (r *fakePlayerRepo) Create(_ context.Context, _ *apiaccount.Player, _ *apiaccount.PlayerProgression) error {
+func (r *fakePlayerRepo) Create(_ context.Context, _ *domain.Player, _ *domain.PlayerProgression) error {
 	panic("not implemented in test")
 }
-func (r *fakePlayerRepo) FindByID(_ context.Context, _ string) (*apiaccount.Player, error) {
+func (r *fakePlayerRepo) FindByID(_ context.Context, _ string) (*domain.Player, error) {
 	panic("not implemented in test")
 }
-func (r *fakePlayerRepo) FindByFirebaseUID(_ context.Context, _ string) (*apiaccount.Player, error) {
+func (r *fakePlayerRepo) FindByFirebaseUID(_ context.Context, _ string) (*domain.Player, error) {
 	panic("not implemented in test")
 }
-func (r *fakePlayerRepo) GetDailyBattle(_ context.Context, _ string, _ civil.Date) (*apiaccount.PlayerDailyBattle, error) {
+func (r *fakePlayerRepo) GetDailyBattle(_ context.Context, _ string, _ civil.Date) (*domain.PlayerDailyBattle, error) {
 	panic("not implemented in test")
 }
 func (r *fakePlayerRepo) IncrementDailyBattleCount(_ context.Context, _ string, _ civil.Date) (int64, error) {
@@ -168,13 +168,13 @@ func (r *fakePlayerRepo) UpdatePremium(_ context.Context, playerID string, isPre
 func (r *fakePlayerRepo) Exists(_ context.Context, _ string) (bool, error) {
 	panic("not implemented in test")
 }
-func (r *fakePlayerRepo) GetProgression(_ context.Context, _ string) (*apiaccount.PlayerProgression, error) {
+func (r *fakePlayerRepo) GetProgression(_ context.Context, _ string) (*domain.PlayerProgression, error) {
 	panic("not implemented in test")
 }
-func (r *fakePlayerRepo) GetProgressionForUpdate(_ context.Context, _ string) (*apiaccount.PlayerProgression, error) {
+func (r *fakePlayerRepo) GetProgressionForUpdate(_ context.Context, _ string) (*domain.PlayerProgression, error) {
 	panic("not implemented in test")
 }
-func (r *fakePlayerRepo) UpdateProgression(_ context.Context, _ string, _, _ int64) (*apiaccount.PlayerProgression, error) {
+func (r *fakePlayerRepo) UpdateProgression(_ context.Context, _ string, _, _ int64) (*domain.PlayerProgression, error) {
 	panic("not implemented in test")
 }
 func (r *fakePlayerRepo) GetOnboardingStatus(_ context.Context, _ string) (string, error) {

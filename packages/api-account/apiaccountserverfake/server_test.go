@@ -65,7 +65,7 @@ func TestServer_RegisterFn_RoundTrip(t *testing.T) {
 	var gotReq apiaccount.RegisterRequest
 	srv.RegisterFn = func(req apiaccount.RegisterRequest) (int, any) {
 		gotReq = req
-		return http.StatusCreated, apiaccount.Player{
+		return http.StatusCreated, apiaccount.PlayerResponse{
 			PlayerID:    "p-new",
 			FirebaseUID: req.FirebaseUID,
 			// Register 直後 name は未確定。
@@ -83,7 +83,7 @@ func TestServer_RegisterFn_RoundTrip(t *testing.T) {
 	assert.Equal(t, http.StatusCreated, resp.StatusCode)
 	assert.Equal(t, "uid-42", gotReq.FirebaseUID)
 
-	var decoded apiaccount.Player
+	var decoded apiaccount.PlayerResponse
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&decoded))
 	assert.Equal(t, "p-new", decoded.PlayerID)
 	assert.Nil(t, decoded.Name)
@@ -121,7 +121,7 @@ func TestServer_PathVariables_ExtractPlayerID(t *testing.T) {
 	srv.UpdateNameFn = func(playerID string, req apiaccount.UpdateNameRequest) (int, any) {
 		gotPlayerID = playerID
 		gotReq = req
-		return http.StatusOK, apiaccount.Player{PlayerID: playerID, Name: &req.Name}
+		return http.StatusOK, apiaccount.PlayerResponse{PlayerID: playerID, Name: &req.Name}
 	}
 
 	reqBody := []byte(`{"name":"bob"}`)

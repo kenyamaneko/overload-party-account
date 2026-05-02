@@ -9,10 +9,10 @@ import (
 	apiscenario "github.com/kenyamaneko/overload-party-scenario/packages/api-scenario"
 
 	"github.com/kenyamaneko/overload-party-account/internal/port"
-	"github.com/kenyamaneko/overload-party-account/internal/service"
+	"github.com/kenyamaneko/overload-party-account/internal/usecase"
 )
 
-// OnboardingFactionSetApplier は OnboardingService.ApplyFactionSet に対する最小インターフェース。
+// OnboardingFactionSetApplier は OnboardingInteractor.ApplyFactionSet に対する最小インターフェース。
 type OnboardingFactionSetApplier interface {
 	ApplyFactionSet(ctx context.Context, eventID, eventType, playerID, initialFactionID string) (processed bool, err error)
 }
@@ -55,7 +55,7 @@ func (s *OnboardingFactionSetSubscriber) processEvent(ctx context.Context, data 
 
 	processed, err := s.applier.ApplyFactionSet(ctx, ev.EventID, ev.EventType, ev.PlayerID, ev.InitialFactionID)
 	if err != nil {
-		if service.IsPublisherBug(err) {
+		if usecase.IsPublisherBug(err) {
 			slog.Error("onboarding-faction-set subscriber: player not found (publisher bug)",
 				"event_id", ev.EventID, "player_id", ev.PlayerID, "error", err)
 			return fmt.Errorf("onboarding-faction-set: player not found: %w", err)

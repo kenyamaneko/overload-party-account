@@ -14,8 +14,8 @@ import (
 )
 
 // fakeOnboardingCompletedApplier は OnboardingCompletedApplier を満たす最小スタブ。
-// subscriber は「service 層にイベント内容を正しく委譲し、戻り値に応じて
-// ACK / NACK / 警告ログ分岐だけを行う」契約なので、service 内部の Tx / repo
+// subscriber は「usecase 層にイベント内容を正しく委譲し、戻り値に応じて
+// ACK / NACK / 警告ログ分岐だけを行う」契約なので、usecase 内部の Tx / repo
 // 挙動はここで抽象化する。
 type fakeOnboardingCompletedApplier struct {
 	returnProcessed bool
@@ -63,7 +63,7 @@ func TestPlayerOnboardedSubscriber_Consumes(t *testing.T) {
 		assertApplier   func(t *testing.T, a *fakeOnboardingCompletedApplier)
 	}{
 		{
-			name:            "正常系: service が processed=true を返したら ACK",
+			name:            "正常系: usecase が processed=true を返したら ACK",
 			publish:         publishValid,
 			returnProcessed: true,
 			wantAck:         true,
@@ -75,7 +75,7 @@ func TestPlayerOnboardedSubscriber_Consumes(t *testing.T) {
 			},
 		},
 		{
-			name:            "冪等スキップ: service が processed=false を返したら副作用なし ACK",
+			name:            "冪等スキップ: usecase が processed=false を返したら副作用なし ACK",
 			publish:         publishValid,
 			returnProcessed: false,
 			wantAck:         true,
@@ -130,7 +130,7 @@ func TestPlayerOnboardedSubscriber_Consumes(t *testing.T) {
 			},
 		},
 		{
-			name:      "service が ErrNotFound: publisher バグとして明示 NACK (error ログ)",
+			name:      "usecase が ErrNotFound: publisher バグとして明示 NACK (error ログ)",
 			publish:   publishValid,
 			returnErr: port.ErrNotFound,
 			wantAck:   false,

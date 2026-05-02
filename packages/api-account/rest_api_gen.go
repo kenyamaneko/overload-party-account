@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-// PlayerResponse is returned by GET /internal/v1/players/:playerId and kin. It is Player + computed level progress. OnboardingStatus lets clients drive onboarding-resume without a separate scenario RPC.
+// PlayerResponse is returned by GET /internal/v1/players/:playerId and kin. PlayerView + computed level progress を JSON 化した、内部 REST 契約の唯一の Player 表現。
 type PlayerResponse struct {
 	PlayerID         string     `json:"player_id"`
 	FirebaseUID      string     `json:"firebase_uid"`
@@ -22,6 +22,16 @@ type PlayerResponse struct {
 	UpdatedAt        time.Time  `json:"updated_at"`
 	LevelExpCurrent  int64      `json:"level_exp_current"`
 	LevelExpRequired int64      `json:"level_exp_required"`
+}
+
+// PlayerSettingsResponse is returned by GET / PUT /internal/v1/players/:playerId/settings.
+type PlayerSettingsResponse struct {
+	PlayerID    string    `json:"player_id"`
+	Language    string    `json:"language"`
+	BgmVolume   int64     `json:"bgm_volume"`
+	SeVolume    int64     `json:"se_volume"`
+	PushEnabled bool      `json:"push_enabled"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }
 
 // BattleLimitResponse is returned by GET /internal/v1/players/:playerId/battle-limit.

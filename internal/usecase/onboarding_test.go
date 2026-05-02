@@ -1,6 +1,6 @@
 //go:build integration
 
-package service
+package usecase
 
 import (
 	"context"
@@ -14,14 +14,14 @@ import (
 // PUT /players/:id/name を呼んで account に確定済みのため、onboarding-faction-set 経路では
 // initial_faction の反映と processed_events の冪等ガードのみを担う。
 // name が NULL のままでも faction の付与には支障がないことをここで固定する。
-func TestOnboardingService_ApplyFactionSet_NameIndependent(t *testing.T) {
+func TestOnboardingInteractor_ApplyFactionSet_NameIndependent(t *testing.T) {
 	ctx := context.Background()
 	sharedPg.Truncate(t)
 	seedPlayer(t, testPlayerID1, "uid-1", "", false) // name 未確定 (NULL) のプレイヤー
 
-	playerRepo, factionRepo, _, tx := newRealRepos()
+	playerRepo, _, factionRepo, _, tx := newRealRepos()
 	eventRepo := newProcessedEventRepo()
-	svc := NewOnboardingService(playerRepo, factionRepo, eventRepo, tx)
+	svc := NewOnboardingInteractor(playerRepo, factionRepo, eventRepo, tx)
 
 	processed, err := svc.ApplyFactionSet(
 		ctx,
@@ -37,8 +37,11 @@ func TestOnboardingService_ApplyFactionSet_NameIndependent(t *testing.T) {
 	p, ferr := playerRepo.FindByID(ctx, testPlayerID1)
 	require.NoError(t, ferr)
 	assert.Nil(t, p.Name, "ApplyFactionSet は name を書かない")
-	require.NotNil(t, p.InitialFaction)
-	assert.Equal(t, "SHE", *p.InitialFaction)
+
+	initial, ferr := factionRepo.GetInitialFaction(ctx, testPlayerID1)
+	require.NoError(t, ferr)
+	require.NotNil(t, initial)
+	assert.Equal(t, "SHE", *initial)
 
 	factions, ferr := factionRepo.GetPlayerFactions(ctx, testPlayerID1)
 	require.NoError(t, ferr)

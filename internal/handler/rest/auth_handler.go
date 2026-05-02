@@ -5,17 +5,17 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/kenyamaneko/overload-party-account/internal/service"
+	"github.com/kenyamaneko/overload-party-account/internal/usecase"
 	apiaccount "github.com/kenyamaneko/overload-party-account/packages/api-account"
 )
 
 // AuthHandler は認証関連の REST エンドポイントを処理します。
 type AuthHandler struct {
-	authService *service.AuthService
+	authService *usecase.AuthInteractor
 }
 
 // NewAuthHandler は AuthHandler を生成します。
-func NewAuthHandler(authService *service.AuthService) *AuthHandler {
+func NewAuthHandler(authService *usecase.AuthInteractor) *AuthHandler {
 	return &AuthHandler{authService: authService}
 }
 

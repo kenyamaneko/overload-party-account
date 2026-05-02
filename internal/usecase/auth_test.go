@@ -1,6 +1,6 @@
 //go:build integration
 
-package service
+package usecase
 
 import (
 	"context"
@@ -9,17 +9,22 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/kenyamaneko/overload-party-account/internal/model"
+	"github.com/kenyamaneko/overload-party-account/internal/domain"
 )
 
 // newAuthTestService は実 PostgreSQL repository + TxManager を束ねて
-// AuthService を返す。DB の truncate は呼び出し側（各 Test が sharedPg.Truncate）で行う。
-func newAuthTestService() *AuthService {
-	playerRepo, _, playerSettingsRepo, tx := newRealRepos()
-	return NewAuthService(playerRepo, playerSettingsRepo, tx)
+// AuthInteractor を返す。DB の truncate は呼び出し側（各 Test が sharedPg.Truncate）で行う。
+// gameConfigRepo は exp_formula_coefficient のみを必要とする
+// (PlayerResponse 組み立てで派生値計算に使う)。
+func newAuthTestService() *AuthInteractor {
+	playerRepo, playerViewRepo, _, playerSettingsRepo, tx := newRealRepos()
+	gameConfigRepo := newFakeGameConfigRepo(map[string]int64{
+		ConfigKeyExpFormulaCoefficient: 60,
+	})
+	return NewAuthInteractor(playerRepo, playerViewRepo, playerSettingsRepo, gameConfigRepo, tx)
 }
 
-func TestAuthService_Register_Success(t *testing.T) {
+func TestAuthInteractor_Register_Success(t *testing.T) {
 	ctx := context.Background()
 
 	tests := []struct {
@@ -77,15 +82,15 @@ func TestAuthService_Register_Success(t *testing.T) {
 				 FROM account.player_settings WHERE player_id = $1`,
 				player.PlayerID,
 			).Scan(&language, &bgm, &se, &push))
-			assert.Equal(t, model.DefaultLanguage, language)
-			assert.Equal(t, model.DefaultBgmVolume, bgm)
-			assert.Equal(t, model.DefaultSeVolume, se)
-			assert.Equal(t, model.DefaultPushEnabled, push)
+			assert.Equal(t, domain.DefaultLanguage, language)
+			assert.Equal(t, domain.DefaultBgmVolume, bgm)
+			assert.Equal(t, domain.DefaultSeVolume, se)
+			assert.Equal(t, domain.DefaultPushEnabled, push)
 		})
 	}
 }
 
-func TestAuthService_Register_DuplicateFirebaseUID_ReturnsAlreadyRegistered(t *testing.T) {
+func TestAuthInteractor_Register_DuplicateFirebaseUID_ReturnsAlreadyRegistered(t *testing.T) {
 	ctx := context.Background()
 	sharedPg.Truncate(t)
 	svc := newAuthTestService()
@@ -97,7 +102,7 @@ func TestAuthService_Register_DuplicateFirebaseUID_ReturnsAlreadyRegistered(t *t
 	require.ErrorIs(t, err, ErrPlayerAlreadyRegistered)
 }
 
-func TestAuthService_Login_Success(t *testing.T) {
+func TestAuthInteractor_Login_Success(t *testing.T) {
 	ctx := context.Background()
 	sharedPg.Truncate(t)
 	svc := newAuthTestService()
@@ -112,7 +117,7 @@ func TestAuthService_Login_Success(t *testing.T) {
 	assert.Nil(t, loggedIn.Name)
 }
 
-func TestAuthService_Login_NotFound(t *testing.T) {
+func TestAuthInteractor_Login_NotFound(t *testing.T) {
 	sharedPg.Truncate(t)
 	svc := newAuthTestService()
 
@@ -124,7 +129,7 @@ func TestAuthService_Login_NotFound(t *testing.T) {
 // 後続の UpdateName で初めて表示名が確定する仕様を固定する。
 // 「途中でゲームを落とした後の再起動でも Register をやり直さない」設計の
 // 基礎が成立していることをここで保証する。
-func TestAuthService_RegisterThenUpdateName_OnboardingFlow(t *testing.T) {
+func TestAuthInteractor_RegisterThenUpdateName_OnboardingFlow(t *testing.T) {
 	ctx := context.Background()
 	sharedPg.Truncate(t)
 
@@ -134,8 +139,8 @@ func TestAuthService_RegisterThenUpdateName_OnboardingFlow(t *testing.T) {
 	require.Nil(t, registered.Name, "Register 直後は name が nil")
 
 	// オンボーディングシナリオ完了相当の表示名確定。
-	playerRepo, factionRepo, _, tx := newRealRepos()
-	playerSvc := NewPlayerService(playerRepo, newFakeGameConfigRepo(map[string]int64{
+	playerRepo, playerViewRepo, factionRepo, _, tx := newRealRepos()
+	playerSvc := NewPlayerInteractor(playerRepo, playerViewRepo, newFakeGameConfigRepo(map[string]int64{
 		ConfigKeyExpFormulaCoefficient: 60,
 	}), factionRepo, tx)
 

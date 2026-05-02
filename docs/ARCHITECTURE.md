@@ -81,12 +81,12 @@ Register は冪等ではない。重複登録は UNIQUE INDEX `idx_players_fireb
 
 ### 3.1 なぜスターターカードや初期ファクションを含めないか
 
-かつて `auth_service.Register` でスターターカード配布と初期ファクション選択を同時に行っていたが、以下の理由で削除済み:
+かつて `usecase.AuthInteractor.Register` でスターターカード配布と初期ファクション選択を同時に行っていたが、以下の理由で削除済み:
 
 - ファクション選択は UX 上「チュートリアル開始直後の選択画面」という非同期な操作で、登録と同時に決められない
 - カード配布は card サービスの責務で、account が card の内部状態を知るべきでない
 
-トリガーポイントは scenario の各オンボードステップで発行される 3 つのイベント (`onboarding-name-set` / `onboarding-faction-set` / `player-onboarded`) で、account は subscriber 経由で `players.name` / `player_factions (is_initial=TRUE 行)` / `onboarding_status` を反映する（§6.3〜6.5）。`auth_service.Register` にカード付与・ファクション付与を再導入してはいけない（CLAUDE.md 禁止事項）。
+トリガーポイントは scenario の各オンボードステップで発行される 3 つのイベント (`onboarding-name-set` / `onboarding-faction-set` / `player-onboarded`) で、account は subscriber 経由で `players.name` / `player_factions (is_initial=TRUE 行)` / `onboarding_status` を反映する（§6.3〜6.5）。`usecase.AuthInteractor.Register` にカード付与・ファクション付与を再導入してはいけない（CLAUDE.md 禁止事項）。
 
 ## 4. デイリーバトル制限
 
@@ -101,7 +101,7 @@ Register は冪等ではない。重複登録は UNIQUE INDEX `idx_players_fireb
 | JST 2024-01-02 04:59 (UTC 2024-01-01 19:59) | 2024-01-01 |
 | JST 2024-01-02 05:00 (UTC 2024-01-01 20:00) | 2024-01-02 |
 
-実装: `service.gameDay()` が `time.Now().UTC().Add(4h)` の日付部分を返す。`gameDayOffset` 定数で一箇所に閉じている ([internal/service/player_service.go](../internal/service/player_service.go))。リセットはアプリ側のロジックではなく、PK `(player_id, game_date)` が日ごとに別行を区別することで自動的に行われる。
+実装: `usecase.gameDay()` が `time.Now().UTC().Add(4h)` の日付部分を返す。`gameDayOffset` 定数で一箇所に閉じている ([internal/usecase/player.go](../internal/usecase/player.go))。リセットはアプリ側のロジックではなく、PK `(player_id, game_date)` が日ごとに別行を区別することで自動的に行われる。
 
 ### 4.2 履歴台帳としての設計
 
@@ -109,7 +109,7 @@ Register は冪等ではない。重複登録は UNIQUE INDEX `idx_players_fireb
 
 ### 4.3 上限ガードと TOCTOU の判断
 
-上限判定は service 層 (`PlayerService`) の責務で、repository 層 (`PlayerRepository.IncrementDailyBattleCount`) は `(player_id, game_date)` を 1 SQL で UPSERT し加算後のカウントを返すプリミティブ。`free_daily_battle_limit` が Firestore 未設定 (値 0) のときはフォールバックせずエラーを返す (運用事故として扱う)。
+上限判定は usecase 層 (`PlayerInteractor`) の責務で、repository 層 (`PlayerRepository.IncrementDailyBattleCount`) は `(player_id, game_date)` を 1 SQL で UPSERT し加算後のカウントを返すプリミティブ。`free_daily_battle_limit` が Firestore 未設定 (値 0) のときはフォールバックせずエラーを返す (運用事故として扱う)。
 
 account が `player_daily_battle` の authoritative owner なので、上限不変条件は account 側で守る。battle サービス側が事前に `GetBattleLimit` を呼ぶのは UX のためのプリチェック (「戦う前に残り回数を表示」) であり、最終的な強制は account の書き込みパスで行う二段構え。
 
@@ -250,10 +250,10 @@ Pub/Sub の Exactly-Once 配信がインフラ層の第一防御。`processed_ev
 | 層 | 返す/扱う |
 |---|---|
 | repository | `port.ErrNotFound` と wrap された SQL エラー |
-| service | ドメインのセンチネル ([internal/service/errors.go](../internal/service/errors.go)) + wrap された下位エラー |
+| usecase | ドメインのセンチネル ([internal/usecase/errors.go](../internal/usecase/errors.go)) + wrap された下位エラー |
 | handler (rest) | `errors.Is` でセンチネルを分類し HTTP ステータスに変換 ([internal/handler/rest/errors.go](../internal/handler/rest/errors.go)) |
 
-service 層は HTTP ステータスを知らず、handler 層は SQL を知らない。センチネルと HTTP ステータスのマッピングは `errors.go` を SSoT とし、各センチネルの docstring に「なぜ 409 か」「冪等な成功扱いかどうか」等のセマンティクスを書く。
+usecase 層は HTTP ステータスを知らず、handler 層は SQL を知らない。センチネルと HTTP ステータスのマッピングは `errors.go` を SSoT とし、各センチネルの docstring に「なぜ 409 か」「冪等な成功扱いかどうか」等のセマンティクスを書く。
 
 ## 9. 運用
 
@@ -279,4 +279,4 @@ account 自身はトピックを publish しない。
 
 ### 9.3 Firestore の運用
 
-`game_config` コレクションは運用者が手動で値を書く（コード上には生成スクリプトを持たない）。キーのリストと意味は [FEATURE_SPEC.md](FEATURE_SPEC.md) と `service/player_service.go` の定数を参照。
+`game_config` コレクションは運用者が手動で値を書く（コード上には生成スクリプトを持たない）。キーのリストと意味は [FEATURE_SPEC.md](FEATURE_SPEC.md) と `usecase/player.go` の定数を参照。

@@ -5,17 +5,17 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/kenyamaneko/overload-party-account/internal/service"
+	"github.com/kenyamaneko/overload-party-account/internal/usecase"
 	apiaccount "github.com/kenyamaneko/overload-party-account/packages/api-account"
 )
 
 // FactionHandler は初期ファクション選択フローの REST エンドポイントを処理します。
 type FactionHandler struct {
-	factionService *service.FactionService
+	factionService *usecase.FactionInteractor
 }
 
 // NewFactionHandler は FactionHandler を生成します。
-func NewFactionHandler(factionService *service.FactionService) *FactionHandler {
+func NewFactionHandler(factionService *usecase.FactionInteractor) *FactionHandler {
 	return &FactionHandler{factionService: factionService}
 }
 

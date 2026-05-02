@@ -1,85 +1,91 @@
 # SSoT for account-owned types.
 #
-# The account service is the owner of player / player_daily_battle /
-# player_factions / player_settings. This file drives scripts/generate_types.py
-# to emit Go code into packages/api-account/*_gen.go, which gateway (and other
-# services) go-get as a published contract.
+# このファイルは scripts/generate_types.py への入力で、以下の 2 系統に分かれてコード生成される:
 #
-# Every section is routed to the Go module dir `packages/api-account` with
-# Go package name `apiaccount`. The target is always Go (no TS/C# here — the
-# account contract is consumed only by Go services).
+#   target: domain → internal/domain/*_gen.go (package: domain)
+#       純ドメインモデル。account.* テーブルの行 (Write 集約) と、複数テーブルから
+#       JOIN で組み立てる Read Model (PlayerView) を含む。db タグのみ付与し、
+#       JSON タグは付けない (内部用、API 契約には出ない)。
 #
-# Fields:
-#   target: "both" — kept for parity with common's schema; unused by the
-#           account generator but lets us reuse the same YAML shape.
-#   Per-type fields: name (Go identifier), type (Go type string), json, db
+#   target: api   → packages/api-account/*_gen.go (package: apiaccount)
+#       内部 REST API の契約 (Request / Response DTO)。json タグのみ付与し、
+#       db タグは付けない (API 境界専用、永続化には触れない)。Go モジュールとして
+#       gateway 等に go-get される公開契約。
+#
+# 厳密に「Write 集約 / Read Model / API DTO」を別の型に分ける構造で、
+# リポジトリ層は domain 型のみを返し、handler 層が apiaccount 型を組み立てる。
 
 files:
-  # ─── Player domain types ─────────────────────────────
+  # ─── Internal domain models (target: domain → internal/domain) ──────────
   - name: player
-    target: both
+    target: domain
     imports:
       - time
       - cloud.google.com/go/civil
     types:
       - name: Player
-        comment: "Player is the account.players row + derived initial faction. OnboardingStatus is the SSoT for onboarding progression (not_started / name_set / faction_set / completed). InitialFaction はオンボーディングで選択した faction で、player_factions.is_initial=TRUE の行から導出される (players テーブルの列ではない)。"
+        comment: "Player は account.players テーブルの 1 行を表す Write 集約。Level/Exp/InitialFaction はこの型に含めない (それぞれ player_progression / player_factions の責務)。読み取り時に合成が必要な場合は PlayerView を使う。"
         fields:
-          - {name: PlayerID, type: string, json: "player_id", db: "player_id"}
-          - {name: FirebaseUID, type: string, json: "firebase_uid", db: "firebase_uid"}
-          - {name: Name, type: "*string", json: "name,omitempty", db: "name"}
-          - {name: Level, type: int64, json: "level", db: "level"}
-          - {name: Exp, type: int64, json: "exp", db: "exp"}
-          - {name: IsPremium, type: bool, json: "is_premium", db: "is_premium"}
-          - {name: EquippedIconNo, type: "*int64", json: "equipped_icon_no,omitempty", db: "equipped_icon_no"}
-          - {name: InitialFaction, type: "*string", json: "initial_faction,omitempty"}
-          - {name: OnboardingStatus, type: string, json: "onboarding_status", db: "onboarding_status"}
-          - {name: PremiumExpiresAt, type: "*time.Time", json: "premium_expires_at,omitempty", db: "premium_expires_at"}
-          - {name: CreatedAt, type: time.Time, json: "created_at", db: "created_at"}
-          - {name: UpdatedAt, type: time.Time, json: "updated_at", db: "updated_at"}
-
-      - name: PlayerDailyBattle
-        comment: "PlayerDailyBattle is one account.player_daily_battle row (one per player per game day). PK is (player_id, game_date)."
-        fields:
-          - {name: PlayerID, type: string, json: "player_id", db: "player_id"}
-          - {name: GameDate, type: civil.Date, json: "game_date", db: "game_date"}
-          - {name: DailyBattleCount, type: int64, json: "daily_battle_count", db: "daily_battle_count"}
+          - {name: PlayerID, type: string, db: "player_id"}
+          - {name: FirebaseUID, type: string, db: "firebase_uid"}
+          - {name: Name, type: "*string", db: "name"}
+          - {name: IsPremium, type: bool, db: "is_premium"}
+          - {name: EquippedIconNo, type: "*int64", db: "equipped_icon_no"}
+          - {name: OnboardingStatus, type: string, db: "onboarding_status"}
+          - {name: PremiumExpiresAt, type: "*time.Time", db: "premium_expires_at"}
+          - {name: CreatedAt, type: time.Time, db: "created_at"}
+          - {name: UpdatedAt, type: time.Time, db: "updated_at"}
 
       - name: PlayerProgression
-        comment: "PlayerProgression is the account.player_progression row. level/exp are split from players to isolate high-frequency battle updates from the profile row."
+        comment: "PlayerProgression は account.player_progression の 1 行。バトル毎の高頻度 UPDATE を players から分離するための独立集約。"
         fields:
-          - {name: PlayerID, type: string, json: "player_id", db: "player_id"}
-          - {name: Level, type: int64, json: "level", db: "level"}
-          - {name: Exp, type: int64, json: "exp", db: "exp"}
-          - {name: UpdatedAt, type: time.Time, json: "updated_at", db: "updated_at"}
+          - {name: PlayerID, type: string, db: "player_id"}
+          - {name: Level, type: int64, db: "level"}
+          - {name: Exp, type: int64, db: "exp"}
+          - {name: UpdatedAt, type: time.Time, db: "updated_at"}
+
+      - name: PlayerDailyBattle
+        comment: "PlayerDailyBattle は account.player_daily_battle の 1 行 (PK: player_id, game_date)。1 プレイヤーにつきゲーム日ごとに 1 行の履歴台帳。"
+        fields:
+          - {name: PlayerID, type: string, db: "player_id"}
+          - {name: GameDate, type: civil.Date, db: "game_date"}
+          - {name: DailyBattleCount, type: int64, db: "daily_battle_count"}
 
       - name: PlayerFaction
-        comment: "PlayerFaction is a single row in account.player_factions. IsInitial=TRUE の行はオンボーディングで選択した faction (1 プレイヤーに最大 1 行)。"
+        comment: "PlayerFaction は account.player_factions の 1 行。IsInitial=TRUE の行はオンボーディングで選択した faction (1 プレイヤーに最大 1 行)。"
         fields:
-          - {name: PlayerID, type: string, json: "player_id", db: "player_id"}
-          - {name: Faction, type: string, json: "faction", db: "faction"}
-          - {name: IsInitial, type: bool, json: "is_initial", db: "is_initial"}
-          - {name: AcquiredAt, type: time.Time, json: "acquired_at", db: "acquired_at"}
+          - {name: PlayerID, type: string, db: "player_id"}
+          - {name: Faction, type: string, db: "faction"}
+          - {name: IsInitial, type: bool, db: "is_initial"}
+          - {name: AcquiredAt, type: time.Time, db: "acquired_at"}
 
       - name: PlayerSettings
-        comment: "PlayerSettings is the account.player_settings row."
+        comment: "PlayerSettings は account.player_settings の 1 行。"
         fields:
-          - {name: PlayerID, type: string, json: "player_id", db: "player_id"}
-          - {name: Language, type: string, json: "language", db: "language"}
-          - {name: BgmVolume, type: int64, json: "bgm_volume", db: "bgm_volume"}
-          - {name: SeVolume, type: int64, json: "se_volume", db: "se_volume"}
-          - {name: PushEnabled, type: bool, json: "push_enabled", db: "push_enabled"}
-          - {name: UpdatedAt, type: time.Time, json: "updated_at", db: "updated_at"}
+          - {name: PlayerID, type: string, db: "player_id"}
+          - {name: Language, type: string, db: "language"}
+          - {name: BgmVolume, type: int64, db: "bgm_volume"}
+          - {name: SeVolume, type: int64, db: "se_volume"}
+          - {name: PushEnabled, type: bool, db: "push_enabled"}
+          - {name: UpdatedAt, type: time.Time, db: "updated_at"}
 
-  # ─── Internal REST request / response envelopes ──────
+      - name: PlayerView
+        comment: "PlayerView は Read Model: Player (players 行) + PlayerProgression の Level/Exp + player_factions.is_initial=TRUE 行の Faction 名 を 1 つに束ねた、単一の参照向けビュー。リポジトリ層が JOIN で組み立てる読み取り専用ビューであり、書き込み経路では使わない。"
+        fields:
+          - {name: Player, type: Player}
+          - {name: Level, type: int64}
+          - {name: Exp, type: int64}
+          - {name: InitialFaction, type: "*string"}
+
+  # ─── External API contract (target: api → packages/api-account) ───────
   - name: rest_api
-    target: both
+    target: api
     imports:
       - time
     types:
       # ── Responses ──
       - name: PlayerResponse
-        comment: "PlayerResponse is returned by GET /internal/v1/players/:playerId and kin. It is Player + computed level progress. OnboardingStatus lets clients drive onboarding-resume without a separate scenario RPC."
+        comment: "PlayerResponse is returned by GET /internal/v1/players/:playerId and kin. PlayerView + computed level progress を JSON 化した、内部 REST 契約の唯一の Player 表現。"
         fields:
           - {name: PlayerID, type: string, json: "player_id"}
           - {name: FirebaseUID, type: string, json: "firebase_uid"}
@@ -95,6 +101,16 @@ files:
           - {name: UpdatedAt, type: time.Time, json: "updated_at"}
           - {name: LevelExpCurrent, type: int64, json: "level_exp_current"}
           - {name: LevelExpRequired, type: int64, json: "level_exp_required"}
+
+      - name: PlayerSettingsResponse
+        comment: "PlayerSettingsResponse is returned by GET / PUT /internal/v1/players/:playerId/settings."
+        fields:
+          - {name: PlayerID, type: string, json: "player_id"}
+          - {name: Language, type: string, json: "language"}
+          - {name: BgmVolume, type: int64, json: "bgm_volume"}
+          - {name: SeVolume, type: int64, json: "se_volume"}
+          - {name: PushEnabled, type: bool, json: "push_enabled"}
+          - {name: UpdatedAt, type: time.Time, json: "updated_at"}
 
       - name: BattleLimitResponse
         comment: "BattleLimitResponse is returned by GET /internal/v1/players/:playerId/battle-limit."

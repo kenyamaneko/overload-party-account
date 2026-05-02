@@ -5,17 +5,17 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/kenyamaneko/overload-party-account/internal/service"
+	"github.com/kenyamaneko/overload-party-account/internal/usecase"
 	apiaccount "github.com/kenyamaneko/overload-party-account/packages/api-account"
 )
 
 // PlayerHandler はプレイヤー情報の REST エンドポイントを処理します。
 type PlayerHandler struct {
-	playerService *service.PlayerService
+	playerService *usecase.PlayerInteractor
 }
 
 // NewPlayerHandler は PlayerHandler を生成します。
-func NewPlayerHandler(playerService *service.PlayerService) *PlayerHandler {
+func NewPlayerHandler(playerService *usecase.PlayerInteractor) *PlayerHandler {
 	return &PlayerHandler{playerService: playerService}
 }
 
@@ -48,8 +48,8 @@ func (h *PlayerHandler) UpdateName(c *gin.Context) {
 		return
 	}
 
-	// 表示名の業務ルール (空・空白のみ・制御文字・MaxNameRunes 超) は service 層で検証する。
-	// 違反時は model.ErrInvalidName が返り、respondError 経由で 400 にマップされる。
+	// 表示名の業務ルール (空・空白のみ・制御文字・MaxNameRunes 超) は usecase 層で検証する。
+	// 違反時は domain.ErrInvalidName が返り、respondError 経由で 400 にマップされる。
 	player, err := h.playerService.UpdateName(c.Request.Context(), playerID, req.Name)
 	if err != nil {
 		respondError(c, err)
