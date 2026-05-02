@@ -19,7 +19,10 @@ const (
 	configKeyFreeDailyBattleLimit  = "free_daily_battle_limit"
 	ConfigKeyExpFormulaCoefficient = "exp_formula_coefficient"
 
-	// gameDayOffset はゲーム日の計算に使用する UTC オフセット (JST 05:00 リセット = UTC+4h)。
+	// gameDayOffset はゲーム日リセット境界を JST 05:00 に揃えるための UTC オフセット。
+	// time.Now().UTC().Add(gameDayOffset) の日付部分が「ゲーム日」になり、
+	// 各プレイヤーの daily_battle_count はこのゲーム日単位で集計される。
+	// リセット時刻の根拠は ARCHITECTURE.md を参照。
 	gameDayOffset = 4 * time.Hour
 )
 
