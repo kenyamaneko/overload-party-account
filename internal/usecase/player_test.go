@@ -45,8 +45,8 @@ func newPlayerTestInteractor(overrides map[string]int64) *PlayerInteractor {
 	for k, v := range overrides {
 		defaultValues[k] = v
 	}
-	playerRepo, playerViewRepo, factionRepo, _, tx := newRealRepos()
-	return NewPlayerInteractor(playerRepo, playerViewRepo, newFakeGameConfigRepo(defaultValues), factionRepo, tx)
+	playerRepo, playerViewRepo, _, _, tx := newRealRepos()
+	return NewPlayerInteractor(playerRepo, playerViewRepo, newFakeGameConfigRepo(defaultValues), tx)
 }
 
 func TestGetBattleLimit(t *testing.T) {
@@ -381,9 +381,9 @@ func TestAwardExp_MissingCoefficient_ReturnsError(t *testing.T) {
 	sharedPg.Truncate(t)
 	seedPlayer(t, testPlayerID1, "uid-1", "Alice", false)
 
-	playerRepo, playerViewRepo, factionRepo, _, tx := newRealRepos()
+	playerRepo, playerViewRepo, _, _, tx := newRealRepos()
 	// coefficient を持たない fake を渡す。production では Firestore 読み取り失敗に相当。
-	svc := NewPlayerInteractor(playerRepo, playerViewRepo, newFakeGameConfigRepo(map[string]int64{}), factionRepo, tx)
+	svc := NewPlayerInteractor(playerRepo, playerViewRepo, newFakeGameConfigRepo(map[string]int64{}), tx)
 
 	err := svc.AwardExp(context.Background(), testPlayerID1, testExpWin)
 	require.Error(t, err)

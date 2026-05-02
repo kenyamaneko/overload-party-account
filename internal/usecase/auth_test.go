@@ -139,10 +139,10 @@ func TestRegisterThenUpdateName_OnboardingFlow(t *testing.T) {
 	require.Nil(t, registered.Name, "Register 直後は name が nil")
 
 	// オンボーディングシナリオ完了相当の表示名確定。
-	playerRepo, playerViewRepo, factionRepo, _, tx := newRealRepos()
+	playerRepo, playerViewRepo, _, _, tx := newRealRepos()
 	playerSvc := NewPlayerInteractor(playerRepo, playerViewRepo, newFakeGameConfigRepo(map[string]int64{
 		ConfigKeyExpFormulaCoefficient: 60,
-	}), factionRepo, tx)
+	}), tx)
 
 	updated, err := playerSvc.UpdateName(ctx, registered.PlayerID, "Alice")
 	require.NoError(t, err)

@@ -28,7 +28,6 @@ type PlayerInteractor struct {
 	playerRepo     port.PlayerRepo
 	playerViewRepo port.PlayerViewRepo
 	gameConfigRepo port.GameConfigRepo
-	factionRepo    port.FactionRepo
 	txRunner       port.TxRunner
 }
 
@@ -37,14 +36,12 @@ func NewPlayerInteractor(
 	playerRepo port.PlayerRepo,
 	playerViewRepo port.PlayerViewRepo,
 	gameConfigRepo port.GameConfigRepo,
-	factionRepo port.FactionRepo,
 	txRunner port.TxRunner,
 ) *PlayerInteractor {
 	return &PlayerInteractor{
 		playerRepo:     playerRepo,
 		playerViewRepo: playerViewRepo,
 		gameConfigRepo: gameConfigRepo,
-		factionRepo:    factionRepo,
 		txRunner:       txRunner,
 	}
 }
@@ -57,16 +54,6 @@ func (s *PlayerInteractor) UpdatePremium(ctx context.Context, playerID string, i
 		expiresAt = &t
 	}
 	return s.playerRepo.UpdatePremium(ctx, playerID, isPremium, expiresAt)
-}
-
-// GrantFaction はプレイヤーにファクションを付与する。
-func (s *PlayerInteractor) GrantFaction(ctx context.Context, playerID, faction string) error {
-	return s.factionRepo.AddPlayerFaction(ctx, playerID, faction)
-}
-
-// ListFactions はプレイヤーの所持ファクション一覧を返す。
-func (s *PlayerInteractor) ListFactions(ctx context.Context, playerID string) ([]string, error) {
-	return s.factionRepo.GetPlayerFactions(ctx, playerID)
 }
 
 // UpdateName はプレイヤー名を更新し、更新後の PlayerResponse を返す。
@@ -82,9 +69,9 @@ func (s *PlayerInteractor) UpdateName(ctx context.Context, playerID string, name
 	return s.GetPlayerResponse(ctx, playerID)
 }
 
-// ValidateOnboardingName は表示名のバリデーションのみを行う。書き込みはしない。
+// ValidateNameForOnboarding は表示名のバリデーションのみを行う。書き込みはしない。
 // scenario が onboarding-name-set publish 前に呼んで 4xx を同期にユーザーへ返すための専用エントリ。
-func (s *PlayerInteractor) ValidateOnboardingName(ctx context.Context, playerID, name string) error {
+func (s *PlayerInteractor) ValidateNameForOnboarding(ctx context.Context, playerID, name string) error {
 	exists, err := s.playerRepo.Exists(ctx, playerID)
 	if err != nil {
 		return fmt.Errorf("check player exists: %w", err)

@@ -56,23 +56,23 @@ func (h *PlayerHandler) UpdateName(c *gin.Context) {
 	c.JSON(http.StatusOK, player)
 }
 
-// ValidateOnboardingName はオンボード内 name 入力ステップで scenario が呼ぶ
+// ValidateNameForOnboarding はオンボード内 name 入力ステップで scenario が呼ぶ
 // バリデーション専用ハンドラ。書き込みは onboarding-name-set subscriber が担うため、
 // ここでは行わない。
-func (h *PlayerHandler) ValidateOnboardingName(c *gin.Context) {
+func (h *PlayerHandler) ValidateNameForOnboarding(c *gin.Context) {
 	playerID := c.Param("playerId")
 	if playerID == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "playerId is required"})
 		return
 	}
 
-	var req apiaccount.OnboardingNameValidateRequest
+	var req apiaccount.ValidateNameForOnboardingRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	if err := h.playerService.ValidateOnboardingName(c.Request.Context(), playerID, req.Name); err != nil {
+	if err := h.playerService.ValidateNameForOnboarding(c.Request.Context(), playerID, req.Name); err != nil {
 		respondError(c, err)
 		return
 	}
@@ -158,42 +158,4 @@ func (h *PlayerHandler) AwardGameExp(c *gin.Context) {
 		return
 	}
 	c.Status(http.StatusNoContent)
-}
-
-// GrantFaction はプレイヤーにファクションを付与する。
-func (h *PlayerHandler) GrantFaction(c *gin.Context) {
-	playerID := c.Param("playerId")
-	if playerID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "playerId is required"})
-		return
-	}
-	var req apiaccount.FactionGrantRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-	if req.Faction == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "faction is required"})
-		return
-	}
-	if err := h.playerService.GrantFaction(c.Request.Context(), playerID, req.Faction); err != nil {
-		respondError(c, err)
-		return
-	}
-	c.Status(http.StatusNoContent)
-}
-
-// ListFactions はプレイヤーの所持ファクション一覧を返す。
-func (h *PlayerHandler) ListFactions(c *gin.Context) {
-	playerID := c.Param("playerId")
-	if playerID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "playerId is required"})
-		return
-	}
-	factions, err := h.playerService.ListFactions(c.Request.Context(), playerID)
-	if err != nil {
-		respondError(c, err)
-		return
-	}
-	c.JSON(http.StatusOK, apiaccount.ListFactionsResponse{Factions: factions})
 }

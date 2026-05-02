@@ -61,8 +61,8 @@ type UpdateNameRequest struct {
 	Name string `json:"name"`
 }
 
-// OnboardingNameValidateRequest is the body for POST /internal/v1/players/:playerId/onboarding/name/validate. Validation only; the value is not persisted. Scenario calls this before publishing onboarding-name-set so that 4xx can be relayed to the user synchronously.
-type OnboardingNameValidateRequest struct {
+// ValidateNameForOnboardingRequest is the body for POST /internal/v1/players/:playerId/onboarding/name/validate. Validation only; the value is not persisted. Scenario calls this before publishing onboarding-name-set so that 4xx can be relayed to the user synchronously.
+type ValidateNameForOnboardingRequest struct {
 	Name string `json:"name"`
 }
 

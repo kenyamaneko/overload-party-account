@@ -9,7 +9,7 @@ import (
 	"github.com/kenyamaneko/overload-party-account/internal/port"
 )
 
-// FactionInteractor は REST 経路の初期ファクション選択を管理する。
+// FactionInteractor は REST 経路の faction 操作 (初期選択 / 付与 / 一覧) を管理する。
 // Pub/Sub 起点のオンボード faction-set 処理は OnboardingInteractor.ApplyFactionSet が担う。
 type FactionInteractor struct {
 	playerRepo  port.PlayerRepo
@@ -28,6 +28,16 @@ func NewFactionInteractor(
 		factionRepo: factionRepo,
 		txRunner:    txRunner,
 	}
+}
+
+// GrantFaction はプレイヤーにファクションを付与する。
+func (s *FactionInteractor) GrantFaction(ctx context.Context, playerID, faction string) error {
+	return s.factionRepo.AddPlayerFaction(ctx, playerID, faction)
+}
+
+// ListFactions はプレイヤーの所持ファクション一覧を返す。
+func (s *FactionInteractor) ListFactions(ctx context.Context, playerID string) ([]string, error) {
+	return s.factionRepo.GetPlayerFactions(ctx, playerID)
 }
 
 // SelectInitialFaction はオンボーディングで選択した faction を確定する。

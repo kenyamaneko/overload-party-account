@@ -112,7 +112,7 @@ func run() error {
 	eventRepo := postgres.NewProcessedEventRepository(pool)
 
 	authSvc := usecase.NewAuthInteractor(playerRepo, playerViewRepo, playerSettingsRepo, gameConfigRepo, txManager)
-	playerSvc := usecase.NewPlayerInteractor(playerRepo, playerViewRepo, gameConfigRepo, factionRepo, txManager)
+	playerSvc := usecase.NewPlayerInteractor(playerRepo, playerViewRepo, gameConfigRepo, txManager)
 	factionSvc := usecase.NewFactionInteractor(playerRepo, factionRepo, txManager)
 	onboardingSvc := usecase.NewOnboardingInteractor(playerRepo, factionRepo, eventRepo, txManager)
 	settingsSvc := usecase.NewPlayerSettingsInteractor(playerSettingsRepo)

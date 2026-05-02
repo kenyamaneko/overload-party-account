@@ -43,3 +43,41 @@ func (h *FactionHandler) SelectInitialFaction(c *gin.Context) {
 	}
 	c.Status(http.StatusOK)
 }
+
+// GrantFaction はプレイヤーにファクションを付与する。
+func (h *FactionHandler) GrantFaction(c *gin.Context) {
+	playerID := c.Param("playerId")
+	if playerID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "playerId is required"})
+		return
+	}
+	var req apiaccount.FactionGrantRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if req.Faction == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "faction is required"})
+		return
+	}
+	if err := h.factionService.GrantFaction(c.Request.Context(), playerID, req.Faction); err != nil {
+		respondError(c, err)
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
+// ListFactions はプレイヤーの所持ファクション一覧を返す。
+func (h *FactionHandler) ListFactions(c *gin.Context) {
+	playerID := c.Param("playerId")
+	if playerID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "playerId is required"})
+		return
+	}
+	factions, err := h.factionService.ListFactions(c.Request.Context(), playerID)
+	if err != nil {
+		respondError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, apiaccount.ListFactionsResponse{Factions: factions})
+}

@@ -34,14 +34,14 @@ func New(
 		{
 			players.GET("", playerH.GetPlayer)
 			players.PUT("/name", playerH.UpdateName)
-			players.POST("/onboarding/name/validate", playerH.ValidateOnboardingName)
+			players.POST("/onboarding/name/validate", playerH.ValidateNameForOnboarding)
 			players.GET("/battle-limit", playerH.GetBattleLimit)
 			players.POST("/battle-limit/increment", playerH.IncrementBattleCount)
 			players.PUT("/premium", playerH.UpdatePremium)
 			players.POST("/exp", playerH.AddExp)
-			players.POST("/factions", playerH.GrantFaction)
+			players.POST("/factions", factionH.GrantFaction)
 			players.POST("/factions/select", factionH.SelectInitialFaction)
-			players.GET("/factions", playerH.ListFactions)
+			players.GET("/factions", factionH.ListFactions)
 			players.GET("/settings", settingsH.GetSettings)
 			players.PUT("/settings", settingsH.UpdateSettings)
 		}
