@@ -245,7 +245,25 @@ Pub/Sub の Exactly-Once 配信がインフラ層の第一防御。`processed_ev
 
 未設定（値 0 または存在しない）は起動エラーにせず、当該リクエストをエラーにする（運用者が値を戻すまで battle 側で経験値が積めない）。
 
-## 8. エラーハンドリングのレイヤ責務
+## 8. ドメイン層の責務 (生成 struct と手書きロジックの分離)
+
+`internal/domain` パッケージは 2 種類のファイルで構成される:
+
+| 種類 | ファイル例 | 役割 |
+|---|---|---|
+| 生成 struct (`*_gen.go`) | `player_gen.go` | `data/models.yaml` を SSoT として生成。テーブル 1 行に対応する持ち回り型のみを保持し、メソッドは持たない。手書き編集禁止 |
+| 手書きの振る舞い | `name.go` / `onboarding_status.go` / `defaults.go` | バリデーション・遷移ルール・不変条件・既定値などのドメインロジック。生成型と同パッケージなので import なしで自然に組み合わさる |
+
+### 8.1 振る舞いを domain に置く基準
+
+「Anemic か Rich か」の二者択一ではなく、**昇格基準**で判断する:
+
+- **昇格させる**: 複数 usecase で同じ判定ロジックを書きそうになった / 生成 struct のフィールドを直接読むだけでは業務上の意図が掴めない / 不正値を構築できないようにする不変条件がある
+- **昇格させない**: 1 箇所の usecase でしか使わない短絡的な判定 (例: 現状の `if player.IsPremium`) / 永続化や外部呼び出しを含む処理 (= usecase の責務)
+
+将来必要になりそうという理由だけで先回りしてメソッドを足さない。重複や複雑さが顕在化してから手書きファイルに昇格させる。
+
+## 9. エラーハンドリングのレイヤ責務
 
 | 層 | 返す/扱う |
 |---|---|
@@ -255,9 +273,9 @@ Pub/Sub の Exactly-Once 配信がインフラ層の第一防御。`processed_ev
 
 usecase 層は HTTP ステータスを知らず、handler 層は SQL を知らない。センチネルと HTTP ステータスのマッピングは `errors.go` を SSoT とし、各センチネルの docstring に「なぜ 409 か」「冪等な成功扱いかどうか」等のセマンティクスを書く。
 
-## 9. 運用
+## 10. 運用
 
-### 9.1 環境変数 / Secret Manager
+### 10.1 環境変数 / Secret Manager
 
 環境変数の一覧と必須条件は [internal/config/config.go](../internal/config/config.go) の `FromEnv` が SSoT（欠ければ即 fail）。運用上の注意点のみ:
 
@@ -265,7 +283,7 @@ usecase 層は HTTP ステータスを知らず、handler 層は SQL を知ら�
 - `PUBSUB_PROJECT_ID` / `FIRESTORE_PROJECT_ID` は ConfigMap 経由で環境ごとに切り替え
 - `FACTION_PURCHASED_SUBSCRIPTION` / `PREMIUM_UPDATED_SUBSCRIPTION` / `PLAYER_ONBOARDED_SUBSCRIPTION` / `ONBOARDING_NAME_SET_SUBSCRIPTION` / `ONBOARDING_FACTION_SET_SUBSCRIPTION` はデフォルトで本番名と一致するため通常は未設定でよい。環境分離検証時のみ上書き
 
-### 9.2 Pub/Sub トピックと subscriber
+### 10.2 Pub/Sub トピックと subscriber
 
 | トピック | 発行元 | account の subscription | account 側の副作用 |
 |---|---|---|---|
@@ -277,6 +295,6 @@ usecase 層は HTTP ステータスを知らず、handler 層は SQL を知ら�
 
 account 自身はトピックを publish しない。
 
-### 9.3 Firestore の運用
+### 10.3 Firestore の運用
 
 `game_config` コレクションは運用者が手動で値を書く（コード上には生成スクリプトを持たない）。キーのリストと意味は [FEATURE_SPEC.md](FEATURE_SPEC.md) と `usecase/player.go` の定数を参照。
