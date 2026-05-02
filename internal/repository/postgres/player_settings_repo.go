@@ -15,7 +15,7 @@ import (
 
 var _ port.PlayerSettingsRepo = (*PlayerSettingsRepository)(nil)
 
-// PlayerSettingsRepository は PostgreSQL を使用した PlayerSettingsRepo の実装である。
+// PlayerSettingsRepository は port.PlayerSettingsRepo の PostgreSQL 実装。
 type PlayerSettingsRepository struct {
 	pool *pgxpool.Pool
 }
@@ -25,8 +25,7 @@ func NewPlayerSettingsRepository(pool *pgxpool.Pool) *PlayerSettingsRepository {
 	return &PlayerSettingsRepository{pool: pool}
 }
 
-// Insert は新規プレイヤー設定行を挿入する。Register 時の初期化で呼び出される前提で、
-// 全フィールドが非ゼロ値のアプリ層デフォルトで埋まっている想定。
+// Insert は新規プレイヤー設定行を挿入する。
 func (r *PlayerSettingsRepository) Insert(ctx context.Context, s *domain.PlayerSettings) error {
 	now := time.Now()
 	_, err := connFrom(ctx, r.pool).Exec(ctx,
@@ -41,7 +40,7 @@ func (r *PlayerSettingsRepository) Insert(ctx context.Context, s *domain.PlayerS
 	return nil
 }
 
-// Get はプレイヤーの設定を返す。該当なしは port.ErrNotFound でラップして返す。
+// Get はプレイヤーの設定を返す。該当なしは port.ErrNotFound。
 func (r *PlayerSettingsRepository) Get(ctx context.Context, playerID string) (*domain.PlayerSettings, error) {
 	row := connFrom(ctx, r.pool).QueryRow(ctx,
 		`SELECT player_id, language, bgm_volume, se_volume, push_enabled, updated_at
@@ -60,12 +59,9 @@ func (r *PlayerSettingsRepository) Get(ctx context.Context, playerID string) (*d
 	return &s, nil
 }
 
-// UpdatePartial は patch の非 nil フィールドのみを更新する（COALESCE で現状維持）。
-// 行が存在しなければ ErrNotFound を返す。呼び出し元は全 nil patch を事前に弾く想定。
-//
-// updated_at は schema 側の BEFORE UPDATE トリガー（trg_player_settings_updated_at）が自動で
-// now() に書き換えるため、ここでは明示的にセットしない。全フィールドが nil の場合 UPDATE は
-// 実質 no-op だがトリガーが発火して updated_at だけ進むので、handler 層で全 nil を弾く。
+// UpdatePartial は patch の非 nil フィールドのみを更新する (COALESCE で現状維持)。
+// updated_at は schema 側の BEFORE UPDATE トリガーが自動で書き換える。
+// 全 nil patch は no-op だが trigger で updated_at だけ進むため、handler 層で全 nil を弾く前提。
 func (r *PlayerSettingsRepository) UpdatePartial(ctx context.Context, playerID string, patch *port.PlayerSettingsPatch) error {
 	ct, err := connFrom(ctx, r.pool).Exec(ctx,
 		`UPDATE account.player_settings

@@ -13,14 +13,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestFactionPurchasedSubscriber_Consumes は「shop 購入起因の faction ロスター追加
+// TestConsumes_FactionPurchased は「shop 購入起因の faction ロスター追加
 // (is_initial=FALSE 固定) を 1 イベント単位で冪等に処理する」という仕様を
 // Start() → stream.Consume → processEvent の経路で固定する。
 //
 // 契約検証は apishopfake 経由で shop 側の publish 型をそのまま使う
 // (shop が schema を変えたら account のテストが compile / 実行で破綻する
 // ように設計し、乖離を CI で検知する)。
-func TestFactionPurchasedSubscriber_Consumes(t *testing.T) {
+func TestConsumes_FactionPurchased(t *testing.T) {
 	const existingEventID = "11111111-1111-1111-1111-111111111111"
 
 	tests := []struct {

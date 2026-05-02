@@ -1,7 +1,6 @@
-// Package pubsub は account サービスの Pub/Sub subscriber を管理します。
-//
+// Package pubsub は account サービスの Pub/Sub subscriber を管理する。
 // 各 subscriber は exactly-once subscription からイベントを取得し、
-// event_id をキーとした冪等トランザクション内で account スキーマに書き込みます。
+// event_id をキーとした冪等トランザクション内で account スキーマに書き込む。
 package pubsub
 
 import (
@@ -15,11 +14,8 @@ import (
 	"github.com/kenyamaneko/overload-party-account/internal/port"
 )
 
-// FactionPurchasedSubscriber は faction-purchased subscription からイベントを取得し、
-// player_factions への INSERT (is_initial=FALSE 固定) を行います。
-//
-// ショップ購入は「ロスターへの追加」のみを意味し、initial faction の確定とは独立。
-// initial の昇格は scenario の onboarding-faction-set のみが行う。
+// FactionPurchasedSubscriber は faction-purchased subscription を消費し、
+// player_factions に is_initial=FALSE 行を追加する。initial への昇格はここでは行わない。
 type FactionPurchasedSubscriber struct {
 	stream      port.MessageStream
 	factionRepo port.FactionRepo
@@ -27,9 +23,7 @@ type FactionPurchasedSubscriber struct {
 	eventRepo   port.ProcessedEventRepo
 }
 
-// NewFactionPurchasedSubscriber は FactionPurchasedSubscriber を生成します。
-// subscription 接続は stream に委ねるため、本コンストラクタでは Cloud Pub/Sub SDK に
-// 触れない (クリーンアーキテクチャの依存方向遵守)。
+// NewFactionPurchasedSubscriber は FactionPurchasedSubscriber を生成する。
 func NewFactionPurchasedSubscriber(
 	stream port.MessageStream,
 	factionRepo port.FactionRepo,
@@ -44,16 +38,12 @@ func NewFactionPurchasedSubscriber(
 	}
 }
 
-// Start は ctx がキャンセルされるか stream がエラーを返すまでブロックします。
+// Start は ctx がキャンセルされるか stream がエラーを返すまでブロックする。
 func (s *FactionPurchasedSubscriber) Start(ctx context.Context) error {
 	slog.Info("faction-purchased subscriber: consuming")
 	return s.stream.Consume(ctx, s.processEvent)
 }
 
-// processEvent は 1 イベントを処理する。戻り値 nil = ack、非 nil = nack。
-//
-// bad payload / handler 失敗は nack で再配信させる。unknown event_type は
-// 責務外として ack し、pub/sub に次のメッセージを渡す。
 func (s *FactionPurchasedSubscriber) processEvent(ctx context.Context, data []byte) error {
 	var ev apishop.FactionPurchasedEvent
 	if err := json.Unmarshal(data, &ev); err != nil {
@@ -71,7 +61,7 @@ func (s *FactionPurchasedSubscriber) processEvent(ctx context.Context, data []by
 			return fmt.Errorf("insert processed_events: %w", err)
 		}
 		if !inserted {
-			return nil // idempotent ack
+			return nil
 		}
 
 		if err := s.factionRepo.AddPlayerFaction(txCtx, ev.PlayerID, ev.Faction); err != nil {

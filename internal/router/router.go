@@ -8,7 +8,7 @@ import (
 	"github.com/kenyamaneko/overload-party-account/internal/handler/rest"
 )
 
-// New は account サービスの HTTP ルーターを構築します。
+// New は account サービスの HTTP ルーターを構築する。
 func New(
 	authH *rest.AuthHandler,
 	playerH *rest.PlayerHandler,

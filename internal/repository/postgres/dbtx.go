@@ -1,10 +1,7 @@
 // Package postgres は PostgreSQL による account サービスのデータアクセス実装を提供する。
 //
-// トランザクション方針:
-// 全 repository メソッドは context 経由のトランザクション（TxManager.RunInTx が設定）
-// に参加する。単文メソッドは connFrom(ctx, pool) で透過的にトランザクションまたは
-// コネクションプールを使用する。複文メソッドは既存トランザクションを確認し、
-// なければ独自トランザクションを開始する。
+// トランザクション方針: 全 repository メソッドは context 経由のトランザクション
+// (TxManager.RunInTx が設定) に参加する。connFrom(ctx, pool) で透過的に Tx か Pool を選ぶ。
 package postgres
 
 import (
@@ -20,7 +17,7 @@ import (
 
 var _ port.TxRunner = (*TxManager)(nil)
 
-// dbtx は pgxpool.Pool と pgx.Tx の共通インターフェースである。
+// dbtx は pgxpool.Pool と pgx.Tx の共通インターフェース。
 type dbtx interface {
 	Exec(ctx context.Context, sql string, arguments ...any) (pgconn.CommandTag, error)
 	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
@@ -43,7 +40,7 @@ func connFrom(ctx context.Context, pool *pgxpool.Pool) dbtx {
 	return pool
 }
 
-// TxManager は pgxpool.Pool を使用した TxRunner の実装である。
+// TxManager は pgxpool.Pool を使用した TxRunner の実装。
 type TxManager struct {
 	pool *pgxpool.Pool
 }

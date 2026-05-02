@@ -15,9 +15,7 @@ import (
 var _ port.PlayerViewRepo = (*PlayerViewRepository)(nil)
 
 // PlayerViewRepository は port.PlayerViewRepo の PostgreSQL 実装。
-// 参照専用の Read Model 取得経路として、players + player_progression +
-// player_factions(is_initial=TRUE) を JOIN で結合して返す。
-// CQRS の Q 側として Write 集約 (PlayerRepository) と interface を分離している。
+// players + player_progression + player_factions(is_initial=TRUE) を JOIN で結合した Read Model を返す。
 type PlayerViewRepository struct {
 	pool *pgxpool.Pool
 }
@@ -27,7 +25,7 @@ func NewPlayerViewRepository(pool *pgxpool.Pool) *PlayerViewRepository {
 	return &PlayerViewRepository{pool: pool}
 }
 
-// FindByID は player_id で Read Model を返す。該当なしは port.ErrNotFound でラップ。
+// FindByID は player_id で Read Model を返す。該当なしは port.ErrNotFound。
 func (r *PlayerViewRepository) FindByID(ctx context.Context, playerID string) (*domain.PlayerView, error) {
 	row := connFrom(ctx, r.pool).QueryRow(ctx, playerViewSelectByID, playerID)
 	v, err := scanPlayerView(row)

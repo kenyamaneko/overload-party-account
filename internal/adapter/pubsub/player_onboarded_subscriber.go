@@ -17,10 +17,7 @@ type OnboardingCompletedApplier interface {
 	ApplyCompleted(ctx context.Context, eventID, eventType, playerID string) (processed bool, err error)
 }
 
-// PlayerOnboardedSubscriber は player-onboarded subscription を消費し、
-// players.onboarding_status='completed' への遷移のみを反映する。
-// initial faction の永続化 (player_factions の is_initial=TRUE 行) は
-// onboarding-faction-set の先行配信で完了済みである前提。
+// PlayerOnboardedSubscriber は player-onboarded subscription を消費する。
 type PlayerOnboardedSubscriber struct {
 	stream  port.MessageStream
 	applier OnboardingCompletedApplier
@@ -57,9 +54,9 @@ func (s *PlayerOnboardedSubscriber) processEvent(ctx context.Context, data []byt
 	processed, err := s.applier.ApplyCompleted(ctx, ev.EventID, ev.EventType, ev.PlayerID)
 	if err != nil {
 		if usecase.IsPublisherBug(err) {
-			slog.Error("player-onboarded subscriber: player not found (publisher bug)",
+			slog.Error("player-onboarded subscriber: publisher bug",
 				"event_id", ev.EventID, "player_id", ev.PlayerID, "error", err)
-			return fmt.Errorf("player-onboarded: player not found: %w", err)
+			return fmt.Errorf("player-onboarded: publisher bug: %w", err)
 		}
 		slog.Error("player-onboarded subscriber: apply failed",
 			"event_id", ev.EventID, "player_id", ev.PlayerID, "error", err)

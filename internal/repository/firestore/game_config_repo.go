@@ -16,7 +16,7 @@ const gameConfigCollection = "game_config"
 
 var _ port.GameConfigRepo = (*GameConfigRepository)(nil)
 
-// GameConfigRepository は Firestore を使用した GameConfigRepo 実装。
+// GameConfigRepository は port.GameConfigRepo の Firestore 実装。
 type GameConfigRepository struct {
 	client *firestore.Client
 }
@@ -26,8 +26,7 @@ func NewGameConfigRepository(client *firestore.Client) *GameConfigRepository {
 	return &GameConfigRepository{client: client}
 }
 
-// GetInt64 は指定キーの設定値を int64 で返す。
-// ドキュメント不在は port.ErrNotFound を返す（fail-fast）。
+// GetInt64 は指定キーの設定値を int64 で返す。ドキュメント不在は port.ErrNotFound。
 func (r *GameConfigRepository) GetInt64(ctx context.Context, key string) (int64, error) {
 	snap, err := r.client.Collection(gameConfigCollection).Doc(key).Get(ctx)
 	if err != nil {

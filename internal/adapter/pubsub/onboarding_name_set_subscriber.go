@@ -13,13 +13,11 @@ import (
 )
 
 // OnboardingNameSetApplier は OnboardingInteractor.ApplyNameSet に対する最小インターフェース。
-// adapter 層が usecase の具象に直接依存しないために port 風に切る。
 type OnboardingNameSetApplier interface {
 	ApplyNameSet(ctx context.Context, eventID, eventType, playerID, name string) (processed bool, err error)
 }
 
-// OnboardingNameSetSubscriber は onboarding-name-set subscription を消費し、
-// players.name と players.onboarding_status='name_set' を 1 tx で反映する。
+// OnboardingNameSetSubscriber は onboarding-name-set subscription を消費する。
 type OnboardingNameSetSubscriber struct {
 	stream  port.MessageStream
 	applier OnboardingNameSetApplier
@@ -56,16 +54,15 @@ func (s *OnboardingNameSetSubscriber) processEvent(ctx context.Context, data []b
 	processed, err := s.applier.ApplyNameSet(ctx, ev.EventID, ev.EventType, ev.PlayerID, ev.Name)
 	if err != nil {
 		if usecase.IsPublisherBug(err) {
-			slog.Error("onboarding-name-set subscriber: player not found (publisher bug)",
+			slog.Error("onboarding-name-set subscriber: publisher bug",
 				"event_id", ev.EventID, "player_id", ev.PlayerID, "error", err)
-			return fmt.Errorf("onboarding-name-set: player not found: %w", err)
+			return fmt.Errorf("onboarding-name-set: publisher bug: %w", err)
 		}
 		slog.Error("onboarding-name-set subscriber: apply failed",
 			"event_id", ev.EventID, "player_id", ev.PlayerID, "error", err)
 		return fmt.Errorf("onboarding-name-set: apply: %w", err)
 	}
 	if !processed {
-		// processed=false は冪等スキップ (event_id 重複)。副作用なしで ACK。
 		return nil
 	}
 	return nil

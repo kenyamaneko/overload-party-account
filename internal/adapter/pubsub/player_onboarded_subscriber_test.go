@@ -41,10 +41,10 @@ func (f *fakeOnboardingCompletedApplier) ApplyCompleted(
 	return f.returnProcessed, nil
 }
 
-// TestPlayerOnboardedSubscriber_Consumes は「Pub/Sub ペイロードを Unmarshal して
+// TestConsumes_PlayerOnboarded は「Pub/Sub ペイロードを Unmarshal して
 // OnboardingCompletedApplier に委譲する」subscriber 単体の仕様を Start() →
 // stream.Consume → processEvent の経路で固定する。
-func TestPlayerOnboardedSubscriber_Consumes(t *testing.T) {
+func TestConsumes_PlayerOnboarded(t *testing.T) {
 	validEvent := apiscenario.PlayerOnboardedEvent{
 		PlayerID:         "p-1",
 		InitialFactionID: "SHE",

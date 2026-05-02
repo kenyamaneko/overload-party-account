@@ -9,13 +9,8 @@ import (
 	"github.com/kenyamaneko/overload-party-account/internal/port"
 )
 
-// OnboardingInteractor はオンボード進行イベント (onboarding-name-set /
-// onboarding-faction-set / player-onboarded) を受けたときの account 内副作用を
-// 単一トランザクションで反映するユースケース層。
-//
-// subscriber 層は Unmarshal と本サービスの Apply* 呼び出しのみを担い、
-// 冪等性ガード (processed_events) と業務データの永続化を同一 Tx で束ねる責務は
-// 本サービスが持つ。
+// OnboardingInteractor はオンボード進行イベントの副作用を 1 Tx で反映する。
+// 冪等ガード (processed_events) と業務データの永続化を同 Tx で束ねる責務はここが持つ。
 type OnboardingInteractor struct {
 	playerRepo  port.PlayerRepo
 	factionRepo port.FactionRepo
@@ -39,12 +34,7 @@ func NewOnboardingInteractor(
 }
 
 // ApplyNameSet は onboarding-name-set イベントの副作用を反映する。
-// 単一 Tx 内で processed_events 挿入 + name 更新 + state machine 前進判定して
-// onboarding_status を 'name_set' に進める。後進方向は publisher の out-of-order
-// 配信として黙ってスキップする。
-//
-// processed が false のとき、event_id が既に処理済み (重複配信)。呼び出し側は
-// ACK のみで他の副作用は走らない。
+// processed=false は重複配信で、呼び出し側は ACK のみで他の副作用を起こさない。
 func (s *OnboardingInteractor) ApplyNameSet(
 	ctx context.Context,
 	eventID, eventType, playerID, name string,
@@ -73,8 +63,6 @@ func (s *OnboardingInteractor) ApplyNameSet(
 }
 
 // ApplyFactionSet は onboarding-faction-set イベントの副作用を反映する。
-// 単一 Tx 内で processed_events 挿入 + initial faction 確定 +
-// state machine 前進判定で onboarding_status を 'faction_set' に進める。
 func (s *OnboardingInteractor) ApplyFactionSet(
 	ctx context.Context,
 	eventID, eventType, playerID, initialFactionID string,
@@ -93,16 +81,15 @@ func (s *OnboardingInteractor) ApplyFactionSet(
 		}
 		processed = true
 
-		// 「既に initial 確定済みか」のドメイン判定は usecase の責務。
-		// 同 faction の再送は冪等扱い (UPSERT が is_initial=TRUE を維持)、
-		// 別 faction が確定済みなら publisher のバグとして無視する (state machine が
-		// faction_set 以降に進んでいる前提で、次のイベントは completed のみ)。
 		existing, err := s.factionRepo.GetInitialFaction(txCtx, playerID)
 		if err != nil {
 			return fmt.Errorf("get initial faction: %w", err)
 		}
+		// オンボードフロー上、faction-set はプレイヤーにつき 1 度しか届かない想定。
+		// 異なる faction で再到着するのは publisher バグなので、上書きせずに
+		// ErrFactionConflict を返して subscriber 側で ERROR ログ + NACK させる。
 		if existing != nil && *existing != initialFactionID {
-			return nil
+			return fmt.Errorf("%w: existing=%s incoming=%s", ErrFactionConflict, *existing, initialFactionID)
 		}
 		if existing == nil {
 			if err := s.factionRepo.SetInitialFaction(txCtx, playerID, initialFactionID); err != nil {
@@ -117,10 +104,6 @@ func (s *OnboardingInteractor) ApplyFactionSet(
 }
 
 // ApplyCompleted は player-onboarded イベントの副作用を反映する。
-// 本 ADR 改訂後は status='completed' への遷移のみが responsibility (initial faction の
-// 永続化は ApplyFactionSet が先行して実行している前提)。completed は terminal なので
-// 一方向順序チェックは不要だが、共通の advanceOnboardingStatus 経由で進めることで
-// 「未知の現状態に遭遇したらエラー」のセマンティクスを共有する。
 func (s *OnboardingInteractor) ApplyCompleted(
 	ctx context.Context,
 	eventID, eventType, playerID string,
@@ -141,9 +124,8 @@ func (s *OnboardingInteractor) ApplyCompleted(
 	return processed, nil
 }
 
-// advanceOnboardingStatus は state machine の一方向遷移を担保しつつ
-// onboarding_status を target に進める。後進方向は黙ってスキップする
-// (out-of-order 配信に対する防御)。
+// advanceOnboardingStatus は onboarding_status を target に進める。
+// 後進方向は out-of-order 配信に対する防御として黙ってスキップする。
 func (s *OnboardingInteractor) advanceOnboardingStatus(ctx context.Context, playerID, target string) error {
 	current, err := s.playerRepo.GetOnboardingStatus(ctx, playerID)
 	if err != nil {
@@ -162,9 +144,8 @@ func (s *OnboardingInteractor) advanceOnboardingStatus(ctx context.Context, play
 	return nil
 }
 
-// IsPublisherBug は subscriber が publisher 起源の不整合 (Register 未実施プレイヤーへの
-// onboarded 配信など) を検出するためのヘルパー。port.ErrNotFound はリトライしても解決
-// しないため、subscriber は本判定で err をログに ERROR 記録した上で NACK する責務を負う。
+// IsPublisherBug は subscriber が publisher 起源の不整合を検出するためのヘルパー。
+// 再処理しても解決しないため、subscriber は ERROR ログ + NACK する責務を負う。
 func IsPublisherBug(err error) bool {
-	return errors.Is(err, port.ErrNotFound)
+	return errors.Is(err, port.ErrNotFound) || errors.Is(err, ErrFactionConflict)
 }

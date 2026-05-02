@@ -18,13 +18,7 @@ type factionAdd struct {
 	isInitial bool
 }
 
-// AddPlayerFaction の契約:
-//   - is_initial=FALSE 固定で player_factions に 1 行追加 (ショップ購入経路用)
-//   - ON CONFLICT (player_id, faction) DO NOTHING による一意性保証と冪等性
-//   - スコープは player_id 単位 (別プレイヤーは同一ファクションを独立して保持できる)
-//
-// 状態確認には GetPlayerFactions を使う。Get テストは SQL 直挿入で独立しているため、ここで信頼して使っても相互依存にならない。
-func TestFactionRepository_AddPlayerFaction(t *testing.T) {
+func TestAddPlayerFaction(t *testing.T) {
 	repo := postgres.NewFactionRepository(sharedPg.Pool)
 	ctx := context.Background()
 
@@ -97,9 +91,7 @@ func TestFactionRepository_AddPlayerFaction(t *testing.T) {
 	}
 }
 
-// SetInitialFaction は (player_id, faction) を is_initial=TRUE で INSERT する純プリミティブ。
-// 既存行があれば DB 制約 (PK / partial unique index) でエラーになる。
-func TestFactionRepository_SetInitialFaction(t *testing.T) {
+func TestSetInitialFaction(t *testing.T) {
 	repo := postgres.NewFactionRepository(sharedPg.Pool)
 	ctx := context.Background()
 
@@ -160,9 +152,7 @@ func TestFactionRepository_SetInitialFaction(t *testing.T) {
 	}
 }
 
-// GetPlayerFactions の契約: プレイヤーの所持ファクションを過不足なく返す (is_initial 区別なし)。
-// seed は直接 SQL で投入する。AddPlayerFaction に依存すると相互依存になるため。
-func TestFactionRepository_GetPlayerFactions(t *testing.T) {
+func TestGetPlayerFactions(t *testing.T) {
 	repo := postgres.NewFactionRepository(sharedPg.Pool)
 	ctx := context.Background()
 
@@ -209,8 +199,7 @@ func TestFactionRepository_GetPlayerFactions(t *testing.T) {
 	}
 }
 
-// GetInitialFaction の契約: is_initial=TRUE の行があれば faction 名を返し、無ければ nil。
-func TestFactionRepository_GetInitialFaction(t *testing.T) {
+func TestGetInitialFaction(t *testing.T) {
 	repo := postgres.NewFactionRepository(sharedPg.Pool)
 	ctx := context.Background()
 

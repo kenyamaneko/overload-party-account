@@ -17,9 +17,6 @@ import (
 var _ port.PlayerRepo = (*PlayerRepository)(nil)
 
 // PlayerRepository は port.PlayerRepo の PostgreSQL 実装。
-// account.players (Write 集約) と、密結合の 1:1 子テーブル player_progression /
-// 履歴台帳 player_daily_battle に対するプリミティブを束ねる。
-// JOIN を伴う Read Model 取得は PlayerViewRepository に分離する。
 type PlayerRepository struct {
 	pool *pgxpool.Pool
 }
@@ -30,9 +27,6 @@ func NewPlayerRepository(pool *pgxpool.Pool) *PlayerRepository {
 }
 
 // Create は players / player_progression をアトミックに挿入する。
-// player_daily_battle はゲーム日ごとに発生する履歴行のため Create では作らない
-// (初回バトルの IncrementDailyBattleCount UPSERT で当日の行が発生する)。
-// context にトランザクションがあればそれに参加し、なければ独自トランザクションを使用する。
 func (r *PlayerRepository) Create(ctx context.Context, player *domain.Player, progression *domain.PlayerProgression) error {
 	if txFromContext(ctx) != nil {
 		return r.createInner(ctx, connFrom(ctx, r.pool), player, progression)
@@ -81,8 +75,7 @@ func (r *PlayerRepository) createInner(ctx context.Context, db dbtx, player *dom
 	return nil
 }
 
-// FindByID は account.players の 1 行を返す。Level/Exp 等の派生情報は含まない。
-// 該当なしは port.ErrNotFound でラップして返す。
+// FindByID は account.players の 1 行を返す。該当なしは port.ErrNotFound。
 func (r *PlayerRepository) FindByID(ctx context.Context, playerID string) (*domain.Player, error) {
 	row := connFrom(ctx, r.pool).QueryRow(ctx,
 		`SELECT player_id, firebase_uid, name, is_premium, equipped_icon_no,
@@ -102,9 +95,7 @@ func (r *PlayerRepository) FindByID(ctx context.Context, playerID string) (*doma
 	return p, nil
 }
 
-// FindByFirebaseUID は firebase_uid で account.players の 1 行を返す。
-// 該当なしは port.ErrNotFound でラップして返す。
-// 業務分岐 (Register での既登録検出など) は呼び出し側で errors.Is(err, port.ErrNotFound) を判定する。
+// FindByFirebaseUID は firebase_uid で account.players の 1 行を返す。該当なしは port.ErrNotFound。
 func (r *PlayerRepository) FindByFirebaseUID(ctx context.Context, firebaseUID string) (*domain.Player, error) {
 	row := connFrom(ctx, r.pool).QueryRow(ctx,
 		`SELECT player_id, firebase_uid, name, is_premium, equipped_icon_no,
@@ -124,7 +115,7 @@ func (r *PlayerRepository) FindByFirebaseUID(ctx context.Context, firebaseUID st
 	return p, nil
 }
 
-// Exists は player_id に対応する行の存在のみを確認する純プリミティブ。
+// Exists は player_id に対応する行の存在のみを確認する。
 func (r *PlayerRepository) Exists(ctx context.Context, playerID string) (bool, error) {
 	var exists bool
 	if err := connFrom(ctx, r.pool).QueryRow(ctx,
@@ -137,7 +128,6 @@ func (r *PlayerRepository) Exists(ctx context.Context, playerID string) (bool, e
 }
 
 // GetDailyBattle は (player_id, gameDate) の行を返す。該当なしは (nil, nil)。
-// 「指定ゲーム日にまだバトルしていない」を nil で表現する。
 func (r *PlayerRepository) GetDailyBattle(ctx context.Context, playerID string, gameDate civil.Date) (*domain.PlayerDailyBattle, error) {
 	row := connFrom(ctx, r.pool).QueryRow(ctx,
 		`SELECT player_id, game_date, daily_battle_count
@@ -155,7 +145,7 @@ func (r *PlayerRepository) GetDailyBattle(ctx context.Context, playerID string, 
 	return db, nil
 }
 
-// GetProgression は player_progression の現在値を返す。該当なしは port.ErrNotFound でラップ。
+// GetProgression は player_progression の現在値を返す。該当なしは port.ErrNotFound。
 func (r *PlayerRepository) GetProgression(ctx context.Context, playerID string) (*domain.PlayerProgression, error) {
 	row := connFrom(ctx, r.pool).QueryRow(ctx,
 		`SELECT player_id, level, exp, updated_at
@@ -173,9 +163,8 @@ func (r *PlayerRepository) GetProgression(ctx context.Context, playerID string) 
 	return prog, nil
 }
 
-// GetProgressionForUpdate は player_progression に SELECT ... FOR UPDATE で行ロックを取得する。
-// FOR UPDATE の効果はトランザクション寿命に依存するため、呼び出し側が TxRunner.RunInTx 配下で
-// 呼ぶ責務を持つ（pool 直接呼び出しでは autocommit で直ちにロックが解放される）。
+// GetProgressionForUpdate は SELECT ... FOR UPDATE で player_progression の行ロックを取得する。
+// FOR UPDATE はトランザクション寿命に依存するため、呼び出し側が TxRunner.RunInTx 配下で使う責務を持つ。
 func (r *PlayerRepository) GetProgressionForUpdate(ctx context.Context, playerID string) (*domain.PlayerProgression, error) {
 	row := connFrom(ctx, r.pool).QueryRow(ctx,
 		`SELECT player_id, level, exp, updated_at
@@ -192,7 +181,7 @@ func (r *PlayerRepository) GetProgressionForUpdate(ctx context.Context, playerID
 	return prog, nil
 }
 
-// GetOnboardingStatus は onboarding_status を返す純プリミティブ。
+// GetOnboardingStatus は onboarding_status を返す。
 func (r *PlayerRepository) GetOnboardingStatus(ctx context.Context, playerID string) (string, error) {
 	var status string
 	err := connFrom(ctx, r.pool).QueryRow(ctx,
@@ -208,8 +197,7 @@ func (r *PlayerRepository) GetOnboardingStatus(ctx context.Context, playerID str
 	return status, nil
 }
 
-// UpdateName はプレイヤー名を更新する純プリミティブ。
-// 行が無ければ port.ErrNotFound を返す。
+// UpdateName はプレイヤー名を更新する。行が無ければ port.ErrNotFound。
 func (r *PlayerRepository) UpdateName(ctx context.Context, playerID string, name string) error {
 	ct, err := connFrom(ctx, r.pool).Exec(ctx,
 		`UPDATE account.players SET name = $1, updated_at = NOW() WHERE player_id = $2`,
@@ -224,8 +212,7 @@ func (r *PlayerRepository) UpdateName(ctx context.Context, playerID string, name
 	return nil
 }
 
-// UpdatePremium はプレミアムステータスを更新する。行が存在しない場合は port.ErrNotFound を返す
-// (他の Update 系プリミティブと契約を揃え、未存在を握りつぶさない)。
+// UpdatePremium はプレミアムステータスを更新する。行が無ければ port.ErrNotFound。
 func (r *PlayerRepository) UpdatePremium(ctx context.Context, playerID string, isPremium bool, expiresAt *time.Time) error {
 	ct, err := connFrom(ctx, r.pool).Exec(ctx,
 		`UPDATE account.players SET is_premium = $1, premium_expires_at = $2, updated_at = $3
@@ -242,8 +229,7 @@ func (r *PlayerRepository) UpdatePremium(ctx context.Context, playerID string, i
 }
 
 // IncrementDailyBattleCount は (player_id, gameDate) のカウントを 1 加算した結果を返す。
-// INSERT ... ON CONFLICT DO UPDATE の単発 SQL なので加算自体は原子的。上限判定は呼び出し側で
-// 加算後カウントとリミットを比較する責務 (リポジトリ層は不変条件を持たないプリミティブ)。
+// INSERT ... ON CONFLICT DO UPDATE の単発 SQL なので加算自体は原子的。
 func (r *PlayerRepository) IncrementDailyBattleCount(ctx context.Context, playerID string, gameDate civil.Date) (int64, error) {
 	var newCount int64
 	err := connFrom(ctx, r.pool).QueryRow(ctx,
@@ -260,8 +246,7 @@ func (r *PlayerRepository) IncrementDailyBattleCount(ctx context.Context, player
 	return newCount, nil
 }
 
-// UpdateProgression は exp / level をそのまま書き込む純プリミティブ。
-// 加算やレベル計算は usecase 層の責務で、ここでは受け取った値を反映するだけ。
+// UpdateProgression は exp / level をそのまま書き込む。行が無ければ port.ErrNotFound。
 func (r *PlayerRepository) UpdateProgression(ctx context.Context, playerID string, exp, level int64) (*domain.PlayerProgression, error) {
 	row := connFrom(ctx, r.pool).QueryRow(ctx,
 		`UPDATE account.player_progression SET exp = $2, level = $3
@@ -279,8 +264,7 @@ func (r *PlayerRepository) UpdateProgression(ctx context.Context, playerID strin
 	return prog, nil
 }
 
-// UpdateOnboardingStatus は onboarding_status をそのまま書き込む純プリミティブ。
-// state machine 順序の判定は usecase 層が事前に行う責務。
+// UpdateOnboardingStatus は onboarding_status をそのまま書き込む。行が無ければ port.ErrNotFound。
 func (r *PlayerRepository) UpdateOnboardingStatus(ctx context.Context, playerID, status string) error {
 	ct, err := connFrom(ctx, r.pool).Exec(ctx,
 		`UPDATE account.players SET onboarding_status = $1, updated_at = NOW() WHERE player_id = $2`,
@@ -323,7 +307,6 @@ func scanProgression(row pgx.Row) (*domain.PlayerProgression, error) {
 	return &p, nil
 }
 
-// PostgreSQL の DATE カラムは time.Time としてスキャンし civil.Date に変換する。
 func scanDailyBattle(row pgx.Row) (*domain.PlayerDailyBattle, error) {
 	var db domain.PlayerDailyBattle
 	var gameDateTime time.Time

@@ -18,7 +18,7 @@ import (
 func ptr[T any](v T) *T { return &v }
 
 // Insert は Register 用プリミティブ。全フィールドを受け取りそのまま書き込む。
-func TestPlayerSettingsRepository_Insert(t *testing.T) {
+func TestInsert_PlayerSettings(t *testing.T) {
 	repo := postgres.NewPlayerSettingsRepository(sharedPg.Pool)
 	ctx := context.Background()
 
@@ -45,7 +45,7 @@ func TestPlayerSettingsRepository_Insert(t *testing.T) {
 
 // Get の契約: シード済みなら永続層の値を全フィールドそのまま返し、
 // 未シードなら ErrNotFound (FindByFirebaseUID と揃え、未存在は常にエラーで表現)。
-func TestPlayerSettingsRepository_Get(t *testing.T) {
+func TestGet(t *testing.T) {
 	repo := postgres.NewPlayerSettingsRepository(sharedPg.Pool)
 	ctx := context.Background()
 
@@ -93,7 +93,7 @@ func TestPlayerSettingsRepository_Get(t *testing.T) {
 // シード値は (ja, 50, 60, true)。want は patch 適用後の期待スナップショット。
 // 未シードケースは want=nil で「行が存在しない (= UpdatePartial が ErrNotFound を返す)」を
 // 表現する。
-func TestPlayerSettingsRepository_UpdatePartial(t *testing.T) {
+func TestUpdatePartial(t *testing.T) {
 	repo := postgres.NewPlayerSettingsRepository(sharedPg.Pool)
 	ctx := context.Background()
 

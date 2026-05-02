@@ -2,8 +2,7 @@ package domain
 
 import "errors"
 
-// OnboardingStatus はオンボード進行ステートマシンの 4 値。
-// account.players.onboarding_status カラムの取りうる値の SSoT。
+// OnboardingStatus は account.players.onboarding_status カラムの取りうる 4 値の SSoT。
 const (
 	OnboardingStatusNotStarted = "not_started"
 	OnboardingStatusNameSet    = "name_set"
@@ -11,8 +10,7 @@ const (
 	OnboardingStatusCompleted  = "completed"
 )
 
-// onboardingStatusOrder はステートマシンの一方向遷移を保証するための
-// 順序マップ。subscriber が再配信や逆方向遷移を構造的に弾くために参照する。
+// onboardingStatusOrder は前進方向のみ許容する一方向遷移の判定に使う順序マップ。
 var onboardingStatusOrder = map[string]int{
 	OnboardingStatusNotStarted: 0,
 	OnboardingStatusNameSet:    1,
@@ -23,9 +21,8 @@ var onboardingStatusOrder = map[string]int{
 // ErrUnknownOnboardingStatus は OnboardingStatus が定義済み 4 値以外であることを示す。
 var ErrUnknownOnboardingStatus = errors.New("unknown onboarding status")
 
-// CanTransitionOnboardingStatus は current から next への遷移が一方向順序として
-// 許容されるかを返す。current == next も許容する (subscriber の冪等性のため)。
-// 未知の値は ErrUnknownOnboardingStatus を返し、サイレントな黙認をしない。
+// CanTransitionOnboardingStatus は current から next への前進遷移が許容されるかを返す。
+// current == next も許容する (subscriber の冪等性のため)。
 func CanTransitionOnboardingStatus(current, next string) (bool, error) {
 	c, ok := onboardingStatusOrder[current]
 	if !ok {

@@ -11,8 +11,7 @@ import (
 	"github.com/kenyamaneko/overload-party-account/internal/port"
 )
 
-// PremiumUpdatedSubscriber は premium-updated subscription からイベントを取得し、
-// players.is_premium と premium_expires_at を更新します。
+// PremiumUpdatedSubscriber は premium-updated subscription を消費する。
 type PremiumUpdatedSubscriber struct {
 	stream     port.MessageStream
 	playerRepo port.PlayerRepo
@@ -20,7 +19,7 @@ type PremiumUpdatedSubscriber struct {
 	eventRepo  port.ProcessedEventRepo
 }
 
-// NewPremiumUpdatedSubscriber は PremiumUpdatedSubscriber を生成します。
+// NewPremiumUpdatedSubscriber は PremiumUpdatedSubscriber を生成する。
 func NewPremiumUpdatedSubscriber(
 	stream port.MessageStream,
 	playerRepo port.PlayerRepo,
@@ -35,13 +34,12 @@ func NewPremiumUpdatedSubscriber(
 	}
 }
 
-// Start は ctx がキャンセルされるか stream がエラーを返すまでブロックします。
+// Start は ctx がキャンセルされるか stream がエラーを返すまでブロックする。
 func (s *PremiumUpdatedSubscriber) Start(ctx context.Context) error {
 	slog.Info("premium-updated subscriber: consuming")
 	return s.stream.Consume(ctx, s.processEvent)
 }
 
-// processEvent は 1 イベントを処理する。戻り値 nil = ack、非 nil = nack。
 func (s *PremiumUpdatedSubscriber) processEvent(ctx context.Context, data []byte) error {
 	var ev apishop.PremiumUpdatedEvent
 	if err := json.Unmarshal(data, &ev); err != nil {

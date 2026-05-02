@@ -9,17 +9,17 @@ import (
 	apiaccount "github.com/kenyamaneko/overload-party-account/packages/api-account"
 )
 
-// PlayerHandler はプレイヤー情報の REST エンドポイントを処理します。
+// PlayerHandler はプレイヤー情報の REST エンドポイントを処理する。
 type PlayerHandler struct {
 	playerService *usecase.PlayerInteractor
 }
 
-// NewPlayerHandler は PlayerHandler を生成します。
+// NewPlayerHandler は PlayerHandler を生成する。
 func NewPlayerHandler(playerService *usecase.PlayerInteractor) *PlayerHandler {
 	return &PlayerHandler{playerService: playerService}
 }
 
-// GetPlayer はプレイヤー情報を返します。
+// GetPlayer はプレイヤー情報を返す。
 func (h *PlayerHandler) GetPlayer(c *gin.Context) {
 	playerID := c.Param("playerId")
 	if playerID == "" {
@@ -34,7 +34,7 @@ func (h *PlayerHandler) GetPlayer(c *gin.Context) {
 	c.JSON(http.StatusOK, resp)
 }
 
-// UpdateName はプレイヤー名を更新します。
+// UpdateName はプレイヤー名を更新する。
 func (h *PlayerHandler) UpdateName(c *gin.Context) {
 	playerID := c.Param("playerId")
 	if playerID == "" {
@@ -48,8 +48,6 @@ func (h *PlayerHandler) UpdateName(c *gin.Context) {
 		return
 	}
 
-	// 表示名の業務ルール (空・空白のみ・制御文字・MaxNameRunes 超) は usecase 層で検証する。
-	// 違反時は domain.ErrInvalidName が返り、respondError 経由で 400 にマップされる。
 	player, err := h.playerService.UpdateName(c.Request.Context(), playerID, req.Name)
 	if err != nil {
 		respondError(c, err)
@@ -59,9 +57,8 @@ func (h *PlayerHandler) UpdateName(c *gin.Context) {
 }
 
 // ValidateOnboardingName はオンボード内 name 入力ステップで scenario が呼ぶ
-// 表示名バリデーション専用ハンドラ。書き込みは行わない。
-// バリデーション SSoT は internal/model/name.go に集約され、書き込みは
-// onboarding-name-set subscriber が同一 tx で実行する。
+// バリデーション専用ハンドラ。書き込みは onboarding-name-set subscriber が担うため、
+// ここでは行わない。
 func (h *PlayerHandler) ValidateOnboardingName(c *gin.Context) {
 	playerID := c.Param("playerId")
 	if playerID == "" {
@@ -82,7 +79,7 @@ func (h *PlayerHandler) ValidateOnboardingName(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
-// GetBattleLimit はプレイヤーの日次バトル制限情報を返します。
+// GetBattleLimit はプレイヤーの日次バトル制限情報を返す。
 func (h *PlayerHandler) GetBattleLimit(c *gin.Context) {
 	playerID := c.Param("playerId")
 	if playerID == "" {
@@ -97,7 +94,7 @@ func (h *PlayerHandler) GetBattleLimit(c *gin.Context) {
 	c.JSON(http.StatusOK, result)
 }
 
-// IncrementBattleCount は日次バトル回数をインクリメントします。
+// IncrementBattleCount は日次バトル回数をインクリメントする。
 func (h *PlayerHandler) IncrementBattleCount(c *gin.Context) {
 	playerID := c.Param("playerId")
 	if playerID == "" {
@@ -111,7 +108,7 @@ func (h *PlayerHandler) IncrementBattleCount(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
-// UpdatePremium はプレイヤーのプレミアムステータスを更新します。
+// UpdatePremium はプレイヤーのプレミアムステータスを更新する。
 func (h *PlayerHandler) UpdatePremium(c *gin.Context) {
 	playerID := c.Param("playerId")
 	if playerID == "" {
@@ -130,7 +127,7 @@ func (h *PlayerHandler) UpdatePremium(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
-// AddExp はプレイヤーに経験値を付与します。
+// AddExp はプレイヤーに経験値を付与する。
 func (h *PlayerHandler) AddExp(c *gin.Context) {
 	playerID := c.Param("playerId")
 	if playerID == "" {
@@ -149,7 +146,7 @@ func (h *PlayerHandler) AddExp(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
-// AwardGameExp はゲーム終了後の経験値を両プレイヤーに付与します。
+// AwardGameExp はゲーム終了後の経験値を両プレイヤーに付与する。
 func (h *PlayerHandler) AwardGameExp(c *gin.Context) {
 	var req apiaccount.AwardGameExpRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -163,7 +160,7 @@ func (h *PlayerHandler) AwardGameExp(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
-// GrantFaction はプレイヤーにファクションを付与します。
+// GrantFaction はプレイヤーにファクションを付与する。
 func (h *PlayerHandler) GrantFaction(c *gin.Context) {
 	playerID := c.Param("playerId")
 	if playerID == "" {
@@ -186,7 +183,7 @@ func (h *PlayerHandler) GrantFaction(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
-// ListFactions はプレイヤーの所持ファクション一覧を返します。
+// ListFactions はプレイヤーの所持ファクション一覧を返す。
 func (h *PlayerHandler) ListFactions(c *gin.Context) {
 	playerID := c.Param("playerId")
 	if playerID == "" {

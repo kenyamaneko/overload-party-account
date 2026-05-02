@@ -13,7 +13,7 @@ import (
 
 var _ port.ProcessedEventRepo = (*ProcessedEventRepository)(nil)
 
-// ProcessedEventRepository は PostgreSQL を使用した ProcessedEventRepo の実装である。
+// ProcessedEventRepository は port.ProcessedEventRepo の PostgreSQL 実装。
 type ProcessedEventRepository struct {
 	pool *pgxpool.Pool
 }
@@ -23,8 +23,7 @@ func NewProcessedEventRepository(pool *pgxpool.Pool) *ProcessedEventRepository {
 	return &ProcessedEventRepository{pool: pool}
 }
 
-// Insert は account.processed_events 行を挿入する。新規挿入なら true を返す。
-// event_id が既存の場合は ON CONFLICT DO NOTHING + RETURNING で false を返す。
+// Insert は account.processed_events 行を挿入する。新規挿入なら true、既存なら false。
 func (r *ProcessedEventRepository) Insert(ctx context.Context, eventID, eventType string) (bool, error) {
 	var inserted string
 	err := connFrom(ctx, r.pool).QueryRow(ctx,

@@ -9,17 +9,15 @@ import (
 	"github.com/kenyamaneko/overload-party-account/internal/port"
 )
 
-// FactionInteractor は REST 経路 (`POST /players/:playerId/factions/select`) からの
-// 初期ファクション選択を管理します。Pub/Sub 起点のオンボード faction-set 処理は
-// OnboardingInteractor.ApplyFactionSet が担います。
-// カード配布は card サービスの Pub/Sub subscriber が独立して処理します。
+// FactionInteractor は REST 経路の初期ファクション選択を管理する。
+// Pub/Sub 起点のオンボード faction-set 処理は OnboardingInteractor.ApplyFactionSet が担う。
 type FactionInteractor struct {
 	playerRepo  port.PlayerRepo
 	factionRepo port.FactionRepo
 	txRunner    port.TxRunner
 }
 
-// NewFactionInteractor は FactionInteractor を生成します。
+// NewFactionInteractor は FactionInteractor を生成する。
 func NewFactionInteractor(
 	playerRepo port.PlayerRepo,
 	factionRepo port.FactionRepo,
@@ -32,10 +30,7 @@ func NewFactionInteractor(
 	}
 }
 
-// SelectInitialFaction はオンボーディングで選択した faction を確定します。
-// SSoT は player_factions.is_initial=TRUE の行で、1 プレイヤーに最大 1 つ
-// (partial unique index で保証)。ショップ先行で同 faction を所持していても
-// is_initial=TRUE への昇格として成立します。
+// SelectInitialFaction はオンボーディングで選択した faction を確定する。
 func (s *FactionInteractor) SelectInitialFaction(ctx context.Context, playerID, faction string) error {
 	if playerID == "" {
 		return fmt.Errorf("%w: playerID is empty", ErrInvalidFaction)
@@ -52,8 +47,6 @@ func (s *FactionInteractor) SelectInitialFaction(ctx context.Context, playerID, 
 		if !exists {
 			return fmt.Errorf("player %s: %w", playerID, port.ErrNotFound)
 		}
-		// 「既に initial 確定済みか」のドメイン判定はここで行い、ErrFactionAlreadySelected に翻訳する。
-		// repo はプリミティブ (CLAUDE.md: リポジトリ層はロジックを持たない)。
 		existing, err := s.factionRepo.GetInitialFaction(txCtx, playerID)
 		if err != nil {
 			return fmt.Errorf("get initial faction: %w", err)
@@ -68,8 +61,9 @@ func (s *FactionInteractor) SelectInitialFaction(ctx context.Context, playerID, 
 	})
 }
 
-// Neutral は除外する。プレイヤーは Neutral として開始せず、
-// Neutral カードは grant-initial-pack で選択ファクションと同時に配布される。
+// 許可集合の SSoT は overload-party-common/data/factions.yaml で、
+// is_collectible=true のものが SelectableFactions に自動導出される。
+// account 側で独自に許可リストを持たない。
 func validateInitialFaction(faction string) error {
 	for _, f := range gamedesign.SelectableFactions {
 		if f == faction {

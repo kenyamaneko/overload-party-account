@@ -17,9 +17,7 @@ type OnboardingFactionSetApplier interface {
 	ApplyFactionSet(ctx context.Context, eventID, eventType, playerID, initialFactionID string) (processed bool, err error)
 }
 
-// OnboardingFactionSetSubscriber は onboarding-faction-set subscription を消費し、
-// player_factions の is_initial=TRUE 行 UPSERT + players.onboarding_status='faction_set'
-// を 1 tx で反映する。
+// OnboardingFactionSetSubscriber は onboarding-faction-set subscription を消費する。
 type OnboardingFactionSetSubscriber struct {
 	stream  port.MessageStream
 	applier OnboardingFactionSetApplier
@@ -56,9 +54,9 @@ func (s *OnboardingFactionSetSubscriber) processEvent(ctx context.Context, data 
 	processed, err := s.applier.ApplyFactionSet(ctx, ev.EventID, ev.EventType, ev.PlayerID, ev.InitialFactionID)
 	if err != nil {
 		if usecase.IsPublisherBug(err) {
-			slog.Error("onboarding-faction-set subscriber: player not found (publisher bug)",
+			slog.Error("onboarding-faction-set subscriber: publisher bug",
 				"event_id", ev.EventID, "player_id", ev.PlayerID, "error", err)
-			return fmt.Errorf("onboarding-faction-set: player not found: %w", err)
+			return fmt.Errorf("onboarding-faction-set: publisher bug: %w", err)
 		}
 		slog.Error("onboarding-faction-set subscriber: apply failed",
 			"event_id", ev.EventID, "player_id", ev.PlayerID, "error", err)

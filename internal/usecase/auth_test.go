@@ -12,11 +12,11 @@ import (
 	"github.com/kenyamaneko/overload-party-account/internal/domain"
 )
 
-// newAuthTestService は実 PostgreSQL repository + TxManager を束ねて
+// newAuthTestInteractor は実 PostgreSQL repository + TxManager を束ねて
 // AuthInteractor を返す。DB の truncate は呼び出し側（各 Test が sharedPg.Truncate）で行う。
 // gameConfigRepo は exp_formula_coefficient のみを必要とする
 // (PlayerResponse 組み立てで派生値計算に使う)。
-func newAuthTestService() *AuthInteractor {
+func newAuthTestInteractor() *AuthInteractor {
 	playerRepo, playerViewRepo, _, playerSettingsRepo, tx := newRealRepos()
 	gameConfigRepo := newFakeGameConfigRepo(map[string]int64{
 		ConfigKeyExpFormulaCoefficient: 60,
@@ -24,7 +24,7 @@ func newAuthTestService() *AuthInteractor {
 	return NewAuthInteractor(playerRepo, playerViewRepo, playerSettingsRepo, gameConfigRepo, tx)
 }
 
-func TestAuthInteractor_Register_Success(t *testing.T) {
+func TestRegister_Success(t *testing.T) {
 	ctx := context.Background()
 
 	tests := []struct {
@@ -44,7 +44,7 @@ func TestAuthInteractor_Register_Success(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			sharedPg.Truncate(t)
-			svc := newAuthTestService()
+			svc := newAuthTestInteractor()
 
 			player, err := svc.Register(ctx, tt.firebaseUID)
 			require.NoError(t, err)
@@ -90,10 +90,10 @@ func TestAuthInteractor_Register_Success(t *testing.T) {
 	}
 }
 
-func TestAuthInteractor_Register_DuplicateFirebaseUID_ReturnsAlreadyRegistered(t *testing.T) {
+func TestRegister_DuplicateFirebaseUID_ReturnsAlreadyRegistered(t *testing.T) {
 	ctx := context.Background()
 	sharedPg.Truncate(t)
-	svc := newAuthTestService()
+	svc := newAuthTestInteractor()
 
 	_, err := svc.Register(ctx, "firebase-uid-dup")
 	require.NoError(t, err)
@@ -102,10 +102,10 @@ func TestAuthInteractor_Register_DuplicateFirebaseUID_ReturnsAlreadyRegistered(t
 	require.ErrorIs(t, err, ErrPlayerAlreadyRegistered)
 }
 
-func TestAuthInteractor_Login_Success(t *testing.T) {
+func TestLogin_Success(t *testing.T) {
 	ctx := context.Background()
 	sharedPg.Truncate(t)
-	svc := newAuthTestService()
+	svc := newAuthTestInteractor()
 
 	registered, err := svc.Register(ctx, "firebase-uid-login")
 	require.NoError(t, err)
@@ -117,9 +117,9 @@ func TestAuthInteractor_Login_Success(t *testing.T) {
 	assert.Nil(t, loggedIn.Name)
 }
 
-func TestAuthInteractor_Login_NotFound(t *testing.T) {
+func TestLogin_NotFound(t *testing.T) {
 	sharedPg.Truncate(t)
-	svc := newAuthTestService()
+	svc := newAuthTestInteractor()
 
 	_, err := svc.Login(context.Background(), "nonexistent-uid")
 	require.ErrorIs(t, err, ErrPlayerNotFound)
@@ -129,11 +129,11 @@ func TestAuthInteractor_Login_NotFound(t *testing.T) {
 // 後続の UpdateName で初めて表示名が確定する仕様を固定する。
 // 「途中でゲームを落とした後の再起動でも Register をやり直さない」設計の
 // 基礎が成立していることをここで保証する。
-func TestAuthInteractor_RegisterThenUpdateName_OnboardingFlow(t *testing.T) {
+func TestRegisterThenUpdateName_OnboardingFlow(t *testing.T) {
 	ctx := context.Background()
 	sharedPg.Truncate(t)
 
-	authSvc := newAuthTestService()
+	authSvc := newAuthTestInteractor()
 	registered, err := authSvc.Register(ctx, "firebase-uid-onboard")
 	require.NoError(t, err)
 	require.Nil(t, registered.Name, "Register 直後は name が nil")

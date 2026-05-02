@@ -9,18 +9,17 @@ import (
 	apiaccount "github.com/kenyamaneko/overload-party-account/packages/api-account"
 )
 
-// FactionHandler は初期ファクション選択フローの REST エンドポイントを処理します。
+// FactionHandler は初期ファクション選択フローの REST エンドポイントを処理する。
 type FactionHandler struct {
 	factionService *usecase.FactionInteractor
 }
 
-// NewFactionHandler は FactionHandler を生成します。
+// NewFactionHandler は FactionHandler を生成する。
 func NewFactionHandler(factionService *usecase.FactionInteractor) *FactionHandler {
 	return &FactionHandler{factionService: factionService}
 }
 
-// SelectInitialFaction は初期ファクション選択を処理します。
-// 200=成功、409=選択済み（冪等）、400=不正ファクション、404=プレイヤー不在。
+// SelectInitialFaction は初期ファクション選択を処理する。
 func (h *FactionHandler) SelectInitialFaction(c *gin.Context) {
 	playerID := c.Param("playerId")
 	if playerID == "" {

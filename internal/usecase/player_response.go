@@ -6,9 +6,6 @@ import (
 )
 
 // BuildPlayerResponse は Read Model (PlayerView) と exp 係数から API DTO を組み立てる。
-// 派生値 (LevelExpCurrent / LevelExpRequired) もここで合成する。
-// usecase 層の各エントリ (AuthInteractor.Register / Login, PlayerInteractor.GetPlayerResponse 等)
-// が共有して使うことで、PlayerView → PlayerResponse の写像を 1 箇所に集約する。
 func BuildPlayerResponse(view *domain.PlayerView, coeff int64) *apiaccount.PlayerResponse {
 	progress := ComputeLevelProgress(view.Level, view.Exp, coeff)
 	return &apiaccount.PlayerResponse{

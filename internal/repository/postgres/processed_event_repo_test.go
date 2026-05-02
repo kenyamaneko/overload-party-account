@@ -19,7 +19,7 @@ const (
 // Insert の契約: account.processed_events への INSERT が冪等性ガードとして機能する純プリミティブ。
 // 初回挿入では (true, nil) を返し、event_id 重複時は ON CONFLICT DO NOTHING + RETURNING で
 // (false, nil) を返す (Pub/Sub 重複配信の検出に使う)。
-func TestProcessedEventRepository_Insert(t *testing.T) {
+func TestInsert_ProcessedEvent(t *testing.T) {
 	repo := postgres.NewProcessedEventRepository(sharedPg.Pool)
 	ctx := context.Background()
 

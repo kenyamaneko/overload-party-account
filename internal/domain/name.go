@@ -8,8 +8,8 @@ import (
 	"unicode/utf8"
 )
 
-// MaxNameRunes は表示名の許容最大長 (rune 単位)。account がプレイヤー名の業務 SSoT を
-// 持つため、scenario / gateway を含む全経路はここを唯一の上限として揃える。
+// MaxNameRunes は表示名の許容最大長 (rune 単位)。
+// repo / DB のサイズ制約 (VARCHAR 50) ではなく、ここで定義した業務上限が真。
 const MaxNameRunes = 20
 
 // ErrInvalidName は表示名が業務ルールに違反したことを示す。
@@ -17,8 +17,6 @@ const MaxNameRunes = 20
 var ErrInvalidName = errors.New("invalid name")
 
 // ValidateName は表示名の業務ルールを検証する。
-// 規則: 空文字 / 全文字 whitespace / 制御文字混入 / MaxNameRunes 超過 はいずれも違反。
-// repo / DB のサイズ制約 (VARCHAR 50) ではなく、ここで定義した業務上限が真。
 func ValidateName(s string) error {
 	if strings.TrimSpace(s) == "" {
 		return fmt.Errorf("%w: empty or whitespace only", ErrInvalidName)

@@ -9,18 +9,17 @@ import (
 	apiaccount "github.com/kenyamaneko/overload-party-account/packages/api-account"
 )
 
-// AuthHandler は認証関連の REST エンドポイントを処理します。
+// AuthHandler は認証関連の REST エンドポイントを処理する。
 type AuthHandler struct {
 	authService *usecase.AuthInteractor
 }
 
-// NewAuthHandler は AuthHandler を生成します。
+// NewAuthHandler は AuthHandler を生成する。
 func NewAuthHandler(authService *usecase.AuthInteractor) *AuthHandler {
 	return &AuthHandler{authService: authService}
 }
 
-// Register は新規プレイヤー登録を処理します。表示名は受け取らず、
-// オンボーディング完了時の player-onboarded イベントで確定します。
+// Register は新規プレイヤー登録を処理する。
 func (h *AuthHandler) Register(c *gin.Context) {
 	var req apiaccount.RegisterRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -41,7 +40,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	c.JSON(http.StatusCreated, player)
 }
 
-// GetPlayerByFirebaseUID は Firebase UID でプレイヤーを検索します。
+// GetPlayerByFirebaseUID は Firebase UID でプレイヤーを検索する。
 func (h *AuthHandler) GetPlayerByFirebaseUID(c *gin.Context) {
 	firebaseUID := c.Param("firebaseUID")
 	if firebaseUID == "" {
@@ -56,7 +55,7 @@ func (h *AuthHandler) GetPlayerByFirebaseUID(c *gin.Context) {
 	c.JSON(http.StatusOK, player)
 }
 
-// Login は既存プレイヤーのログインを処理します。
+// Login は既存プレイヤーのログインを処理する。
 func (h *AuthHandler) Login(c *gin.Context) {
 	var req apiaccount.LoginRequest
 	if err := c.ShouldBindJSON(&req); err != nil {

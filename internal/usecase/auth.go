@@ -13,7 +13,7 @@ import (
 	apiaccount "github.com/kenyamaneko/overload-party-account/packages/api-account"
 )
 
-// AuthInteractor はプレイヤーの登録・ログインを管理します。
+// AuthInteractor はプレイヤーの登録・ログインを管理する。
 type AuthInteractor struct {
 	playerRepo         port.PlayerRepo
 	playerViewRepo     port.PlayerViewRepo
@@ -22,7 +22,7 @@ type AuthInteractor struct {
 	txRunner           port.TxRunner
 }
 
-// NewAuthInteractor は AuthInteractor を生成します。
+// NewAuthInteractor は AuthInteractor を生成する。
 func NewAuthInteractor(
 	playerRepo port.PlayerRepo,
 	playerViewRepo port.PlayerViewRepo,
@@ -39,9 +39,8 @@ func NewAuthInteractor(
 	}
 }
 
-// Register は新規プレイヤーを登録します。表示名は Register では取得せず、
-// オンボーディング完了時の player-onboarded イベントで初めて確定します
-// (オンボーディング途中での中断後に再登録を要求しないための分離)。
+// Register は新規プレイヤーを登録する。表示名は別途 onboarding-name-set
+// イベントで確定する (オンボード途中中断後に再登録を要求しない設計)。
 func (s *AuthInteractor) Register(ctx context.Context, firebaseUID string) (*apiaccount.PlayerResponse, error) {
 	_, err := s.playerRepo.FindByFirebaseUID(ctx, firebaseUID)
 	if err == nil {
@@ -90,20 +89,19 @@ func (s *AuthInteractor) Register(ctx context.Context, firebaseUID string) (*api
 		return nil, err
 	}
 
-	// カードパック配布は登録時には行わない。初回ファクション選択時に
-	// gateway がオーケストレーションする（player_factions が冪等性キー）。
 	view := &domain.PlayerView{
 		Player:         *player,
 		Level:          progression.Level,
 		Exp:            progression.Exp,
+		// 登録時点では initial_faction 未選択。onboarding-faction-set イベントの
+		// subscriber が player_factions に is_initial=TRUE 行を入れて確定させる。
 		InitialFaction: nil,
 	}
 	return s.toResponse(ctx, view)
 }
 
-// FindByFirebaseUID は Firebase UID でプレイヤーを検索します。
-// 内部 API (gateway などサービス間の UID→Player ルックアップ) 用の純粋な参照系で、
-// ログインという業務イベントを伴わない点が Login との違いです。
+// FindByFirebaseUID は Firebase UID でプレイヤーを検索する。
+// gateway 等の内部 API 用で、Login と異なり業務イベントを伴わない参照系。
 func (s *AuthInteractor) FindByFirebaseUID(ctx context.Context, firebaseUID string) (*apiaccount.PlayerResponse, error) {
 	view, err := s.playerViewRepo.FindByFirebaseUID(ctx, firebaseUID)
 	if err != nil {
@@ -112,7 +110,7 @@ func (s *AuthInteractor) FindByFirebaseUID(ctx context.Context, firebaseUID stri
 	return s.toResponse(ctx, view)
 }
 
-// Login は Firebase UID でプレイヤーを検索しログインします。
+// Login は Firebase UID でプレイヤーを検索しログインする。
 func (s *AuthInteractor) Login(ctx context.Context, firebaseUID string) (*apiaccount.PlayerResponse, error) {
 	view, err := s.playerViewRepo.FindByFirebaseUID(ctx, firebaseUID)
 	if errors.Is(err, port.ErrNotFound) {
@@ -124,8 +122,6 @@ func (s *AuthInteractor) Login(ctx context.Context, firebaseUID string) (*apiacc
 	return s.toResponse(ctx, view)
 }
 
-// toResponse は exp 係数を読み出した上で BuildPlayerResponse に委譲する内部ヘルパ。
-// AuthInteractor 経路 (Register / Login / FindByFirebaseUID) で共通化する。
 func (s *AuthInteractor) toResponse(ctx context.Context, view *domain.PlayerView) (*apiaccount.PlayerResponse, error) {
 	coeff, err := s.gameConfigRepo.GetInt64(ctx, ConfigKeyExpFormulaCoefficient)
 	if err != nil {

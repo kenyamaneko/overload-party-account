@@ -1,7 +1,5 @@
 // Package config は account サービスの起動設定を管理する。
-//
-// 全 env は必須。未設定・パース不能値は起動時に fail する
-// （デフォルトへのフォールバックは CLAUDE.md の禁止事項）。
+// 全 env は必須で、未設定・パース不能値は起動時に fail する (CLAUDE.md: デフォルトへのフォールバック禁止)。
 package config
 
 import (
@@ -10,14 +8,13 @@ import (
 	"strconv"
 )
 
-// LogMode は log handler の選択を制御する。production は Cloud Logging 互換 JSON、
-// local は人間向け TextHandler を使う。
+// LogMode は log handler の選択を制御する。
 type LogMode string
 
 const (
-	// LogModeProduction は本番環境で Cloud Logging 互換 JSON を使う。
+	// LogModeProduction は Cloud Logging 互換 JSON を使う。
 	LogModeProduction LogMode = "production"
-	// LogModeLocal はローカル開発で人間向け TextHandler を使う。
+	// LogModeLocal は人間向け TextHandler を使う。
 	LogModeLocal LogMode = "local"
 )
 
@@ -42,7 +39,7 @@ type Config struct {
 	OnboardingFactionSetSubscription string
 
 	// FirestoreProjectID は game_config の読み取り先プロジェクト ID。
-	// ローカル/CI では FIRESTORE_EMULATOR_HOST を別途設定することでエミュレーターに接続する。
+	// ローカル/CI では FIRESTORE_EMULATOR_HOST 経由でエミュレーターに接続する。
 	FirestoreProjectID string
 
 	// LogMode は log handler の選択。production / local のいずれか必須。
@@ -50,7 +47,6 @@ type Config struct {
 }
 
 // FromEnv は環境変数から Config を構築する。
-// 未設定・未定義値は起動時に fail する（デフォルトへのフォールバック禁止）。
 func FromEnv() (*Config, error) {
 	cfg := &Config{
 		DatabaseConn:                     os.Getenv("DATABASE_CONN"),

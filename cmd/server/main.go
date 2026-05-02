@@ -31,7 +31,6 @@ func main() {
 }
 
 // setupLogger は LOG_MODE に応じてグローバル slog ロガーを初期化する。
-// production は Cloud Logging 互換 JSON、local は人間向け TextHandler を使う。
 func setupLogger(mode config.LogMode) error {
 	switch mode {
 	case config.LogModeProduction:
@@ -48,7 +47,7 @@ func setupLogger(mode config.LogMode) error {
 }
 
 // newCloudLoggingHandler は Cloud Logging 互換の JSON ハンドラを返す。
-// slog のデフォルトフィールド名・値では Cloud Logging が認識しないため変換する。
+// slog のデフォルトフィールド名 (level/msg) は Cloud Logging が認識しないので severity/message に変換する。
 func newCloudLoggingHandler() slog.Handler {
 	return slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
 		ReplaceAttr: func(groups []string, a slog.Attr) slog.Attr {

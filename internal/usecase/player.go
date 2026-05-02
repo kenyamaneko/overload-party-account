@@ -19,12 +19,11 @@ const (
 	configKeyFreeDailyBattleLimit  = "free_daily_battle_limit"
 	ConfigKeyExpFormulaCoefficient = "exp_formula_coefficient"
 
-	// gameDayOffset はゲーム日の計算に使用する UTC オフセットです。
-	// ゲーム日は JST 05:00 にリセットされます（JST(UTC+9) - 5h = UTC+4h）。
+	// gameDayOffset はゲーム日の計算に使用する UTC オフセット (JST 05:00 リセット = UTC+4h)。
 	gameDayOffset = 4 * time.Hour
 )
 
-// PlayerInteractor はプレイヤー情報の参照・更新を提供します。
+// PlayerInteractor はプレイヤー情報の参照・更新を提供する。
 type PlayerInteractor struct {
 	playerRepo     port.PlayerRepo
 	playerViewRepo port.PlayerViewRepo
@@ -33,7 +32,7 @@ type PlayerInteractor struct {
 	txRunner       port.TxRunner
 }
 
-// NewPlayerInteractor は PlayerInteractor を生成します。
+// NewPlayerInteractor は PlayerInteractor を生成する。
 func NewPlayerInteractor(
 	playerRepo port.PlayerRepo,
 	playerViewRepo port.PlayerViewRepo,
@@ -50,7 +49,7 @@ func NewPlayerInteractor(
 	}
 }
 
-// UpdatePremium はプレミアムステータスを更新します。
+// UpdatePremium はプレミアムステータスを更新する。
 func (s *PlayerInteractor) UpdatePremium(ctx context.Context, playerID string, isPremium bool, expiresAtMillis *int64) error {
 	var expiresAt *time.Time
 	if expiresAtMillis != nil {
@@ -60,24 +59,19 @@ func (s *PlayerInteractor) UpdatePremium(ctx context.Context, playerID string, i
 	return s.playerRepo.UpdatePremium(ctx, playerID, isPremium, expiresAt)
 }
 
-// GrantFaction はプレイヤーにファクションを付与します。
+// GrantFaction はプレイヤーにファクションを付与する。
 func (s *PlayerInteractor) GrantFaction(ctx context.Context, playerID, faction string) error {
 	return s.factionRepo.AddPlayerFaction(ctx, playerID, faction)
 }
 
-// ListFactions はプレイヤーの所持ファクション一覧を返します。
+// ListFactions はプレイヤーの所持ファクション一覧を返す。
 func (s *PlayerInteractor) ListFactions(ctx context.Context, playerID string) ([]string, error) {
 	return s.factionRepo.GetPlayerFactions(ctx, playerID)
 }
 
-// UpdateName はプレイヤー名を更新し、更新後の PlayerResponse を返します。
-// repo の write プリミティブは name のみを書き、ここで PlayerView を再ロードして
-// サーバー側で組み立てた最新状態をクライアントに返す
-// (「server を信じる」原則。クライアントに整合の責任を押し付けない)。
-//
-// UPDATE と PlayerView 取得は別操作 (TX で囲っていない)。同一プレイヤーが
-// 100ms 程度の間に名前変更を多重に投げる挙動は実用上想定しないため、
-// read-after-write の整合性は許容する。問題が出たら txRunner で囲む。
+// UpdateName はプレイヤー名を更新し、更新後の PlayerResponse を返す。
+// UPDATE と PlayerView 取得は同 Tx で囲まない: 同一プレイヤーが 100ms 程度の間に
+// 名前変更を多重に投げる挙動は実用上想定しないため、read-after-write の整合性は許容する。
 func (s *PlayerInteractor) UpdateName(ctx context.Context, playerID string, name string) (*apiaccount.PlayerResponse, error) {
 	if err := domain.ValidateName(name); err != nil {
 		return nil, err
@@ -88,9 +82,8 @@ func (s *PlayerInteractor) UpdateName(ctx context.Context, playerID string, name
 	return s.GetPlayerResponse(ctx, playerID)
 }
 
-// ValidateOnboardingName は表示名のバリデーションのみを行い、書き込みは行いません。
-// scenario が onboarding-name-set publish 前に呼び、4xx を同期にユーザーへ返すための
-// 専用エントリです。プレイヤーの存在確認も行い、Register 未実施なら 404 を返します。
+// ValidateOnboardingName は表示名のバリデーションのみを行う。書き込みはしない。
+// scenario が onboarding-name-set publish 前に呼んで 4xx を同期にユーザーへ返すための専用エントリ。
 func (s *PlayerInteractor) ValidateOnboardingName(ctx context.Context, playerID, name string) error {
 	exists, err := s.playerRepo.Exists(ctx, playerID)
 	if err != nil {
@@ -102,7 +95,7 @@ func (s *PlayerInteractor) ValidateOnboardingName(ctx context.Context, playerID,
 	return domain.ValidateName(name)
 }
 
-// GetBattleLimit はプレイヤーの日次バトル制限情報を返します。
+// GetBattleLimit はプレイヤーの日次バトル制限情報を返す。
 func (s *PlayerInteractor) GetBattleLimit(ctx context.Context, playerID string) (*apiaccount.BattleLimitResponse, error) {
 	player, err := s.playerRepo.FindByID(ctx, playerID)
 	if err != nil {
@@ -180,9 +173,9 @@ func (s *PlayerInteractor) IncrementBattleCount(ctx context.Context, playerID st
 	return nil
 }
 
-// AwardExp はプレイヤーに経験値を付与しレベルを再計算します。
-// 取得 → 計算 → 書き込み を同一トランザクションで直列化し、並行 AwardExp による
-// ロストアップデートを SELECT FOR UPDATE の行ロックで防ぎます。
+// AwardExp はプレイヤーに経験値を付与しレベルを再計算する。
+// 並行 AwardExp によるロストアップデートを SELECT FOR UPDATE で防ぐため、
+// 取得・計算・書き込みを単一 Tx で直列化する。
 func (s *PlayerInteractor) AwardExp(ctx context.Context, playerID string, expGain int64) error {
 	if expGain <= 0 {
 		return nil
@@ -227,7 +220,6 @@ func ComputeLevel(newExp, currentLevel, coeff int64) int64 {
 
 // AwardGameExp はゲーム終了後に両プレイヤーに経験値を付与する唯一の入口。
 // 付与ルール (winnerNum / reason / matchType による分岐) は FEATURE_SPEC §6.1 を参照。
-// 分岐値のリテラル禁止で共有定数パッケージを SSoT として参照する。
 func (s *PlayerInteractor) AwardGameExp(ctx context.Context, player1ID, player2ID string, winnerNum int64, reason, matchType string) error {
 	expWin, err := s.gameConfigRepo.GetInt64(ctx, "exp_win")
 	if err != nil {
@@ -271,14 +263,13 @@ func (s *PlayerInteractor) AwardGameExp(ctx context.Context, player1ID, player2I
 	return nil
 }
 
-// LevelProgress は現在レベル内の経験値進捗を保持します。
+// LevelProgress は現在レベル内の経験値進捗を保持する。
 type LevelProgress struct {
 	LevelExpCurrent  int64 `json:"level_exp_current"`
 	LevelExpRequired int64 `json:"level_exp_required"`
 }
 
-// GetPlayerResponse はレベル進捗を付与したプレイヤー情報を返します。
-// PlayerViewRepo で Read Model を取得し、BuildPlayerResponse で API DTO に組み立てます。
+// GetPlayerResponse はレベル進捗を付与したプレイヤー情報を返す。
 func (s *PlayerInteractor) GetPlayerResponse(ctx context.Context, playerID string) (*apiaccount.PlayerResponse, error) {
 	view, err := s.playerViewRepo.FindByID(ctx, playerID)
 	if err != nil {
@@ -294,7 +285,7 @@ func (s *PlayerInteractor) GetPlayerResponse(ctx context.Context, playerID strin
 	return BuildPlayerResponse(view, coeff), nil
 }
 
-// GetLevelProgress は指定レベル・経験値のレベル進捗を返します。
+// GetLevelProgress は指定レベル・経験値のレベル進捗を返す。
 func (s *PlayerInteractor) GetLevelProgress(ctx context.Context, level, exp int64) (*LevelProgress, error) {
 	coeff, err := s.gameConfigRepo.GetInt64(ctx, ConfigKeyExpFormulaCoefficient)
 	if err != nil {
@@ -306,7 +297,7 @@ func (s *PlayerInteractor) GetLevelProgress(ctx context.Context, level, exp int6
 	return ComputeLevelProgress(level, exp, coeff), nil
 }
 
-// ComputeLevelProgress は現在レベル内の経験値進捗を計算します。
+// ComputeLevelProgress は現在レベル内の経験値進捗を計算する。
 func ComputeLevelProgress(level, exp, coeff int64) *LevelProgress {
 	currentLevelExp := coeff * level * level
 	nextLevelExp := coeff * (level + 1) * (level + 1)

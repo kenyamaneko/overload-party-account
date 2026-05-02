@@ -13,11 +13,7 @@ import (
 )
 
 // errorStatus はドメインエラーを HTTP ステータスコードに変換する。
-// usecase 層が返す sentinel をここで「not found / conflict / validation」のいずれに
-// 翻訳するかを決定する責務は transport (handler) 側に閉じる。
-//
-// 分類対象に該当しないエラー (DB 一時障害等) は default の 500 にフォールバックし、
-// クライアントのリトライを促す。
+// 該当なしは 500 にフォールバックしクライアントのリトライを促す。
 func errorStatus(err error) int {
 	switch {
 	case isNotFound(err):
@@ -34,8 +30,7 @@ func errorStatus(err error) int {
 }
 
 // respondError は Gin context に統一フォーマットの JSON エラーを書き込む。
-// 5xx は呼び出し元（クライアント）に実体を伝搬できないため、ops 可視性のためここで
-// 構造化ログに記録する。4xx はクライアント起因なのでログしない。
+// 5xx はクライアントに実体を伝搬できないため ops 可視性のために構造化ログに記録する。
 func respondError(c *gin.Context, err error) {
 	status := errorStatus(err)
 	if status >= http.StatusInternalServerError {
@@ -49,27 +44,20 @@ func respondError(c *gin.Context, err error) {
 	c.JSON(status, gin.H{"error": err.Error()})
 }
 
-// isNotFound は対象リソースが見つからない類のエラーか判定する。
-// port.ErrNotFound は repo から bubble され、usecase.ErrPlayerNotFound は usecase 層の
-// ドメイン別名である。
 func isNotFound(err error) bool {
 	return errors.Is(err, port.ErrNotFound) ||
 		errors.Is(err, usecase.ErrPlayerNotFound)
 }
 
-// isConflict は既存リソースとの衝突 (重複登録・冪等な再選択) によるエラーか判定する。
 func isConflict(err error) bool {
 	return errors.Is(err, usecase.ErrPlayerAlreadyRegistered) ||
 		errors.Is(err, usecase.ErrFactionAlreadySelected)
 }
 
-// isTooManyRequests はクォータ超過によるエラーか判定する。
-// daily battle limit のように「一定期間あたりの回数上限」に達した場合に使う。
 func isTooManyRequests(err error) bool {
 	return errors.Is(err, usecase.ErrBattleLimitExceeded)
 }
 
-// isValidation はクライアント入力の妥当性違反によるエラーか判定する。
 func isValidation(err error) bool {
 	return errors.Is(err, usecase.ErrInvalidFaction) ||
 		errors.Is(err, domain.ErrInvalidName)

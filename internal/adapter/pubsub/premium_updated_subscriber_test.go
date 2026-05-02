@@ -13,14 +13,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestPremiumUpdatedSubscriber_Consumes は「premium-updated を受けて
+// TestConsumes_PremiumUpdated は「premium-updated を受けて
 // players.is_premium と premium_expires_at を冪等に更新する」仕様を
 // Start() → stream.Consume → processEvent の経路で固定する。
 //
 // 契約検証は apishopfake 経由で shop 側の publish 型をそのまま使う
 // (shop が schema を変えたら account のテストが compile / 実行で破綻する
 // ように設計し、乖離を CI で検知する)。
-func TestPremiumUpdatedSubscriber_Consumes(t *testing.T) {
+func TestConsumes_PremiumUpdated(t *testing.T) {
 	const existingEventID = "aaaaaaaa-1111-1111-1111-aaaaaaaaaaaa"
 	expiry := time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC)
 

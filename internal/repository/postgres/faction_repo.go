@@ -13,7 +13,7 @@ import (
 
 var _ port.FactionRepo = (*FactionRepository)(nil)
 
-// FactionRepository は PostgreSQL を使用した FactionRepo の実装である。
+// FactionRepository は port.FactionRepo の PostgreSQL 実装。
 type FactionRepository struct {
 	pool *pgxpool.Pool
 }
@@ -23,10 +23,8 @@ func NewFactionRepository(pool *pgxpool.Pool) *FactionRepository {
 	return &FactionRepository{pool: pool}
 }
 
-// AddPlayerFaction はプレイヤーファクションを追加する (is_initial=FALSE 固定の通常追加経路)。
-// ショップ購入など、オンボーディング選択以外の取得経路で使う。
-// (player_id, faction) の ON CONFLICT DO NOTHING で冪等。既に initial=TRUE の同 faction 行が
-// あっても is_initial を上書きしない (initial の昇格は SetInitialFaction の責務)。
+// AddPlayerFaction は player_factions に is_initial=FALSE で 1 行追加する。
+// (player_id, faction) PK の ON CONFLICT DO NOTHING で冪等。is_initial の昇格は行わない。
 func (r *FactionRepository) AddPlayerFaction(ctx context.Context, playerID, faction string) error {
 	_, err := connFrom(ctx, r.pool).Exec(ctx,
 		`INSERT INTO account.player_factions (player_id, faction, is_initial)
@@ -78,8 +76,7 @@ func (r *FactionRepository) GetPlayerFactions(ctx context.Context, playerID stri
 	return factions, nil
 }
 
-// GetInitialFaction はプレイヤーの initial faction (is_initial=TRUE の行) を返す。
-// 未選択なら (nil, nil)。
+// GetInitialFaction はプレイヤーの initial faction を返す。未選択なら (nil, nil)。
 func (r *FactionRepository) GetInitialFaction(ctx context.Context, playerID string) (*string, error) {
 	var faction string
 	err := connFrom(ctx, r.pool).QueryRow(ctx,

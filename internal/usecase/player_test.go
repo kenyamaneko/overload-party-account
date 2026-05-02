@@ -32,9 +32,9 @@ func yesterday() civil.Date {
 	return civil.Date{Year: d.Year, Month: d.Month, Day: d.Day - 1}
 }
 
-// newPlayerTestService は GameConfig fake + 実 repository で PlayerInteractor を組む。
+// newPlayerTestInteractor は GameConfig fake + 実 repository で PlayerInteractor を組む。
 // defaultConfigValues をベースに overrides で上書きできる。
-func newPlayerTestService(overrides map[string]int64) *PlayerInteractor {
+func newPlayerTestInteractor(overrides map[string]int64) *PlayerInteractor {
 	defaultValues := map[string]int64{
 		configKeyFreeDailyBattleLimit:  10,
 		ConfigKeyExpFormulaCoefficient: testExpCoeff,
@@ -49,7 +49,7 @@ func newPlayerTestService(overrides map[string]int64) *PlayerInteractor {
 	return NewPlayerInteractor(playerRepo, playerViewRepo, newFakeGameConfigRepo(defaultValues), factionRepo, tx)
 }
 
-func TestPlayerInteractor_GetBattleLimit(t *testing.T) {
+func TestGetBattleLimit(t *testing.T) {
 	ctx := context.Background()
 
 	tests := []struct {
@@ -122,7 +122,7 @@ func TestPlayerInteractor_GetBattleLimit(t *testing.T) {
 			seedPlayerWithState(t, testPlayerID1, "uid-1", "Alice",
 				tt.isPremium, 1, 0, tt.seedCount, tt.seedDate)
 
-			svc := newPlayerTestService(nil)
+			svc := newPlayerTestInteractor(nil)
 			resp, err := svc.GetBattleLimit(ctx, testPlayerID1)
 			require.NoError(t, err)
 
@@ -133,11 +133,11 @@ func TestPlayerInteractor_GetBattleLimit(t *testing.T) {
 	}
 }
 
-func TestPlayerInteractor_GetBattleLimit_FreeLimitZero_ReturnsError(t *testing.T) {
+func TestGetBattleLimit_FreeLimitZero_ReturnsError(t *testing.T) {
 	sharedPg.Truncate(t)
 	seedPlayer(t, testPlayerID1, "uid-1", "Alice", false)
 
-	svc := newPlayerTestService(map[string]int64{configKeyFreeDailyBattleLimit: 0})
+	svc := newPlayerTestInteractor(map[string]int64{configKeyFreeDailyBattleLimit: 0})
 
 	_, err := svc.GetBattleLimit(context.Background(), testPlayerID1)
 	require.Error(t, err)
@@ -150,7 +150,7 @@ func TestPlayerInteractor_GetBattleLimit_FreeLimitZero_ReturnsError(t *testing.T
 //   - 別ゲーム日の履歴は当日カウントに影響しない (UPSERT が日単位で独立)
 //   - free プレイヤーはインクリメント後のカウントが上限内なら通る
 //   - premium プレイヤーは上限判定をスキップ（カウントは記録する）
-func TestPlayerInteractor_IncrementBattleCount(t *testing.T) {
+func TestIncrementBattleCount(t *testing.T) {
 	ctx := context.Background()
 
 	tests := []struct {
@@ -202,7 +202,7 @@ func TestPlayerInteractor_IncrementBattleCount(t *testing.T) {
 			seedPlayerWithState(t, testPlayerID1, "uid-1", "Alice",
 				tt.isPremium, 1, 0, tt.seedCount, tt.seedDate)
 
-			svc := newPlayerTestService(nil)
+			svc := newPlayerTestInteractor(nil)
 			require.NoError(t, svc.IncrementBattleCount(ctx, testPlayerID1))
 
 			playerRepo, _, _, _, _ := newRealRepos()
@@ -215,13 +215,13 @@ func TestPlayerInteractor_IncrementBattleCount(t *testing.T) {
 }
 
 // free プレイヤーが上限到達後にインクリメントを試みると拒否され、カウントは据え置き。
-func TestPlayerInteractor_IncrementBattleCount_OverLimit_ReturnsError(t *testing.T) {
+func TestIncrementBattleCount_OverLimit_ReturnsError(t *testing.T) {
 	ctx := context.Background()
 	sharedPg.Truncate(t)
 	seedPlayerWithState(t, testPlayerID1, "uid-1", "Alice",
 		false, 1, 0, 10, today())
 
-	svc := newPlayerTestService(nil)
+	svc := newPlayerTestInteractor(nil)
 	err := svc.IncrementBattleCount(ctx, testPlayerID1)
 	require.ErrorIs(t, err, ErrBattleLimitExceeded)
 
@@ -232,19 +232,19 @@ func TestPlayerInteractor_IncrementBattleCount_OverLimit_ReturnsError(t *testing
 	assert.Equal(t, int64(10), got.DailyBattleCount)
 }
 
-func TestPlayerInteractor_IncrementBattleCount_NotFound(t *testing.T) {
+func TestIncrementBattleCount_NotFound(t *testing.T) {
 	sharedPg.Truncate(t)
-	svc := newPlayerTestService(nil)
+	svc := newPlayerTestInteractor(nil)
 
 	err := svc.IncrementBattleCount(context.Background(), "99999999-9999-9999-9999-999999999999")
 	require.ErrorIs(t, err, port.ErrNotFound)
 }
 
-func TestPlayerInteractor_GetPlayer_Success(t *testing.T) {
+func TestGetPlayer_Success(t *testing.T) {
 	sharedPg.Truncate(t)
 	seedPlayer(t, testPlayerID1, "uid-1", "Alice", false)
 
-	svc := newPlayerTestService(nil)
+	svc := newPlayerTestInteractor(nil)
 	got, err := svc.GetPlayerResponse(context.Background(), testPlayerID1)
 	require.NoError(t, err)
 	assert.Equal(t, testPlayerID1, got.PlayerID)
@@ -252,21 +252,21 @@ func TestPlayerInteractor_GetPlayer_Success(t *testing.T) {
 	assert.Equal(t, "Alice", *got.Name)
 }
 
-func TestPlayerInteractor_GetPlayer_NotFound_ReturnsError(t *testing.T) {
+func TestGetPlayer_NotFound_ReturnsError(t *testing.T) {
 	sharedPg.Truncate(t)
 	seedPlayer(t, testPlayerID1, "uid-1", "Alice", false)
 
-	svc := newPlayerTestService(nil)
+	svc := newPlayerTestInteractor(nil)
 	_, err := svc.GetPlayerResponse(context.Background(), "99999999-9999-9999-9999-999999999999")
 	require.ErrorIs(t, err, port.ErrNotFound)
 }
 
-func TestPlayerInteractor_UpdateName(t *testing.T) {
+func TestUpdateName(t *testing.T) {
 	ctx := context.Background()
 	sharedPg.Truncate(t)
 	seedPlayer(t, testPlayerID1, "uid-1", "Alice", false)
 
-	svc := newPlayerTestService(nil)
+	svc := newPlayerTestInteractor(nil)
 
 	updated, err := svc.UpdateName(ctx, testPlayerID1, "Bob")
 	require.NoError(t, err)
@@ -282,12 +282,12 @@ func TestPlayerInteractor_UpdateName(t *testing.T) {
 // 業務バリデーション違反は repo に到達せず ErrInvalidName を返す契約を固定する。
 // 詳細な境界値は model/name_test.go で網羅しているため、ここでは UpdateName 経路で
 // バリデーションが効いていることだけを 1 ケースで確認する。
-func TestPlayerInteractor_UpdateName_InvalidName_ReturnsErrInvalidName(t *testing.T) {
+func TestUpdateName_InvalidName_ReturnsErrInvalidName(t *testing.T) {
 	ctx := context.Background()
 	sharedPg.Truncate(t)
 	seedPlayer(t, testPlayerID1, "uid-1", "Alice", false)
 
-	svc := newPlayerTestService(nil)
+	svc := newPlayerTestInteractor(nil)
 	_, err := svc.UpdateName(ctx, testPlayerID1, "")
 	require.ErrorIs(t, err, domain.ErrInvalidName)
 
@@ -298,15 +298,15 @@ func TestPlayerInteractor_UpdateName_InvalidName_ReturnsErrInvalidName(t *testin
 	assert.Equal(t, "Alice", *got.Name)
 }
 
-func TestPlayerInteractor_UpdateName_NotFound(t *testing.T) {
+func TestUpdateName_NotFound(t *testing.T) {
 	sharedPg.Truncate(t)
-	svc := newPlayerTestService(nil)
+	svc := newPlayerTestInteractor(nil)
 
 	_, err := svc.UpdateName(context.Background(), "99999999-9999-9999-9999-999999999999", "Bob")
 	require.ErrorIs(t, err, port.ErrNotFound)
 }
 
-func TestPlayerInteractor_AwardExp(t *testing.T) {
+func TestAwardExp(t *testing.T) {
 	ctx := context.Background()
 	levelUpThreshold := int64(testExpCoeff * 2 * 2)
 
@@ -366,7 +366,7 @@ func TestPlayerInteractor_AwardExp(t *testing.T) {
 			seedPlayerWithState(t, testPlayerID1, "uid-1", "Alice",
 				false, tt.initLevel, tt.initExp, 0, today())
 
-			svc := newPlayerTestService(nil)
+			svc := newPlayerTestInteractor(nil)
 			require.NoError(t, svc.AwardExp(ctx, testPlayerID1, tt.gain))
 
 			got, err := svc.GetPlayerResponse(ctx, testPlayerID1)
@@ -377,7 +377,7 @@ func TestPlayerInteractor_AwardExp(t *testing.T) {
 	}
 }
 
-func TestPlayerInteractor_AwardExp_MissingCoefficient_ReturnsError(t *testing.T) {
+func TestAwardExp_MissingCoefficient_ReturnsError(t *testing.T) {
 	sharedPg.Truncate(t)
 	seedPlayer(t, testPlayerID1, "uid-1", "Alice", false)
 
@@ -390,7 +390,7 @@ func TestPlayerInteractor_AwardExp_MissingCoefficient_ReturnsError(t *testing.T)
 	assert.Contains(t, err.Error(), "exp_formula_coefficient")
 }
 
-func TestPlayerInteractor_AwardGameExp_PvP(t *testing.T) {
+func TestAwardGameExp_PvP(t *testing.T) {
 	ctx := context.Background()
 
 	tests := []struct {
@@ -429,7 +429,7 @@ func TestPlayerInteractor_AwardGameExp_PvP(t *testing.T) {
 			seedPlayerWithState(t, testPlayerID1, "uid-1", "Alice", false, 1, 0, 0, today())
 			seedPlayerWithState(t, testPlayerID2, "uid-2", "Bob", false, 1, 0, 0, today())
 
-			svc := newPlayerTestService(nil)
+			svc := newPlayerTestInteractor(nil)
 			require.NoError(t, svc.AwardGameExp(ctx, testPlayerID1, testPlayerID2, tt.winnerNum, tt.reason, "pvp"))
 
 			got1, err := svc.GetPlayerResponse(ctx, testPlayerID1)
@@ -443,7 +443,7 @@ func TestPlayerInteractor_AwardGameExp_PvP(t *testing.T) {
 	}
 }
 
-func TestPlayerInteractor_AwardGameExp_NPC(t *testing.T) {
+func TestAwardGameExp_NPC(t *testing.T) {
 	ctx := context.Background()
 
 	tests := []struct {
@@ -477,7 +477,7 @@ func TestPlayerInteractor_AwardGameExp_NPC(t *testing.T) {
 			sharedPg.Truncate(t)
 			seedPlayerWithState(t, testPlayerID1, "uid-1", "Alice", false, 1, 0, 0, today())
 
-			svc := newPlayerTestService(nil)
+			svc := newPlayerTestInteractor(nil)
 			require.NoError(t, svc.AwardGameExp(ctx, testPlayerID1, "npc-easy", tt.winnerNum, tt.reason, "npc"))
 
 			got1, err := svc.GetPlayerResponse(ctx, testPlayerID1)

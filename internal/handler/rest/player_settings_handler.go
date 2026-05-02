@@ -10,17 +10,17 @@ import (
 	apiaccount "github.com/kenyamaneko/overload-party-account/packages/api-account"
 )
 
-// PlayerSettingsHandler はプレイヤー設定の REST エンドポイントを処理します。
+// PlayerSettingsHandler はプレイヤー設定の REST エンドポイントを処理する。
 type PlayerSettingsHandler struct {
 	svc *usecase.PlayerSettingsInteractor
 }
 
-// NewPlayerSettingsHandler は PlayerSettingsHandler を生成します。
+// NewPlayerSettingsHandler は PlayerSettingsHandler を生成する。
 func NewPlayerSettingsHandler(svc *usecase.PlayerSettingsInteractor) *PlayerSettingsHandler {
 	return &PlayerSettingsHandler{svc: svc}
 }
 
-// GetSettings はプレイヤーの設定を返します。
+// GetSettings はプレイヤーの設定を返す。
 func (h *PlayerSettingsHandler) GetSettings(c *gin.Context) {
 	playerID := c.Param("playerId")
 	if playerID == "" {
@@ -36,9 +36,8 @@ func (h *PlayerSettingsHandler) GetSettings(c *gin.Context) {
 	c.JSON(http.StatusOK, s)
 }
 
-// UpdateSettings はプレイヤーの設定を部分更新します。
-// PUT ですが partial update 契約（nil フィールドは現状維持）。
-// 1 つもフィールドが指定されていないリクエストは 400 で弾きます。
+// UpdateSettings はプレイヤーの設定を部分更新する。
+// PUT だが partial update 契約 (nil フィールドは現状維持)。全 nil リクエストは 400 で弾く。
 func (h *PlayerSettingsHandler) UpdateSettings(c *gin.Context) {
 	playerID := c.Param("playerId")
 	if playerID == "" {

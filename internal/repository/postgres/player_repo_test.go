@@ -21,7 +21,7 @@ const (
 	testPlayerID2 = "22222222-2222-2222-2222-222222222222"
 )
 
-func TestPlayerRepository_Create_Then_FindByID(t *testing.T) {
+func TestCreate(t *testing.T) {
 	repo := postgres.NewPlayerRepository(sharedPg.Pool)
 	viewRepo := postgres.NewPlayerViewRepository(sharedPg.Pool)
 	ctx := context.Background()
@@ -58,7 +58,7 @@ func TestPlayerRepository_Create_Then_FindByID(t *testing.T) {
 }
 
 // FindByID の契約: シード済み player_id なら Player を返し、未シードなら ErrNotFound。
-func TestPlayerRepository_FindByID(t *testing.T) {
+func TestFindByID(t *testing.T) {
 	repo := postgres.NewPlayerRepository(sharedPg.Pool)
 	ctx := context.Background()
 
@@ -96,7 +96,7 @@ func TestPlayerRepository_FindByID(t *testing.T) {
 
 // FindByFirebaseUID の契約: 一致する firebase_uid があれば Player を返し、
 // 無ければ ErrNotFound。業務分岐 (Register の既登録検出など) は呼び出し側で errors.Is で行う。
-func TestPlayerRepository_FindByFirebaseUID(t *testing.T) {
+func TestFindByFirebaseUID(t *testing.T) {
 	repo := postgres.NewPlayerRepository(sharedPg.Pool)
 	ctx := context.Background()
 
@@ -133,7 +133,7 @@ func TestPlayerRepository_FindByFirebaseUID(t *testing.T) {
 }
 
 // Exists は player_id 行の存在確認のみを行う純プリミティブ。
-func TestPlayerRepository_Exists(t *testing.T) {
+func TestExists(t *testing.T) {
 	repo := postgres.NewPlayerRepository(sharedPg.Pool)
 	ctx := context.Background()
 
@@ -168,7 +168,7 @@ func TestPlayerRepository_Exists(t *testing.T) {
 
 // GetDailyBattle の契約: (player_id, game_date) に行があれば永続層の値をそのまま返し、
 // 無ければ (nil, nil) (該当なしはエラーではなく、呼び出し側はカウント 0 として扱う)。
-func TestPlayerRepository_GetDailyBattle(t *testing.T) {
+func TestGetDailyBattle(t *testing.T) {
 	repo := postgres.NewPlayerRepository(sharedPg.Pool)
 	ctx := context.Background()
 	today := civil.DateOf(time.Now().UTC())
@@ -213,7 +213,7 @@ func TestPlayerRepository_GetDailyBattle(t *testing.T) {
 // シード済みなら現在値を返し、未シードなら ErrNotFound。FOR UPDATE による行ロック取得自体の
 // 検証はせず、行取得経路とエラー伝播のみを repo テストの責務とする
 // (加算・レベル計算は usecase 層の責務)。
-func TestPlayerRepository_GetProgressionForUpdate(t *testing.T) {
+func TestGetProgressionForUpdate(t *testing.T) {
 	repo := postgres.NewPlayerRepository(sharedPg.Pool)
 	txMgr := postgres.NewTxManager(sharedPg.Pool)
 	ctx := context.Background()
@@ -258,7 +258,7 @@ func TestPlayerRepository_GetProgressionForUpdate(t *testing.T) {
 
 // UpdateName の契約: シード済みなら name を上書きし、未シードなら ErrNotFound。
 // 永続化は FindByID 経由で確認する (シード済みケースのみ)。
-func TestPlayerRepository_UpdateName(t *testing.T) {
+func TestUpdateName(t *testing.T) {
 	repo := postgres.NewPlayerRepository(sharedPg.Pool)
 	ctx := context.Background()
 
@@ -298,7 +298,7 @@ func TestPlayerRepository_UpdateName(t *testing.T) {
 
 // UpdatePremium の契約: シード済みなら is_premium / premium_expires_at を更新し、
 // 未シードなら ErrNotFound。永続化は FindByID 経由で確認する (シード済みケースのみ)。
-func TestPlayerRepository_UpdatePremium(t *testing.T) {
+func TestUpdatePremium(t *testing.T) {
 	repo := postgres.NewPlayerRepository(sharedPg.Pool)
 	ctx := context.Background()
 	expiresAt := time.Now().UTC().Add(24 * time.Hour).Truncate(time.Second)
@@ -342,7 +342,7 @@ func TestPlayerRepository_UpdatePremium(t *testing.T) {
 // 検証する。連続呼び出しの履歴を 1 ケースの calls スライスで表現することで、
 // 「同じ日 → 加算」「別の日 → 1 から独立」「既存日に戻る → 履歴が独立して残る」の
 // 一連の不変条件をテーブル駆動で表す。
-func TestPlayerRepository_IncrementDailyBattleCount(t *testing.T) {
+func TestIncrementDailyBattleCount(t *testing.T) {
 	repo := postgres.NewPlayerRepository(sharedPg.Pool)
 	ctx := context.Background()
 
@@ -417,7 +417,7 @@ func TestPlayerRepository_IncrementDailyBattleCount(t *testing.T) {
 
 // UpdateProgression の契約: シード済みなら受け取った exp / level をそのまま書き込み、
 // 未シードなら ErrNotFound。永続化は GetProgression 経由で反映されることまで確認する。
-func TestPlayerRepository_UpdateProgression(t *testing.T) {
+func TestUpdateProgression(t *testing.T) {
 	repo := postgres.NewPlayerRepository(sharedPg.Pool)
 	ctx := context.Background()
 

@@ -16,13 +16,13 @@ import (
 // ptr はテスト内でポインタリテラルを書きやすくするヘルパ。
 func ptr[T any](v T) *T { return &v }
 
-// newPlayerSettingsTestService は実 PostgreSQL repository で PlayerSettingsInteractor を組む。
-func newPlayerSettingsTestService() *PlayerSettingsInteractor {
+// newPlayerSettingsTestInteractor は実 PostgreSQL repository で PlayerSettingsInteractor を組む。
+func newPlayerSettingsTestInteractor() *PlayerSettingsInteractor {
 	_, _, _, playerSettingsRepo, _ := newRealRepos()
 	return NewPlayerSettingsInteractor(playerSettingsRepo)
 }
 
-func TestPlayerSettingsInteractor_Get_Seeded(t *testing.T) {
+func TestGet_Seeded(t *testing.T) {
 	ctx := context.Background()
 
 	tests := []struct {
@@ -54,7 +54,7 @@ func TestPlayerSettingsInteractor_Get_Seeded(t *testing.T) {
 			seedPlayer(t, testPlayerID1, "uid-1", "Alice", false)
 			seedPlayerSettings(t, testPlayerID1, tt.seedLang, tt.seedBgm, tt.seedSe, tt.seedPush)
 
-			svc := newPlayerSettingsTestService()
+			svc := newPlayerSettingsTestInteractor()
 			got, err := svc.Get(ctx, testPlayerID1)
 			require.NoError(t, err)
 			require.NotNil(t, got)
@@ -70,19 +70,19 @@ func TestPlayerSettingsInteractor_Get_Seeded(t *testing.T) {
 // player_settings 行が存在しない場合 Get は port.ErrNotFound を返し、
 // デフォルト値での隠蔽は行わない（Register と同一 Tx で必ず INSERT されている契約のため、
 // 行が無いのは Register 未実施または不整合の症状であり、エラーとして扱う）。
-func TestPlayerSettingsInteractor_Get_Unseeded_ReturnsErrNotFound(t *testing.T) {
+func TestGet_Unseeded_ReturnsErrNotFound(t *testing.T) {
 	ctx := context.Background()
 	sharedPg.Truncate(t)
 	seedPlayer(t, testPlayerID1, "uid-1", "Alice", false)
 
-	svc := newPlayerSettingsTestService()
+	svc := newPlayerSettingsTestInteractor()
 	_, err := svc.Get(ctx, testPlayerID1)
 	require.ErrorIs(t, err, port.ErrNotFound)
 }
 
 // Update は patch の非 nil フィールドだけを更新する（部分更新契約）。
 // nil フィールドは現状維持、複数指定は同時に書き換え。
-func TestPlayerSettingsInteractor_Update(t *testing.T) {
+func TestUpdate(t *testing.T) {
 	ctx := context.Background()
 
 	tests := []struct {
@@ -122,7 +122,7 @@ func TestPlayerSettingsInteractor_Update(t *testing.T) {
 			seedPlayer(t, testPlayerID1, "uid-1", "Alice", false)
 			seedPlayerSettings(t, testPlayerID1, "ja", 50, 50, true)
 
-			svc := newPlayerSettingsTestService()
+			svc := newPlayerSettingsTestInteractor()
 			require.NoError(t, svc.Update(ctx, testPlayerID1, tt.patch))
 
 			got, err := svc.Get(ctx, testPlayerID1)
@@ -138,25 +138,25 @@ func TestPlayerSettingsInteractor_Update(t *testing.T) {
 
 // player_settings 行が未登録なら Update は ErrNotFound を返す。
 // 通常は Register で Insert されているので発生しないが、契約として担保する。
-func TestPlayerSettingsInteractor_Update_NotFound(t *testing.T) {
+func TestUpdate_NotFound(t *testing.T) {
 	ctx := context.Background()
 	sharedPg.Truncate(t)
 	seedPlayer(t, testPlayerID1, "uid-1", "Alice", false)
 
-	svc := newPlayerSettingsTestService()
+	svc := newPlayerSettingsTestInteractor()
 	err := svc.Update(ctx, testPlayerID1, &port.PlayerSettingsPatch{Language: ptr("en")})
 	require.ErrorIs(t, err, port.ErrNotFound)
 }
 
 // 既存行の updated_at が Update で必ず前進することを検証する（監査やキャッシュ無効化の基盤）。
 // 実際の更新は BEFORE UPDATE トリガー trg_player_settings_updated_at が now() に書き換える。
-func TestPlayerSettingsInteractor_Update_AdvancesUpdatedAt(t *testing.T) {
+func TestUpdate_AdvancesUpdatedAt(t *testing.T) {
 	ctx := context.Background()
 	sharedPg.Truncate(t)
 	seedPlayer(t, testPlayerID1, "uid-1", "Alice", false)
 	seedPlayerSettings(t, testPlayerID1, "ja", 50, 50, true)
 
-	svc := newPlayerSettingsTestService()
+	svc := newPlayerSettingsTestInteractor()
 	before, err := svc.Get(ctx, testPlayerID1)
 	require.NoError(t, err)
 

@@ -14,7 +14,7 @@ import (
 // PUT /players/:id/name を呼んで account に確定済みのため、onboarding-faction-set 経路では
 // initial_faction の反映と processed_events の冪等ガードのみを担う。
 // name が NULL のままでも faction の付与には支障がないことをここで固定する。
-func TestOnboardingInteractor_ApplyFactionSet_NameIndependent(t *testing.T) {
+func TestApplyFactionSet_NameIndependent(t *testing.T) {
 	ctx := context.Background()
 	sharedPg.Truncate(t)
 	seedPlayer(t, testPlayerID1, "uid-1", "", false) // name 未確定 (NULL) のプレイヤー

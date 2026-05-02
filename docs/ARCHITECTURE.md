@@ -179,7 +179,7 @@ BEGIN TX
 COMMIT → ACK
 ```
 
-`onboarding_status` の遷移は state machine の前進方向のみ許容する CASE WHEN で書く。
+`onboarding_status` の遷移は 前進方向のみ許容する CASE WHEN で書く。
 out-of-order 配信で先に completed が反映済みでも整合性が保たれる。
 
 ### 6.4 onboarding-faction-set subscriber
