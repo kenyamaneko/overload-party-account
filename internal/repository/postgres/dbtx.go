@@ -17,7 +17,11 @@ import (
 
 var _ port.TxRunner = (*TxManager)(nil)
 
-// dbtx は pgxpool.Pool と pgx.Tx の共通インターフェース。
+// dbtx は connFrom が pgxpool.Pool と pgx.Tx を透過的に切り替えるための最大公約数。
+// pgx v5 の DBTX (sqlc 生成) と形が等価だが、本リポジトリは sqlc 未導入のため
+// 自前定義する。package-private に閉じているのは、postgres パッケージ外からの
+// 直接 DB アクセスを設計上禁じている (port 経由が SSoT) ため。
+// sqlc を導入する場合は本 interface を捨てて sqlc 側の DBTX に寄せる。
 type dbtx interface {
 	Exec(ctx context.Context, sql string, arguments ...any) (pgconn.CommandTag, error)
 	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
