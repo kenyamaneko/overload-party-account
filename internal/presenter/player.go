@@ -1,14 +1,19 @@
 package presenter
 
 import (
+	"fmt"
+
 	"github.com/kenyamaneko/overload-party-account/internal/domain"
 	apiaccount "github.com/kenyamaneko/overload-party-account/packages/api-account"
 )
 
 // BuildPlayerResponse は Read Model (PlayerView) と exp 係数から API DTO を組み立てる。
-// レベル進捗の計算は domain.ComputeLevelProgress に委譲し、presenter は wire 形への詰め替えのみ担う。
-func BuildPlayerResponse(view *domain.PlayerView, coeff int64) *apiaccount.PlayerResponse {
-	progress := domain.ComputeLevelProgress(view.Level, view.Exp, coeff)
+// レベル進捗の計算は domain.ComputeExpProgress に委譲し、presenter は wire 形への詰め替えのみ担う。
+func BuildPlayerResponse(view *domain.PlayerView, coeff int64) (*apiaccount.PlayerResponse, error) {
+	progress, err := domain.ComputeExpProgress(view.Level, view.Exp, coeff)
+	if err != nil {
+		return nil, fmt.Errorf("compute exp progress: %w", err)
+	}
 	return &apiaccount.PlayerResponse{
 		PlayerID:         view.Player.PlayerID,
 		FirebaseUID:      view.Player.FirebaseUID,
@@ -24,7 +29,7 @@ func BuildPlayerResponse(view *domain.PlayerView, coeff int64) *apiaccount.Playe
 		UpdatedAt:        view.Player.UpdatedAt,
 		LevelExpCurrent:  progress.LevelExpCurrent,
 		LevelExpRequired: progress.LevelExpRequired,
-	}
+	}, nil
 }
 
 // BuildPlayerSettingsResponse は永続化された PlayerSettings を API DTO に写像する。

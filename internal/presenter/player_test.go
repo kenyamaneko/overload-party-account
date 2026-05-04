@@ -13,7 +13,7 @@ import (
 func strPtr(s string) *string { return &s }
 func i64Ptr(n int64) *int64   { return &n }
 
-// BuildPlayerResponse はフィールド射影を担う。レベル進捗計算は domain.ComputeLevelProgress
+// BuildPlayerResponse はフィールド射影を担う。レベル進捗計算は domain.ComputeExpProgress
 // 側の単体テストで網羅し、ここでは「presenter が domain の結果をそのまま wire に詰めている」
 // ことだけ確認する。
 func TestBuildPlayerResponse(t *testing.T) {
@@ -39,9 +39,11 @@ func TestBuildPlayerResponse(t *testing.T) {
 		InitialFaction: &faction,
 	}
 	const coeff = int64(100)
-	wantProgress := domain.ComputeLevelProgress(view.Level, view.Exp, coeff)
+	wantProgress, err := domain.ComputeExpProgress(view.Level, view.Exp, coeff)
+	assert.NoError(t, err)
 
-	got := presenter.BuildPlayerResponse(view, coeff)
+	got, err := presenter.BuildPlayerResponse(view, coeff)
+	assert.NoError(t, err)
 
 	assert.Equal(t, "p1", got.PlayerID)
 	assert.Equal(t, "fb1", got.FirebaseUID)

@@ -201,7 +201,10 @@ func (s *PlayerInteractor) AwardExp(ctx context.Context, playerID string, expGai
 			return fmt.Errorf("load progression: %w", err)
 		}
 		newExp := prog.Exp + expGain
-		newLevel := domain.ComputeLevel(newExp, prog.Level, coeff)
+		newLevel, err := domain.ComputeLevel(newExp, prog.Level, coeff)
+		if err != nil {
+			return fmt.Errorf("compute level: %w", err)
+		}
 		if _, err := s.progressionRepo.UpdateProgression(txCtx, playerID, newExp, newLevel); err != nil {
 			return fmt.Errorf("persist progression: %w", err)
 		}
@@ -264,7 +267,7 @@ func (s *PlayerInteractor) GetPlayerResponse(ctx context.Context, playerID strin
 	if err != nil {
 		return nil, fmt.Errorf("get exp_formula_coefficient: %w", err)
 	}
-	return presenter.BuildPlayerResponse(view, coeff), nil
+	return presenter.BuildPlayerResponse(view, coeff)
 }
 
 func currentGameDay() civil.Date {
