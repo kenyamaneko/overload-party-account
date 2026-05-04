@@ -12,6 +12,7 @@ import (
 
 	"github.com/kenyamaneko/overload-party-account/internal/domain"
 	"github.com/kenyamaneko/overload-party-account/internal/port"
+	"github.com/kenyamaneko/overload-party-account/internal/presenter"
 	apiaccount "github.com/kenyamaneko/overload-party-account/packages/api-account"
 )
 
@@ -200,31 +201,12 @@ func (s *PlayerInteractor) AwardExp(ctx context.Context, playerID string, expGai
 			return fmt.Errorf("load progression: %w", err)
 		}
 		newExp := prog.Exp + expGain
-		newLevel := ComputeLevel(newExp, prog.Level, coeff)
+		newLevel := domain.ComputeLevel(newExp, prog.Level, coeff)
 		if _, err := s.progressionRepo.UpdateProgression(txCtx, playerID, newExp, newLevel); err != nil {
 			return fmt.Errorf("persist progression: %w", err)
 		}
 		return nil
 	})
-}
-
-// ComputeLevel は経験値獲得後の新レベルを算出する。
-// coeff * (level+1)^2 を逐次比較するため、ゲームデザイン上の妥当な
-// coeff (~数百) と level (~数百) の範囲では int64 内で安全に動作する。
-// 過大 coeff の検証は ValidateGameConfig の責務 (現状は > 0 のみ)。
-func ComputeLevel(newExp, currentLevel, coeff int64) int64 {
-	level := currentLevel
-	if level < 1 {
-		level = 1
-	}
-	for {
-		nextLevelExp := coeff * (level + 1) * (level + 1)
-		if newExp < nextLevelExp {
-			break
-		}
-		level++
-	}
-	return level
 }
 
 // AwardGameExp はゲーム終了後に両プレイヤーに経験値を付与する唯一の入口。
@@ -272,12 +254,6 @@ func (s *PlayerInteractor) AwardGameExp(ctx context.Context, player1ID, player2I
 	return nil
 }
 
-// LevelProgress は現在レベル内の経験値進捗を保持する。
-type LevelProgress struct {
-	LevelExpCurrent  int64 `json:"level_exp_current"`
-	LevelExpRequired int64 `json:"level_exp_required"`
-}
-
 // GetPlayerResponse はレベル進捗を付与したプレイヤー情報を返す。
 func (s *PlayerInteractor) GetPlayerResponse(ctx context.Context, playerID string) (*apiaccount.PlayerResponse, error) {
 	view, err := s.playerViewRepo.FindByID(ctx, playerID)
@@ -288,17 +264,7 @@ func (s *PlayerInteractor) GetPlayerResponse(ctx context.Context, playerID strin
 	if err != nil {
 		return nil, fmt.Errorf("get exp_formula_coefficient: %w", err)
 	}
-	return BuildPlayerResponse(view, coeff), nil
-}
-
-// ComputeLevelProgress は現在レベル内の経験値進捗を計算する。
-func ComputeLevelProgress(level, exp, coeff int64) *LevelProgress {
-	currentLevelExp := coeff * level * level
-	nextLevelExp := coeff * (level + 1) * (level + 1)
-	return &LevelProgress{
-		LevelExpCurrent:  max(0, exp-currentLevelExp),
-		LevelExpRequired: nextLevelExp - currentLevelExp,
-	}
+	return presenter.BuildPlayerResponse(view, coeff), nil
 }
 
 func currentGameDay() civil.Date {

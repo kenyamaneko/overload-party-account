@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/kenyamaneko/overload-party-account/internal/port"
+	"github.com/kenyamaneko/overload-party-account/internal/presenter"
 	apiaccount "github.com/kenyamaneko/overload-party-account/packages/api-account"
 )
 
@@ -25,7 +26,7 @@ func (s *PlayerSettingsInteractor) Get(ctx context.Context, playerID string) (*a
 	if err != nil {
 		return nil, fmt.Errorf("get player settings: %w", err)
 	}
-	return BuildPlayerSettingsResponse(settings), nil
+	return presenter.BuildPlayerSettingsResponse(settings), nil
 }
 
 // Update はプレイヤー設定を部分更新する。patch の非 nil フィールドだけが書き換わる。

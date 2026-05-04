@@ -10,6 +10,7 @@ import (
 
 	"github.com/kenyamaneko/overload-party-account/internal/domain"
 	"github.com/kenyamaneko/overload-party-account/internal/port"
+	"github.com/kenyamaneko/overload-party-account/internal/presenter"
 	apiaccount "github.com/kenyamaneko/overload-party-account/packages/api-account"
 )
 
@@ -127,5 +128,5 @@ func (s *AuthInteractor) toResponse(ctx context.Context, view *domain.PlayerView
 	if err != nil {
 		return nil, fmt.Errorf("get exp_formula_coefficient: %w", err)
 	}
-	return BuildPlayerResponse(view, coeff), nil
+	return presenter.BuildPlayerResponse(view, coeff), nil
 }

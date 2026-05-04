@@ -1,4 +1,4 @@
-package usecase
+package presenter
 
 import (
 	"github.com/kenyamaneko/overload-party-account/internal/domain"
@@ -6,8 +6,9 @@ import (
 )
 
 // BuildPlayerResponse は Read Model (PlayerView) と exp 係数から API DTO を組み立てる。
+// レベル進捗の計算は domain.ComputeLevelProgress に委譲し、presenter は wire 形への詰め替えのみ担う。
 func BuildPlayerResponse(view *domain.PlayerView, coeff int64) *apiaccount.PlayerResponse {
-	progress := ComputeLevelProgress(view.Level, view.Exp, coeff)
+	progress := domain.ComputeLevelProgress(view.Level, view.Exp, coeff)
 	return &apiaccount.PlayerResponse{
 		PlayerID:         view.Player.PlayerID,
 		FirebaseUID:      view.Player.FirebaseUID,

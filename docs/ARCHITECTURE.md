@@ -267,7 +267,11 @@ Pub/Sub の Exactly-Once 配信がインフラ層の第一防御。`processed_ev
 
 将来必要になりそうという理由だけで先回りしてメソッドを足さない。重複や複雑さが顕在化してから手書きファイルに昇格させる。
 
-## 9. エラーハンドリングのレイヤ責務
+## 9. Presenter 層の位置づけ
+
+`internal/presenter/` は domain ↔ wire DTO (`packages/api-account`) の境界変換を集約するパッケージ。位置づけと将来の移行方針は overload-party-card の同名セクションを参照。
+
+## 10. エラーハンドリングのレイヤ責務
 
 | 層 | 返す/扱う |
 |---|---|
@@ -277,7 +281,7 @@ Pub/Sub の Exactly-Once 配信がインフラ層の第一防御。`processed_ev
 
 usecase 層は HTTP ステータスを知らず、handler 層は SQL を知らない。センチネルと HTTP ステータスのマッピングは `errors.go` を SSoT とし、各センチネルの docstring に「なぜ 409 か」「冪等な成功扱いかどうか」等のセマンティクスを書く。
 
-## 10. 運用
+## 11. 運用
 
 ### 10.1 環境変数 / Secret Manager
 
