@@ -72,7 +72,6 @@ jobs:
         env:
           DOCKER_BUILDKIT: "1"
           COMMON_GO_MODULES_FETCH: ${{ secrets.COMMON_GO_MODULES_FETCH }}
-          BATTLE_GO_MODULES_FETCH: ${{ secrets.BATTLE_GO_MODULES_FETCH }}
           IMAGE: ${{ steps.tags.outputs.image }}
           SHA_TAG: ${{ steps.tags.outputs.sha_tag }}
           LATEST_TAG: ${{ steps.tags.outputs.latest_tag }}

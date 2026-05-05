@@ -27,12 +27,10 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-      # overload-party-common と overload-party-battle の共有パッケージを取得するために
-      # プライベートモジュールの認証を設定する
+      # プライベート Go モジュールへのアクセスを設定する
       - name: Configure Go private modules
         env:
           COMMON_GO_MODULES_FETCH: ${{ secrets.COMMON_GO_MODULES_FETCH }}
-          BATTLE_GO_MODULES_FETCH: ${{ secrets.BATTLE_GO_MODULES_FETCH }}
           GOPRIVATE: github.com/kenyamaneko/*
           GONOSUMDB: github.com/kenyamaneko/*
         run: .github/scripts/ci/configure-go-private-modules.sh
@@ -63,7 +61,6 @@ jobs:
       - name: Configure Go private modules
         env:
           COMMON_GO_MODULES_FETCH: ${{ secrets.COMMON_GO_MODULES_FETCH }}
-          BATTLE_GO_MODULES_FETCH: ${{ secrets.BATTLE_GO_MODULES_FETCH }}
           GOPRIVATE: github.com/kenyamaneko/*
           GONOSUMDB: github.com/kenyamaneko/*
         run: .github/scripts/ci/configure-go-private-modules.sh
@@ -98,7 +95,6 @@ jobs:
       - name: Configure Go private modules
         env:
           COMMON_GO_MODULES_FETCH: ${{ secrets.COMMON_GO_MODULES_FETCH }}
-          BATTLE_GO_MODULES_FETCH: ${{ secrets.BATTLE_GO_MODULES_FETCH }}
           GOPRIVATE: github.com/kenyamaneko/*
           GONOSUMDB: github.com/kenyamaneko/*
         run: .github/scripts/ci/configure-go-private-modules.sh
@@ -114,12 +110,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      # overload-party-common と overload-party-battle の共有パッケージを取得するために
-      # プライベートモジュールの認証を設定する
+      # プライベート Go モジュールへのアクセスを設定する
       - name: Configure Go private modules
         env:
           COMMON_GO_MODULES_FETCH: ${{ secrets.COMMON_GO_MODULES_FETCH }}
-          BATTLE_GO_MODULES_FETCH: ${{ secrets.BATTLE_GO_MODULES_FETCH }}
           GOPRIVATE: github.com/kenyamaneko/*
           GONOSUMDB: github.com/kenyamaneko/*
         run: .github/scripts/ci/configure-go-private-modules.sh
@@ -127,11 +121,9 @@ jobs:
         env:
           DOCKER_BUILDKIT: "1"
           COMMON_GO_MODULES_FETCH: ${{ secrets.COMMON_GO_MODULES_FETCH }}
-          BATTLE_GO_MODULES_FETCH: ${{ secrets.BATTLE_GO_MODULES_FETCH }}
         run: |
           docker build \
             --secret id=COMMON_GO_MODULES_FETCH,env=COMMON_GO_MODULES_FETCH \
-            --secret id=BATTLE_GO_MODULES_FETCH,env=BATTLE_GO_MODULES_FETCH \
             -t account:ci-scan .
       - name: Scan image for vulnerabilities
         uses: aquasecurity/trivy-action@v0.35.0
@@ -152,7 +144,6 @@ jobs:
       - name: Configure git auth for private modules
         env:
           COMMON_GO_MODULES_FETCH: ${{ secrets.COMMON_GO_MODULES_FETCH }}
-          BATTLE_GO_MODULES_FETCH: ${{ secrets.BATTLE_GO_MODULES_FETCH }}
         run: .github/scripts/ci/configure-go-private-modules.sh
       - name: Install dependencies
         run: |
