@@ -166,6 +166,8 @@ func (r *PlayerRepository) GetDailyBattle(ctx context.Context, playerID string, 
 }
 
 // GetProgression は player_progression の現在値を返す。該当なしは port.ErrNotFound。
+// port.PlayerProgressionRepo には載せない: 本番経路では GetProgressionForUpdate のみ使い、
+// このメソッドは UpdateProgression が永続化した値をテストから読み直す検証用に残す。
 func (r *PlayerRepository) GetProgression(ctx context.Context, playerID string) (*domain.PlayerProgression, error) {
 	row := connFrom(ctx, r.pool).QueryRow(ctx,
 		`SELECT player_id, level, exp, updated_at

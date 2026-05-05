@@ -52,8 +52,6 @@ type PlayerOnboardingRepo interface {
 // PlayerProgressionRepo は account.player_progression (level / exp) の参照・更新を担う。
 // 並行 AwardExp のロストアップデート防止に SELECT ... FOR UPDATE を備える。
 type PlayerProgressionRepo interface {
-	// GetProgression は account.player_progression の現在値を返す。行が無ければ ErrNotFound。
-	GetProgression(ctx context.Context, playerID string) (*domain.PlayerProgression, error)
 	// GetProgressionForUpdate は SELECT ... FOR UPDATE で行ロックを取得して返す。
 	// 呼び出し側が TxRunner.RunInTx 配下で使う責務を負う。行が無ければ ErrNotFound。
 	GetProgressionForUpdate(ctx context.Context, playerID string) (*domain.PlayerProgression, error)
