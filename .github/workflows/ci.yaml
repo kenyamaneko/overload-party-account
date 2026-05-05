@@ -10,7 +10,9 @@ permissions:
 
 jobs:
   check-source-branch:
-    if: github.base_ref == 'main'
+    # TODO: develop / release ブランチ運用を開始したら if 条件を元に戻す。
+    # 現状は dev 環境立ち上げ前で feature ブランチ → main 直接 merge を許容している。
+    if: false
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
