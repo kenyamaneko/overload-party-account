@@ -91,7 +91,7 @@ type FactionGrantRequest struct {
 	Faction string `json:"faction"`
 }
 
-// SelectInitialFactionRequest is the body for POST /internal/v1/players/:playerId/factions/select. Scenario calls this once the tutorial/story pins the player's faction choice; account UPSERTs player_factions with is_initial=TRUE in one tx, then calls card.grant-initial-pack.
+// SelectInitialFactionRequest is the body for POST /internal/v1/players/:playerId/factions/select. Scenario calls this once the tutorial/story pins the player's faction choice; account UPSERTs player_factions with is_initial=TRUE in one tx. Card distribution is triggered separately via the player-onboarded Pub/Sub event consumed by card service (ADR-026 / ADR-032: REST grant pathway is removed).
 type SelectInitialFactionRequest struct {
 	FactionID string `json:"faction_id"`
 }
