@@ -11,23 +11,23 @@ import (
 	"github.com/kenyamaneko/overload-party-account/internal/port"
 )
 
-// FactionPurchasedSubscriber は faction-purchased subscription を消費し、
+// FactionAcquiredSubscriber は faction-acquired subscription を消費し、
 // player_factions に is_initial=FALSE 行を追加する。initial への昇格はここでは行わない。
-type FactionPurchasedSubscriber struct {
+type FactionAcquiredSubscriber struct {
 	stream      port.MessageStream
 	factionRepo port.FactionRepo
 	txRunner    port.TxRunner
 	eventRepo   port.ProcessedEventRepo
 }
 
-// NewFactionPurchasedSubscriber は FactionPurchasedSubscriber を生成する。
-func NewFactionPurchasedSubscriber(
+// NewFactionAcquiredSubscriber は FactionAcquiredSubscriber を生成する。
+func NewFactionAcquiredSubscriber(
 	stream port.MessageStream,
 	factionRepo port.FactionRepo,
 	txRunner port.TxRunner,
 	eventRepo port.ProcessedEventRepo,
-) *FactionPurchasedSubscriber {
-	return &FactionPurchasedSubscriber{
+) *FactionAcquiredSubscriber {
+	return &FactionAcquiredSubscriber{
 		stream:      stream,
 		factionRepo: factionRepo,
 		txRunner:    txRunner,
@@ -36,19 +36,19 @@ func NewFactionPurchasedSubscriber(
 }
 
 // Start は ctx がキャンセルされるか stream がエラーを返すまでブロックする。
-func (s *FactionPurchasedSubscriber) Start(ctx context.Context) error {
-	slog.Info("faction-purchased subscriber: consuming")
+func (s *FactionAcquiredSubscriber) Start(ctx context.Context) error {
+	slog.Info("faction-acquired subscriber: consuming")
 	return s.stream.Consume(ctx, s.processEvent)
 }
 
-func (s *FactionPurchasedSubscriber) processEvent(ctx context.Context, data []byte) error {
-	var ev apishop.FactionPurchasedEvent
+func (s *FactionAcquiredSubscriber) processEvent(ctx context.Context, data []byte) error {
+	var ev apishop.FactionAcquiredEvent
 	if err := json.Unmarshal(data, &ev); err != nil {
-		slog.Error("faction-purchased subscriber: bad payload (nack)", "error", err)
-		return fmt.Errorf("faction-purchased: bad payload: %w", err)
+		slog.Error("faction-acquired subscriber: bad payload (nack)", "error", err)
+		return fmt.Errorf("faction-acquired: bad payload: %w", err)
 	}
-	if ev.EventType != apishop.EventTypeFactionPurchased {
-		slog.Warn("faction-purchased subscriber: unknown event_type, acking", "event_type", ev.EventType)
+	if ev.EventType != apishop.EventTypeFactionAcquired {
+		slog.Warn("faction-acquired subscriber: unknown event_type, acking", "event_type", ev.EventType)
 		return nil
 	}
 
@@ -66,9 +66,9 @@ func (s *FactionPurchasedSubscriber) processEvent(ctx context.Context, data []by
 		}
 		return nil
 	}); err != nil {
-		slog.Error("faction-purchased subscriber: handler failed",
+		slog.Error("faction-acquired subscriber: handler failed",
 			"event_id", ev.EventID, "player_id", ev.PlayerID, "error", err)
-		return fmt.Errorf("faction-purchased: handler failed: %w", err)
+		return fmt.Errorf("faction-acquired: handler failed: %w", err)
 	}
 	return nil
 }

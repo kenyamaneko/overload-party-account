@@ -127,17 +127,17 @@ TOCTOU は、free プレイヤーの上限超過判定で `GetDailyBattle` → U
 
 account は 3 つの Pub/Sub subscription を常駐 worker として pull する。いずれも Exactly-Once Delivery を前提にしつつ、**アプリ層で `processed_events` による冪等ガード** を併用する二層防御。
 
-### 6.1 faction-purchased subscriber
+### 6.1 faction-acquired subscriber
 
-subscription: `faction-purchased-account-sub` (`FACTION_PURCHASED_SUBSCRIPTION` で上書き可)
+subscription: `faction-acquired-account-sub` (`FACTION_ACQUIRED_SUBSCRIPTION` で上書き可)
 
-発行元: shop のみ。shop 購入時のみ発火する単一業務事実イベント（ADR-022）。
+発行元: shop のみ。shop 由来 (購入 / 配布) で player に faction 所有権が成立した業務事実を表す（ADR-031）。card pack 配布は別トピック `card-pack-purchased` で card サービスが扱うため、本 topic は account / gateway の関心のみに分離されている。
 
 | publisher | 副作用 |
 |---|---|
 | shop | `player_factions` INSERT のみ (`is_initial=FALSE` 固定) |
 
-処理（[internal/adapter/pubsub/faction_purchased_subscriber.go](../internal/adapter/pubsub/faction_purchased_subscriber.go)）:
+処理（[internal/adapter/pubsub/faction_acquired_subscriber.go](../internal/adapter/pubsub/faction_acquired_subscriber.go)）:
 
 ```
 BEGIN TX
@@ -285,13 +285,13 @@ usecase 層は HTTP ステータスを知らず、handler 層は SQL を知ら�
 
 - `DATABASE_URL` は Secret Manager 由来。k8s マニフェストにインラインしない
 - `PUBSUB_PROJECT_ID` / `FIRESTORE_PROJECT_ID` は ConfigMap 経由で環境ごとに切り替え
-- `FACTION_PURCHASED_SUBSCRIPTION` / `PREMIUM_UPDATED_SUBSCRIPTION` / `PLAYER_ONBOARDED_SUBSCRIPTION` / `ONBOARDING_NAME_SET_SUBSCRIPTION` / `ONBOARDING_FACTION_SET_SUBSCRIPTION` はデフォルトで本番名と一致するため通常は未設定でよい。環境分離検証時のみ上書き
+- `FACTION_ACQUIRED_SUBSCRIPTION` / `PREMIUM_UPDATED_SUBSCRIPTION` / `PLAYER_ONBOARDED_SUBSCRIPTION` / `ONBOARDING_NAME_SET_SUBSCRIPTION` / `ONBOARDING_FACTION_SET_SUBSCRIPTION` はデフォルトで本番名と一致するため通常は未設定でよい。環境分離検証時のみ上書き
 
 ### 10.2 Pub/Sub トピックと subscriber
 
 | トピック | 発行元 | account の subscription | account 側の副作用 |
 |---|---|---|---|
-| `faction-purchased` | shop | `faction-purchased-account-sub` | `player_factions` INSERT (`is_initial=FALSE`、§6.1) |
+| `faction-acquired` | shop | `faction-acquired-account-sub` | `player_factions` INSERT (`is_initial=FALSE`、§6.1) |
 | `premium-updated` | shop | `premium-updated-account-sub` | `players.is_premium` / `premium_expires_at` UPDATE (§6.2) |
 | `onboarding-name-set` | scenario | `onboarding-name-set-account-sub` | `players.name` UPDATE + `onboarding_status='name_set'` を 1 tx で実行 (§6.3) |
 | `onboarding-faction-set` | scenario | `onboarding-faction-set-account-sub` | `player_factions` UPSERT (`is_initial=TRUE`) + `onboarding_status='faction_set'` を 1 tx で実行 (§6.4) |

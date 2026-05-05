@@ -35,7 +35,7 @@ run: db-up ## Run account server locally against compose Postgres (local env 込
 	DATABASE_CONN="postgres://account:account@localhost:5432/account?sslmode=disable" \
 	PUBSUB_PROJECT_ID=account-local \
 	FIRESTORE_PROJECT_ID=account-local \
-	FACTION_PURCHASED_SUBSCRIPTION=faction-purchased-account-sub \
+	FACTION_ACQUIRED_SUBSCRIPTION=faction-acquired-account-sub \
 	PREMIUM_UPDATED_SUBSCRIPTION=premium-updated-account-sub \
 	PLAYER_ONBOARDED_SUBSCRIPTION=player-onboarded-account-sub \
 	ONBOARDING_NAME_SET_SUBSCRIPTION=onboarding-name-set-account-sub \

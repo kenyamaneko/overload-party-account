@@ -27,8 +27,8 @@ type Config struct {
 
 	// PubsubProjectID は account が subscribe する Pub/Sub topic を保有する Google Cloud project ID。
 	PubsubProjectID string
-	// FactionPurchasedSubscription は faction-purchased の pull subscription 名。
-	FactionPurchasedSubscription string
+	// FactionAcquiredSubscription は faction-acquired の pull subscription 名。
+	FactionAcquiredSubscription string
 	// PremiumUpdatedSubscription は premium-updated の pull subscription 名。
 	PremiumUpdatedSubscription string
 	// PlayerOnboardedSubscription は player-onboarded の pull subscription 名。
@@ -51,7 +51,7 @@ func FromEnv() (*Config, error) {
 	cfg := &Config{
 		DatabaseConn:                     os.Getenv("DATABASE_CONN"),
 		PubsubProjectID:                  os.Getenv("PUBSUB_PROJECT_ID"),
-		FactionPurchasedSubscription:     os.Getenv("FACTION_PURCHASED_SUBSCRIPTION"),
+		FactionAcquiredSubscription:     os.Getenv("FACTION_ACQUIRED_SUBSCRIPTION"),
 		PremiumUpdatedSubscription:       os.Getenv("PREMIUM_UPDATED_SUBSCRIPTION"),
 		PlayerOnboardedSubscription:      os.Getenv("PLAYER_ONBOARDED_SUBSCRIPTION"),
 		OnboardingNameSetSubscription:    os.Getenv("ONBOARDING_NAME_SET_SUBSCRIPTION"),
@@ -77,10 +77,10 @@ func FromEnv() (*Config, error) {
 		return nil, fmt.Errorf("config: DATABASE_CONN is required")
 	}
 	if cfg.PubsubProjectID == "" {
-		return nil, fmt.Errorf("config: PUBSUB_PROJECT_ID is required (account subscribes to faction-purchased / premium-updated / player-onboarded)")
+		return nil, fmt.Errorf("config: PUBSUB_PROJECT_ID is required (account subscribes to faction-acquired / premium-updated / player-onboarded)")
 	}
-	if cfg.FactionPurchasedSubscription == "" {
-		return nil, fmt.Errorf("config: FACTION_PURCHASED_SUBSCRIPTION is required")
+	if cfg.FactionAcquiredSubscription == "" {
+		return nil, fmt.Errorf("config: FACTION_ACQUIRED_SUBSCRIPTION is required")
 	}
 	if cfg.PremiumUpdatedSubscription == "" {
 		return nil, fmt.Errorf("config: PREMIUM_UPDATED_SUBSCRIPTION is required")
