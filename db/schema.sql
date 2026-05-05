@@ -130,6 +130,6 @@ CREATE TRIGGER trg_player_settings_updated_at BEFORE UPDATE ON account.player_se
 
 CREATE TABLE account.processed_events (
   event_id     UUID PRIMARY KEY,                     -- Pub/Sub EventID (publisher 生成の UUIDv4)
-  event_type   TEXT NOT NULL,                        -- イベント種別 (faction_purchased / premium_updated / player_onboarded)
+  event_type   TEXT NOT NULL,                        -- イベント種別 (faction_acquired / premium_updated / player_onboarded)
   processed_at TIMESTAMPTZ NOT NULL DEFAULT now()    -- 処理日時
 );
