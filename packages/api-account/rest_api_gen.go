@@ -91,7 +91,7 @@ type FactionGrantRequest struct {
 	Faction string `json:"faction"`
 }
 
-// SelectInitialFactionRequest is the body for POST /internal/v1/players/:playerId/factions/select. Scenario calls this once the tutorial/story pins the player's faction choice; account UPSERTs player_factions with is_initial=TRUE in one tx. Card pack の付与は scenario が player-onboarded を発行したあと card 側で card_pack_basic + card_pack_<initial_faction> を grant する経路 (ADR-032) に統一されたため、account から card への直接 grant 呼び出しは行わない。
+// SelectInitialFactionRequest is the body for POST /internal/v1/players/:playerId/factions/select. Scenario calls this once the tutorial/story pins the player's faction choice; account UPSERTs player_factions with is_initial=TRUE in one tx.
 type SelectInitialFactionRequest struct {
 	FactionID string `json:"faction_id"`
 }
