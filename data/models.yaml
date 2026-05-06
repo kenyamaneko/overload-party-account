@@ -171,7 +171,7 @@ files:
           - {name: Faction, type: string, json: "faction"}
 
       - name: SelectInitialFactionRequest
-        comment: "SelectInitialFactionRequest is the body for POST /internal/v1/players/:playerId/factions/select. Scenario calls this once the tutorial/story pins the player's faction choice; account UPSERTs player_factions with is_initial=TRUE in one tx, then calls card.grant-initial-pack."
+        comment: "SelectInitialFactionRequest is the body for POST /internal/v1/players/:playerId/factions/select. Scenario calls this once the tutorial/story pins the player's faction choice; account UPSERTs player_factions with is_initial=TRUE in one tx."
         fields:
           - {name: FactionID, type: string, json: "faction_id"}
 

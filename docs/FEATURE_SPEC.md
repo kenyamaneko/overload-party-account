@@ -18,7 +18,7 @@ account は以下の機能ドメインを所有する。
 | プレイヤー登録・ログイン | Firebase UID と player_id の紐付け。初期行の作成（players / player_progression / player_settings）。表示名はオンボーディング完了時に別経路で確定するため Register 時には受け取らない |
 | プレイヤー情報の参照・更新 | プレイヤー名・選択ファクション・装備アイコンの参照/更新。レベル進捗の算出 |
 | デイリーバトル制限 | JST 05:00 境界の制限回数管理。increment は冪等 |
-| ファクション所有 | onboarding 完了時の初期 faction 登録（`player-onboarded` イベント）と shop 購入時の追加（`faction-purchased` イベント）を `player_factions` に射影 |
+| ファクション所有 | onboarding 完了時の初期 faction 登録（`player-onboarded` イベント）と shop 購入時の追加（`faction-acquired` イベント）を `player_factions` に射影 |
 | 経験値・レベル | `AwardGameExp` による両プレイヤー同時付与。係数変更時もレベルは下がらない |
 | プレミアムステータス | `premium-updated` イベントから `is_premium` を射影保持 |
 | 表示名の検証・反映 | `PUT /players/:id/name` で表示名を受け、業務ルール (空・空白のみ・制御文字・`MaxNameRunes` 超) を [domain.ValidateName](../internal/domain/name.go) で検証して `players.name` を UPDATE |
@@ -226,15 +226,15 @@ battle サービスが試合終了時に呼ぶ唯一の経験値付与エンド�
 
 publish 機能は持たない。subscribe するイベントは以下の 3 種。
 
-### 9.1 `faction-purchased`
+### 9.1 `faction-acquired`
 
-subscription: `faction-purchased-account-sub`
+subscription: `faction-acquired-account-sub`
 
 | publisher | account の副作用 |
 |---|---|
 | shop | `player_factions` INSERT のみ (`is_initial=FALSE` 固定) |
 
-ADR-022 により、かつて `faction-selected` topic が担っていた 2 業務事実（scenario 初期選択 / shop 購入）は業務事実単位で分解された。scenario 初期選択は §9.3 `player-onboarded` に統合され、本 topic は shop 購入のみを扱う。
+ADR-022 により、かつて `faction-selected` topic が担っていた 2 業務事実（scenario 初期選択 / shop 購入）は業務事実単位で分解された。scenario 初期選択は §9.3 `player-onboarded` に統合され、本 topic は shop 購入のみを扱う。さらに ADR-031 で shop 側の `faction-purchased` を `card-pack-purchased` (card 向け) と `faction-acquired` (本 topic) に分割。
 
 詳細契約: [ARCHITECTURE.md §6.1](ARCHITECTURE.md)
 

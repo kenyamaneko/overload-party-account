@@ -13,14 +13,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestConsumes_FactionPurchased は「shop 購入起因の faction ロスター追加
+// TestConsumes_FactionAcquired は「shop 購入起因の faction ロスター追加
 // (is_initial=FALSE 固定) を 1 イベント単位で冪等に処理する」という仕様を
 // Start() → stream.Consume → processEvent の経路で固定する。
 //
 // 契約検証は apishopfake 経由で shop 側の publish 型をそのまま使う
 // (shop が schema を変えたら account のテストが compile / 実行で破綻する
 // ように設計し、乖離を CI で検知する)。
-func TestConsumes_FactionPurchased(t *testing.T) {
+func TestConsumes_FactionAcquired(t *testing.T) {
 	const existingEventID = "11111111-1111-1111-1111-111111111111"
 
 	tests := []struct {
@@ -35,7 +35,7 @@ func TestConsumes_FactionPurchased(t *testing.T) {
 		{
 			name: "正常系: player_factions に shop_purchase で INSERT して ACK",
 			publish: func(ctx context.Context, pub *apishopfake.Publisher, _ *apishopfake.Broker) {
-				_ = apishopfake.PublishFactionPurchased(ctx, pub, apishop.FactionPurchasedEvent{
+				_ = apishopfake.PublishFactionAcquired(ctx, pub, apishop.FactionAcquiredEvent{
 					PlayerID: "p-1",
 					Faction:  "SHE",
 				})
@@ -51,13 +51,13 @@ func TestConsumes_FactionPurchased(t *testing.T) {
 		{
 			name: "冪等: 同一 event_id が既に processed_events にあれば副作用なしで ACK",
 			publish: func(ctx context.Context, pub *apishopfake.Publisher, _ *apishopfake.Broker) {
-				_ = apishopfake.PublishFactionPurchased(ctx, pub, apishop.FactionPurchasedEvent{
+				_ = apishopfake.PublishFactionAcquired(ctx, pub, apishop.FactionAcquiredEvent{
 					EventID:  existingEventID,
 					PlayerID: "p-2",
 					Faction:  "Tenki",
 				})
 			},
-			seedProcessed: map[string]string{existingEventID: apishop.EventTypeFactionPurchased},
+			seedProcessed: map[string]string{existingEventID: apishop.EventTypeFactionAcquired},
 			wantAck:       true,
 			assertRepos: func(t *testing.T, factionRepo *fakeFactionRepo, _ *fakeProcessedEventRepo) {
 				assert.Empty(t, factionRepo.added)
@@ -66,7 +66,7 @@ func TestConsumes_FactionPurchased(t *testing.T) {
 		{
 			name: "不正 JSON: 握りつぶさず NACK",
 			publish: func(_ context.Context, _ *apishopfake.Publisher, broker *apishopfake.Broker) {
-				broker.Publish(apishop.TopicFactionPurchased, []byte("{not-json"))
+				broker.Publish(apishop.TopicFactionAcquired, []byte("{not-json"))
 			},
 			wantAck: false,
 			assertRepos: func(t *testing.T, factionRepo *fakeFactionRepo, _ *fakeProcessedEventRepo) {
@@ -76,13 +76,13 @@ func TestConsumes_FactionPurchased(t *testing.T) {
 		{
 			name: "未知の event_type: 責務外として ACK (副作用なし)",
 			publish: func(_ context.Context, _ *apishopfake.Publisher, broker *apishopfake.Broker) {
-				payload, _ := json.Marshal(apishop.FactionPurchasedEvent{
+				payload, _ := json.Marshal(apishop.FactionAcquiredEvent{
 					EventType: "unknown",
 					EventID:   "22222222-2222-2222-2222-222222222222",
 					PlayerID:  "p-3",
 					Faction:   "Sugar",
 				})
-				broker.Publish(apishop.TopicFactionPurchased, payload)
+				broker.Publish(apishop.TopicFactionAcquired, payload)
 			},
 			wantAck: true,
 			assertRepos: func(t *testing.T, factionRepo *fakeFactionRepo, _ *fakeProcessedEventRepo) {
@@ -92,7 +92,7 @@ func TestConsumes_FactionPurchased(t *testing.T) {
 		{
 			name: "processed_events INSERT 失敗: NACK でリトライ",
 			publish: func(ctx context.Context, pub *apishopfake.Publisher, _ *apishopfake.Broker) {
-				_ = apishopfake.PublishFactionPurchased(ctx, pub, apishop.FactionPurchasedEvent{
+				_ = apishopfake.PublishFactionAcquired(ctx, pub, apishop.FactionAcquiredEvent{
 					PlayerID: "p-4",
 					Faction:  "Tuners",
 				})
@@ -106,7 +106,7 @@ func TestConsumes_FactionPurchased(t *testing.T) {
 		{
 			name: "player_factions INSERT 失敗: NACK でリトライ",
 			publish: func(ctx context.Context, pub *apishopfake.Publisher, _ *apishopfake.Broker) {
-				_ = apishopfake.PublishFactionPurchased(ctx, pub, apishop.FactionPurchasedEvent{
+				_ = apishopfake.PublishFactionAcquired(ctx, pub, apishop.FactionAcquiredEvent{
 					PlayerID: "p-5",
 					Faction:  "SHE",
 				})
@@ -123,7 +123,7 @@ func TestConsumes_FactionPurchased(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			broker := apishopfake.NewBroker()
 			pub := apishopfake.NewPublisher(broker)
-			stream := apishopfake.NewStream(apishopfake.NewSubscriber(broker), apishop.TopicFactionPurchased)
+			stream := apishopfake.NewStream(apishopfake.NewSubscriber(broker), apishop.TopicFactionAcquired)
 
 			factionRepo := &fakeFactionRepo{addErr: tt.addErr}
 			eventRepo := newFakeProcessedEventRepo()
@@ -132,7 +132,7 @@ func TestConsumes_FactionPurchased(t *testing.T) {
 				eventRepo.seen[k] = v
 			}
 
-			sub := NewFactionPurchasedSubscriber(stream, factionRepo, fakeTxRunner{}, eventRepo)
+			sub := NewFactionAcquiredSubscriber(stream, factionRepo, fakeTxRunner{}, eventRepo)
 
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()

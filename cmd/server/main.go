@@ -144,7 +144,7 @@ func run() error {
 	}
 	defer closeStreams()
 
-	factionSub := pubsubadapter.NewFactionPurchasedSubscriber(streams.FactionPurchased, factionRepo, txManager, eventRepo)
+	factionSub := pubsubadapter.NewFactionAcquiredSubscriber(streams.FactionAcquired, factionRepo, txManager, eventRepo)
 	premiumSub := pubsubadapter.NewPremiumUpdatedSubscriber(streams.PremiumUpdated, playerRepo, txManager, eventRepo)
 	onboardedSub := pubsubadapter.NewPlayerOnboardedSubscriber(streams.PlayerOnboarded, onboardingInteractor)
 	nameSetSub := pubsubadapter.NewOnboardingNameSetSubscriber(streams.OnboardingNameSet, onboardingInteractor)
@@ -197,7 +197,7 @@ func runHTTPAndSubscribers(ctx context.Context, srv *http.Server, subscribers ..
 // subscriptionStreams は account サービスが購読する 5 つの Pub/Sub stream を束ねる。
 // stream ごとの defer Close を main から消し、一括 close 関数を返すための受け皿。
 type subscriptionStreams struct {
-	FactionPurchased     *pubsubadapter.Stream
+	FactionAcquired      *pubsubadapter.Stream
 	PremiumUpdated       *pubsubadapter.Stream
 	PlayerOnboarded      *pubsubadapter.Stream
 	OnboardingNameSet    *pubsubadapter.Stream
@@ -213,7 +213,7 @@ func openSubscriptionStreams(ctx context.Context, cfg *config.Config) (*subscrip
 		subscriptionID string
 		assign         func(*subscriptionStreams, *pubsubadapter.Stream)
 	}{
-		{"faction-purchased", cfg.FactionPurchasedSubscription, func(s *subscriptionStreams, st *pubsubadapter.Stream) { s.FactionPurchased = st }},
+		{"faction-acquired", cfg.FactionAcquiredSubscription, func(s *subscriptionStreams, st *pubsubadapter.Stream) { s.FactionAcquired = st }},
 		{"premium-updated", cfg.PremiumUpdatedSubscription, func(s *subscriptionStreams, st *pubsubadapter.Stream) { s.PremiumUpdated = st }},
 		{"player-onboarded", cfg.PlayerOnboardedSubscription, func(s *subscriptionStreams, st *pubsubadapter.Stream) { s.PlayerOnboarded = st }},
 		{"onboarding-name-set", cfg.OnboardingNameSetSubscription, func(s *subscriptionStreams, st *pubsubadapter.Stream) { s.OnboardingNameSet = st }},
