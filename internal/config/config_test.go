@@ -13,7 +13,7 @@ var allEnvKeys = []string{
 	"PORT",
 	"DATABASE_CONN",
 	"PUBSUB_PROJECT_ID",
-	"FACTION_PURCHASED_SUBSCRIPTION",
+	"FACTION_ACQUIRED_SUBSCRIPTION",
 	"PREMIUM_UPDATED_SUBSCRIPTION",
 	"PLAYER_ONBOARDED_SUBSCRIPTION",
 	"ONBOARDING_NAME_SET_SUBSCRIPTION",
@@ -49,7 +49,7 @@ var validLocalEnv = map[string]string{
 	"PORT":                                "9005",
 	"DATABASE_CONN":                       "host=localhost port=5432 dbname=account user=account password=account sslmode=disable",
 	"PUBSUB_PROJECT_ID":                   "account-local",
-	"FACTION_PURCHASED_SUBSCRIPTION":      "faction-purchased-account-sub",
+	"FACTION_ACQUIRED_SUBSCRIPTION":      "faction-acquired-account-sub",
 	"PREMIUM_UPDATED_SUBSCRIPTION":        "premium-updated-account-sub",
 	"PLAYER_ONBOARDED_SUBSCRIPTION":       "player-onboarded-account-sub",
 	"ONBOARDING_NAME_SET_SUBSCRIPTION":    "onboarding-name-set-account-sub",
@@ -71,7 +71,7 @@ func TestFromEnv_Success(t *testing.T) {
 				assert.Equal(t, 9005, cfg.Port)
 				assert.Equal(t, "host=localhost port=5432 dbname=account user=account password=account sslmode=disable", cfg.DatabaseConn)
 				assert.Equal(t, "account-local", cfg.PubsubProjectID)
-				assert.Equal(t, "faction-purchased-account-sub", cfg.FactionPurchasedSubscription)
+				assert.Equal(t, "faction-acquired-account-sub", cfg.FactionAcquiredSubscription)
 				assert.Equal(t, "premium-updated-account-sub", cfg.PremiumUpdatedSubscription)
 				assert.Equal(t, "player-onboarded-account-sub", cfg.PlayerOnboardedSubscription)
 				assert.Equal(t, "account-local", cfg.FirestoreProjectID)
@@ -142,9 +142,9 @@ func TestFromEnv_Errors(t *testing.T) {
 			wantErr: "PUBSUB_PROJECT_ID is required",
 		},
 		{
-			name:    "FACTION_PURCHASED_SUBSCRIPTION が未設定ならエラー",
-			envs:    mergeEnv(validLocalEnv, map[string]string{"FACTION_PURCHASED_SUBSCRIPTION": ""}),
-			wantErr: "FACTION_PURCHASED_SUBSCRIPTION is required",
+			name:    "FACTION_ACQUIRED_SUBSCRIPTION が未設定ならエラー",
+			envs:    mergeEnv(validLocalEnv, map[string]string{"FACTION_ACQUIRED_SUBSCRIPTION": ""}),
+			wantErr: "FACTION_ACQUIRED_SUBSCRIPTION is required",
 		},
 		{
 			name:    "PREMIUM_UPDATED_SUBSCRIPTION が未設定ならエラー",

@@ -140,7 +140,7 @@ Pub/Sub subscriber の冪等性を保証するアプリ層ガードテーブル�
 | カラム名 | 型 | Nullable | 説明 |
 |---|---|---|---|
 | `event_id` | UUID | No | Pub/Sub EventID (publisher 生成の UUIDv4) |
-| `event_type` | TEXT | No | イベント種別 (faction_purchased / premium_updated / player_onboarded) |
+| `event_type` | TEXT | No | イベント種別 (faction_acquired / premium_updated / player_onboarded) |
 | `processed_at` | TIMESTAMPTZ | No | 処理日時 |
 <!-- END GENERATED: processed_events -->
 
