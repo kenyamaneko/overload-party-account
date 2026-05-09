@@ -13,6 +13,12 @@ import (
 	"github.com/kenyamaneko/overload-party-account/internal/port"
 )
 
+// topicPlayerOnboarded は apiscenariofake が PublishPlayerOnboarded /
+// ExpectPlayerOnboarded で内部的にハードコードしているルーティングキー。
+// raw bytes を broker.Publish するケース (不正 JSON / 未知 event_type) と
+// NewStream の subscribe topic を一致させる必要がある。
+const topicPlayerOnboarded = "player-onboarded"
+
 // fakeOnboardingCompletedApplier は OnboardingCompletedApplier を満たす最小スタブ。
 // subscriber は「usecase 層にイベント内容を正しく委譲し、戻り値に応じて
 // ACK / NACK / 警告ログ分岐だけを行う」契約なので、usecase 内部の Tx / repo
@@ -86,7 +92,7 @@ func TestConsumes_PlayerOnboarded(t *testing.T) {
 		{
 			name: "不正 JSON: 握りつぶさず NACK (applier 未呼び出し)",
 			publish: func(_ context.Context, _ *apiscenariofake.Publisher, broker *apiscenariofake.Broker) {
-				broker.Publish(apiscenario.TopicPlayerOnboarded, []byte("broken"))
+				broker.Publish(topicPlayerOnboarded, []byte("broken"))
 			},
 			wantAck: false,
 			assertApplier: func(t *testing.T, a *fakeOnboardingCompletedApplier) {
@@ -96,7 +102,7 @@ func TestConsumes_PlayerOnboarded(t *testing.T) {
 		{
 			name: "未知 event_type: 責務外として ACK (applier 未呼び出し)",
 			publish: func(_ context.Context, _ *apiscenariofake.Publisher, broker *apiscenariofake.Broker) {
-				broker.Publish(apiscenario.TopicPlayerOnboarded, mustMarshal(t, apiscenario.PlayerOnboardedEvent{
+				broker.Publish(topicPlayerOnboarded, mustMarshal(t, apiscenario.PlayerOnboardedEvent{
 					EventType: "unknown",
 					EventID:   "22222222-2222-2222-2222-222222222222",
 					PlayerID:  "p-2",
@@ -110,7 +116,7 @@ func TestConsumes_PlayerOnboarded(t *testing.T) {
 		{
 			name: "player_id 欠落: ペイロード仕様違反で NACK (applier 未呼び出し)",
 			publish: func(_ context.Context, _ *apiscenariofake.Publisher, broker *apiscenariofake.Broker) {
-				broker.Publish(apiscenario.TopicPlayerOnboarded, mustMarshal(t, apiscenario.PlayerOnboardedEvent{
+				broker.Publish(topicPlayerOnboarded, mustMarshal(t, apiscenario.PlayerOnboardedEvent{
 					EventType: apiscenario.EventTypePlayerOnboarded,
 					EventID:   "33333333-3333-3333-3333-333333333333",
 				}))
@@ -144,7 +150,7 @@ func TestConsumes_PlayerOnboarded(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			broker := apiscenariofake.NewBroker()
 			pub := apiscenariofake.NewPublisher(broker)
-			stream := apiscenariofake.NewStream(apiscenariofake.NewSubscriber(broker), apiscenario.TopicPlayerOnboarded)
+			stream := apiscenariofake.NewStream(apiscenariofake.NewSubscriber(broker), topicPlayerOnboarded)
 
 			applier := &fakeOnboardingCompletedApplier{
 				returnProcessed: tt.returnProcessed,
