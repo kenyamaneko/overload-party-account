@@ -16,7 +16,6 @@ import (
 // topicFactionAcquired は apishopfake が PublishFactionAcquired / ExpectFactionAcquired で
 // 内部的にハードコードしているルーティングキー。raw bytes を broker.Publish するケース
 // (不正 JSON / 未知 event_type) と NewStream の subscribe topic を一致させる必要がある。
-// shop v1.0.0 で apishop.TopicFactionAcquired 定数が削除されたため、ここで宣言する。
 const topicFactionAcquired = "faction-acquired"
 
 // TestConsumes_FactionAcquired は「shop 購入起因の faction ロスター追加

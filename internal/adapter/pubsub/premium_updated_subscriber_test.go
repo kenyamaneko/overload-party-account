@@ -16,7 +16,6 @@ import (
 // topicPremiumUpdated は apishopfake が PublishPremiumUpdated / ExpectPremiumUpdated で
 // 内部的にハードコードしているルーティングキー。raw bytes を broker.Publish するケース
 // (不正 JSON / 未知 event_type) と NewStream の subscribe topic を一致させる必要がある。
-// shop v1.0.0 で apishop.TopicPremiumUpdated 定数が削除されたため、ここで宣言する。
 const topicPremiumUpdated = "premium-updated"
 
 // TestConsumes_PremiumUpdated は「premium-updated を受けて
