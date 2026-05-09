@@ -2,7 +2,7 @@
 
 プレイヤーマスター・ユーザー設定・ファクション所有・経験値・デイリーバトル制限を所有する内部マイクロサービス。ポート 9005 で起動する。
 
-詳細は [機能仕様書](docs/FEATURE_SPEC.md) / [サービス設計書](docs/ARCHITECTURE.md) / [API仕様書](docs/API_REFERENCE.md) / [データ設計書](docs/DATA_DESIGN.md) を参照。
+詳細は [機能仕様書](docs/FEATURE_SPEC.md) / [サービス設計書](docs/ARCHITECTURE.md) / [API契約 (OpenAPI)](data/openapi.yaml) / [データ設計書](docs/DATA_DESIGN.md) を参照。
 
 ## アーキテクチャ概要
 
@@ -64,10 +64,10 @@ ConfigMap:
 ## 公開パッケージ
 
 [packages/api-account/](packages/api-account/) に REST 契約型（`apiaccount.PlayerResponse` 等）を公開している。
-[data/models.yaml](data/models.yaml) を編集後に以下で再生成する。
+[data/openapi.yaml](data/openapi.yaml) が SSoT。編集後に以下で `openapi_gen.go` を再生成する。
 
 ```bash
-python3 scripts/generate_types.py
+scripts/generate_types.sh
 ```
 
 クライアント向け TypeScript 型は `@kenyamaneko/overload-party-api-gateway` に統合済み。

@@ -1,0 +1,628 @@
+openapi: 3.0.3
+info:
+  title: overload-party-account
+  version: 0.1.0
+  description: |
+    Account service の REST 契約 (gateway → account の internal API)。
+    本ファイルが SSoT。`packages/api-account` の Go 型は oapi-codegen が本ファイルから生成する。
+
+paths:
+  /health:
+    get:
+      operationId: getHealth
+      summary: サービス死活監視 (ClusterIP 内部のみ)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+
+  /internal/v1/auth/register:
+    post:
+      operationId: registerPlayer
+      summary: 新規プレイヤーを登録する (gateway が Firebase UID を中継)
+      description: |
+        表示名はオンボード内 name 入力ステップで PUT /internal/v1/players/{playerId}/name 経由で確定するため、
+        Register 時には受け取らない。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterRequest"
+      responses:
+        "201":
+          description: 登録成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlayerResponse"
+        "400":
+          description: firebase_uid が空
+        "409":
+          description: 同一 firebase_uid で既に登録済み
+        "500":
+          description: DB 接続エラー
+
+  /internal/v1/auth/login:
+    post:
+      operationId: loginPlayer
+      summary: Firebase UID でログインしてプレイヤー情報を返す
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: ログイン成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlayerResponse"
+        "400":
+          description: firebase_uid が空
+        "404":
+          description: プレイヤーが存在しない
+        "500":
+          description: DB 接続エラー
+
+  /internal/v1/auth/by-firebase-uid/{firebaseUID}:
+    get:
+      operationId: getPlayerByFirebaseUID
+      summary: Firebase UID からプレイヤーを検索する (gateway などサービス間ルックアップ用)
+      parameters:
+        - name: firebaseUID
+          in: path
+          required: true
+          schema:
+            type: string
+          x-go-name: FirebaseUID
+      responses:
+        "200":
+          description: プレイヤー情報
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlayerResponse"
+        "400":
+          description: firebaseUID が空
+        "404":
+          description: プレイヤーが存在しない
+        "500":
+          description: DB 接続エラー
+
+  /internal/v1/players/award-game-exp:
+    post:
+      operationId: awardGameExp
+      summary: 対戦終了後に両プレイヤーへ経験値を付与する (battle → gateway → account)
+      description: サービス間呼び出し用 (playerId パスパラメータなし)。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AwardGameExpRequest"
+      responses:
+        "204":
+          description: 付与成功
+        "400":
+          description: リクエストボディ不正
+        "404":
+          description: プレイヤーが存在しない
+        "500":
+          description: DB 接続エラー
+
+  /internal/v1/players/{playerId}:
+    get:
+      operationId: getPlayer
+      summary: プレイヤー情報を返す (レベル進捗を含む)
+      parameters:
+        - $ref: "#/components/parameters/PlayerIdPath"
+      responses:
+        "200":
+          description: プレイヤー情報
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlayerResponse"
+        "400":
+          description: playerId が空
+        "404":
+          description: プレイヤーが存在しない
+        "500":
+          description: DB 接続エラー
+
+  /internal/v1/players/{playerId}/name:
+    put:
+      operationId: updateName
+      summary: プレイヤー名を変更する (オンボード後の通常名前変更で gateway 経由で呼ばれる)
+      parameters:
+        - $ref: "#/components/parameters/PlayerIdPath"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateNameRequest"
+      responses:
+        "200":
+          description: 更新後のプレイヤー情報
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlayerResponse"
+        "400":
+          description: playerId が空 / name が空 / バリデーション違反
+        "404":
+          description: プレイヤーが存在しない
+        "500":
+          description: DB 接続エラー
+
+  /internal/v1/players/{playerId}/onboarding/name/validate:
+    post:
+      operationId: validateNameForOnboarding
+      summary: オンボード内 name 入力ステップで scenario が呼ぶ表示名バリデーション (書き込みなし)
+      description: |
+        バリデーション SSoT は account の internal/domain/name.go。
+        書き込みは onboarding-name-set subscriber が行う。
+      parameters:
+        - $ref: "#/components/parameters/PlayerIdPath"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ValidateNameForOnboardingRequest"
+      responses:
+        "204":
+          description: バリデーション成功
+        "400":
+          description: name が空 / 全空白 / 制御文字 / 上限超
+        "404":
+          description: プレイヤーが存在しない
+        "500":
+          description: DB 接続エラー
+
+  /internal/v1/players/{playerId}/battle-limit:
+    get:
+      operationId: getBattleLimit
+      summary: 1 日のバトル回数制限と残り回数を返す
+      parameters:
+        - $ref: "#/components/parameters/PlayerIdPath"
+      responses:
+        "200":
+          description: バトル制限情報
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BattleLimitResponse"
+        "400":
+          description: playerId が空
+        "404":
+          description: プレイヤーが存在しない
+        "500":
+          description: DB 接続エラー
+
+  /internal/v1/players/{playerId}/battle-limit/increment:
+    post:
+      operationId: incrementBattleCount
+      summary: バトル回数を 1 増やす (バトル開始時に gateway が呼び出す)
+      parameters:
+        - $ref: "#/components/parameters/PlayerIdPath"
+      responses:
+        "204":
+          description: インクリメント成功
+        "400":
+          description: playerId が空
+        "404":
+          description: プレイヤーが存在しない
+        "500":
+          description: DB 接続エラー
+
+  /internal/v1/players/{playerId}/premium:
+    put:
+      operationId: updatePremium
+      summary: プレミアムステータスを更新する (shop webhook 経由)
+      parameters:
+        - $ref: "#/components/parameters/PlayerIdPath"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdatePremiumRequest"
+      responses:
+        "204":
+          description: 更新成功
+        "400":
+          description: playerId が空 / リクエストボディ不正
+        "404":
+          description: プレイヤーが存在しない
+        "500":
+          description: DB 接続エラー
+
+  /internal/v1/players/{playerId}/exp:
+    post:
+      operationId: addExp
+      summary: 経験値を加算する
+      parameters:
+        - $ref: "#/components/parameters/PlayerIdPath"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AddExpRequest"
+      responses:
+        "204":
+          description: 加算成功
+        "400":
+          description: playerId が空 / リクエストボディ不正
+        "404":
+          description: プレイヤーが存在しない
+        "500":
+          description: DB 接続エラー
+
+  /internal/v1/players/{playerId}/factions:
+    get:
+      operationId: listFactions
+      summary: プレイヤーが所有するファクション一覧を返す
+      parameters:
+        - $ref: "#/components/parameters/PlayerIdPath"
+      responses:
+        "200":
+          description: ファクション一覧
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListFactionsResponse"
+        "400":
+          description: playerId が空
+        "404":
+          description: プレイヤーが存在しない
+        "500":
+          description: DB 接続エラー
+    post:
+      operationId: grantFaction
+      summary: ファクション所有権を付与する (購入・報酬等)
+      parameters:
+        - $ref: "#/components/parameters/PlayerIdPath"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FactionGrantRequest"
+      responses:
+        "204":
+          description: 付与成功
+        "400":
+          description: playerId が空 / faction が空
+        "404":
+          description: プレイヤーが存在しない
+        "500":
+          description: DB 接続エラー
+
+  /internal/v1/players/{playerId}/factions/select:
+    post:
+      operationId: selectInitialFaction
+      summary: 初期ファクション選択 (チュートリアル完了時に scenario が呼び出す)
+      description: |
+        冪等。既に選択済みの場合は 409 を返すがクライアントにとってはエラーではない。
+      parameters:
+        - $ref: "#/components/parameters/PlayerIdPath"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SelectInitialFactionRequest"
+      responses:
+        "200":
+          description: 選択成功
+        "400":
+          description: faction_id が空 / 無効なファクション
+        "404":
+          description: プレイヤーが存在しない
+        "409":
+          description: 初期ファクション選択済み (冪等 no-op)
+        "500":
+          description: DB 接続エラー
+
+  /internal/v1/players/{playerId}/settings:
+    get:
+      operationId: getPlayerSettings
+      summary: プレイヤー設定を返す
+      parameters:
+        - $ref: "#/components/parameters/PlayerIdPath"
+      responses:
+        "200":
+          description: 設定情報
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlayerSettingsResponse"
+        "400":
+          description: playerId が空
+        "404":
+          description: プレイヤーが存在しない
+        "500":
+          description: DB 接続エラー
+    put:
+      operationId: updatePlayerSettings
+      summary: プレイヤー設定を部分更新する
+      description: |
+        Partial update semantics: nil フィールドは現状維持 (COALESCE in SQL)。
+        全 nil リクエストは 400 で弾く。
+      parameters:
+        - $ref: "#/components/parameters/PlayerIdPath"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateSettingsRequest"
+      responses:
+        "200":
+          description: 更新後の設定情報
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlayerSettingsResponse"
+        "400":
+          description: playerId が空 / language が空 / 全 nil
+        "404":
+          description: プレイヤーが存在しない
+        "500":
+          description: DB 接続エラー
+
+components:
+  parameters:
+    PlayerIdPath:
+      name: playerId
+      in: path
+      required: true
+      schema:
+        type: string
+      x-go-name: PlayerID
+
+  schemas:
+    # ─── Health ────────────────────────────────────────────────────────
+    HealthResponse:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          example: ok
+
+    # ─── Player (response) ─────────────────────────────────────────────
+    PlayerResponse:
+      type: object
+      description: |
+        PlayerView + computed level progress を JSON 化した、内部 REST 契約の唯一の
+        Player 表現。GET /players/{playerId} とその親戚 endpoint が共通で返す。
+      required:
+        - player_id
+        - firebase_uid
+        - level
+        - exp
+        - is_premium
+        - onboarding_status
+        - created_at
+        - updated_at
+        - level_exp_current
+        - level_exp_required
+      properties:
+        player_id:
+          type: string
+          x-go-name: PlayerID
+        firebase_uid:
+          type: string
+          x-go-name: FirebaseUID
+        name:
+          type: string
+          description: オンボーディング未完了時は省略 (omit) される。
+        level:
+          type: integer
+          format: int64
+        exp:
+          type: integer
+          format: int64
+        is_premium:
+          type: boolean
+        equipped_icon_no:
+          type: integer
+          format: int64
+        initial_faction:
+          type: string
+          description: オンボーディングで選択した faction (player_factions.is_initial=TRUE から導出)。
+        onboarding_status:
+          $ref: "#/components/schemas/OnboardingStatus"
+        premium_expires_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        level_exp_current:
+          type: integer
+          format: int64
+        level_exp_required:
+          type: integer
+          format: int64
+
+    PlayerSettingsResponse:
+      type: object
+      required:
+        - player_id
+        - language
+        - bgm_volume
+        - se_volume
+        - push_enabled
+        - updated_at
+      properties:
+        player_id:
+          type: string
+          x-go-name: PlayerID
+        language:
+          type: string
+        bgm_volume:
+          type: integer
+          format: int64
+        se_volume:
+          type: integer
+          format: int64
+        push_enabled:
+          type: boolean
+        updated_at:
+          type: string
+          format: date-time
+
+    BattleLimitResponse:
+      type: object
+      required: [daily_battle_count, daily_battle_limit, can_battle]
+      properties:
+        daily_battle_count:
+          type: integer
+          format: int64
+        daily_battle_limit:
+          type: integer
+          format: int64
+        can_battle:
+          type: boolean
+
+    ListFactionsResponse:
+      type: object
+      required: [factions]
+      properties:
+        factions:
+          type: array
+          items:
+            type: string
+
+    # ─── Requests ──────────────────────────────────────────────────────
+    RegisterRequest:
+      type: object
+      required: [firebase_uid]
+      properties:
+        firebase_uid:
+          type: string
+          x-go-name: FirebaseUID
+
+    LoginRequest:
+      type: object
+      required: [firebase_uid]
+      properties:
+        firebase_uid:
+          type: string
+          x-go-name: FirebaseUID
+
+    UpdateNameRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+
+    ValidateNameForOnboardingRequest:
+      type: object
+      description: |
+        オンボード内 name 入力ステップで scenario が呼ぶ表示名バリデーション専用 DTO。
+        値は永続化されない。書き込みは onboarding-name-set subscriber 経由。
+      required: [name]
+      properties:
+        name:
+          type: string
+
+    UpdatePremiumRequest:
+      type: object
+      description: |
+        ExpiresAtMillis は UNIX ミリ秒タイムスタンプ。null は NULL リセット。
+      required: [is_premium]
+      properties:
+        is_premium:
+          type: boolean
+        expires_at_millis:
+          type: integer
+          format: int64
+
+    AddExpRequest:
+      type: object
+      required: [exp_gain]
+      properties:
+        exp_gain:
+          type: integer
+          format: int64
+
+    AwardGameExpRequest:
+      type: object
+      required: [player1_id, player2_id, winner_num, reason, match_type]
+      properties:
+        player1_id:
+          type: string
+          x-go-name: Player1ID
+        player2_id:
+          type: string
+          x-go-name: Player2ID
+        winner_num:
+          type: integer
+          format: int64
+        reason:
+          type: string
+        match_type:
+          type: string
+
+    FactionGrantRequest:
+      type: object
+      required: [faction]
+      properties:
+        faction:
+          type: string
+
+    SelectInitialFactionRequest:
+      type: object
+      description: |
+        Scenario calls this once the tutorial/story pins the player's faction choice;
+        account UPSERTs player_factions with is_initial=TRUE in one tx.
+      required: [faction_id]
+      properties:
+        faction_id:
+          type: string
+          x-go-name: FactionID
+
+    UpdateSettingsRequest:
+      type: object
+      description: |
+        Partial update: nil フィールドは現状維持 (COALESCE in SQL)。
+        最低 1 つは non-nil である必要がある (handler 層で検証)。
+      properties:
+        language:
+          type: string
+        bgm_volume:
+          type: integer
+          format: int64
+        se_volume:
+          type: integer
+          format: int64
+        push_enabled:
+          type: boolean
+
+    # ─── Enums (流出するもの) ──────────────────────────────────────────
+    OnboardingStatus:
+      type: string
+      description: |
+        オンボーディング進捗。`internal/domain/onboarding_status.go` の定数群と完全一致。
+        drift は enum_drift_test.go で検知する。
+      enum:
+        - not_started
+        - name_set
+        - faction_set
+        - completed

@@ -8,6 +8,7 @@ import (
 
 	"github.com/kenyamaneko/overload-party-account/internal/domain"
 	"github.com/kenyamaneko/overload-party-account/internal/presenter"
+	apiaccount "github.com/kenyamaneko/overload-party-account/packages/api-account"
 )
 
 func strPtr(s string) *string { return &s }
@@ -54,7 +55,7 @@ func TestBuildPlayerResponse(t *testing.T) {
 	assert.Equal(t, i64Ptr(3), got.EquippedIconNo)
 	assert.Equal(t, &faction, got.InitialFaction)
 	assert.Equal(t, &expires, got.PremiumExpiresAt)
-	assert.Equal(t, domain.OnboardingStatusCompleted, got.OnboardingStatus)
+	assert.Equal(t, apiaccount.OnboardingStatus(domain.OnboardingStatusCompleted), got.OnboardingStatus)
 	assert.Equal(t, created, got.CreatedAt)
 	assert.Equal(t, updated, got.UpdatedAt)
 	assert.Equal(t, wantProgress.LevelExpCurrent, got.LevelExpCurrent)
