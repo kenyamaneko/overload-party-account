@@ -149,8 +149,8 @@ github.com/kenyamaneko/overload-party-common/packages/game-design-constants v0.1
 github.com/kenyamaneko/overload-party-common/packages/game-design-constants v0.1.0/go.mod h1:4z5Ry1Y8LZQM4OKqLivo/OhVefKloLZP2vUDQ1Yo0UI=
 github.com/kenyamaneko/overload-party-scenario/packages/api-scenario v0.3.0 h1:+YFGW2nJD43VEs4jUXsFhxKi4SqdwaP47L93NtD6Tpc=
 github.com/kenyamaneko/overload-party-scenario/packages/api-scenario v0.3.0/go.mod h1:AauRTtb5HBZSMgEDGKH1xej12CFznB22RQPxK+rhSNA=
-github.com/kenyamaneko/overload-party-shop/packages/api-shop v0.2.0 h1:V8PuahOR6QA21KjLEQ2rT1CS/dQVo91mMFNVm1FAokM=
-github.com/kenyamaneko/overload-party-shop/packages/api-shop v0.2.0/go.mod h1:wzrluzr7Ec3j6O9AphMD9rSgKfAKy2GOFrk+yDmyybA=
+github.com/kenyamaneko/overload-party-shop/packages/api-shop v1.0.0 h1:m+jQuwDPTgINnRCFTJi2sgdOZPkcv0X+TEsoEJLwPyk=
+github.com/kenyamaneko/overload-party-shop/packages/api-shop v1.0.0/go.mod h1:p28kjdqSBaEhYR4yA+I15rZtUJpMK7ikLuDmm9tNYMg=
 github.com/klauspost/compress v1.18.5 h1:/h1gH5Ce+VWNLSWqPzOVn6XBO+vJbCNGvjoaGBFW2IE=
 github.com/klauspost/compress v1.18.5/go.mod h1:cwPg85FWrGar70rWktvGQj8/hthj3wpl0PGDogxkrSQ=
 github.com/klauspost/cpuid/v2 v2.3.0 h1:S4CRMLnYUhGeDFDqkGriYKdfoFlDnMtqTiI/sFzhA9Y=
