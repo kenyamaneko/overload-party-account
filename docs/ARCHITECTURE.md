@@ -2,7 +2,7 @@
 
 本ドキュメントは **コードを読んでも一見しては分からない設計意図** だけを残す。実装詳細（エンドポイントごとのバリデーション順・SQL 文・エラー → HTTP ステータス変換・環境変数の一覧）は各ファイルの実装とコメントを一次情報とする。
 
-サービス概要・起動手順は [../README.md](../README.md)、エンドポイントは [API_REFERENCE.md](API_REFERENCE.md)（自動生成）、DB スキーマは [DATA_DESIGN.md](DATA_DESIGN.md)、ビジネス仕様は [FEATURE_SPEC.md](FEATURE_SPEC.md) を参照。
+サービス概要・起動手順は [../README.md](../README.md)、エンドポイントは [../data/openapi.yaml](../data/openapi.yaml) (SSoT)、DB スキーマは [DATA_DESIGN.md](DATA_DESIGN.md)、ビジネス仕様は [FEATURE_SPEC.md](FEATURE_SPEC.md) を参照。
 
 ## 1. account サービスの責務境界
 
@@ -255,8 +255,8 @@ Pub/Sub の Exactly-Once 配信がインフラ層の第一防御。`processed_ev
 
 | 種類 | ファイル例 | 役割 |
 |---|---|---|
-| 生成 struct (`*_gen.go`) | `player_gen.go` | `data/models.yaml` を SSoT として生成。テーブル 1 行に対応する持ち回り型のみを保持し、メソッドは持たない。手書き編集禁止 |
-| 手書きの振る舞い | `name.go` / `onboarding_status.go` / `defaults.go` | バリデーション・遷移ルール・不変条件・既定値などのドメインロジック。生成型と同パッケージなので import なしで自然に組み合わさる |
+| 手書き struct | `player.go` | テーブル 1 行に対応する持ち回り型のみを保持し、メソッドは持たない。db タグだけ付与 |
+| 手書きの振る舞い | `name.go` / `onboarding_status.go` / `defaults.go` | バリデーション・遷移ルール・不変条件・既定値などのドメインロジック。同パッケージなので import なしで自然に組み合わさる |
 
 ### 8.1 振る舞いを domain に置く基準
 
