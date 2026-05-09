@@ -134,21 +134,42 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
       - name: Configure Go private modules
         uses: kenyamaneko/overload-party-common/.github/actions/setup-go-private-modules@main
         with:
           app-id: ${{ vars.CROSS_REPO_DEPS_APP_ID }}
           private-key: ${{ secrets.CROSS_REPO_DEPS_APP_PRIVATE_KEY }}
-      - name: Install dependencies
+      - name: Install Python dependencies
         run: |
-          pip install pyyaml \
-            "overload-party-doc-tools @ git+https://github.com/kenyamaneko/overload-party-common.git@main#subdirectory=packages/doc-tools" \
-            "overload-party-codegen-tools @ git+https://github.com/kenyamaneko/overload-party-common.git@main#subdirectory=packages/codegen-tools"
-      - name: Run codegen
-        run: python3 scripts/generate_types.py
+          pip install \
+            "overload-party-doc-tools @ git+https://github.com/kenyamaneko/overload-party-common.git@main#subdirectory=packages/doc-tools"
+      - name: Install oapi-codegen
+        run: go install github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@v2.7.0
+      - name: Run OpenAPI codegen
+        run: scripts/generate_types.sh
       - name: Run schema-doc codegen
         run: python3 scripts/generate_schema_doc.py
-      - name: Run api-doc codegen
-        run: python3 scripts/generate_api_docs.py
       - name: Check for drift
         run: .github/scripts/ci/check-codegen-drift.sh
+
+  spec-diff:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout PR head
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Install oasdiff
+        run: go install github.com/oasdiff/oasdiff@latest
+      - name: Fetch base ref
+        run: git fetch origin "${{ github.base_ref }}"
+      - name: Detect breaking changes in data/openapi.yaml
+        run: .github/scripts/ci/openapi-diff.sh "origin/${{ github.base_ref }}"
