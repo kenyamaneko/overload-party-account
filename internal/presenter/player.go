@@ -23,7 +23,7 @@ func BuildPlayerResponse(view *domain.PlayerView, coeff int64) (*apiaccount.Play
 		IsPremium:        view.Player.IsPremium,
 		EquippedIconNo:   view.Player.EquippedIconNo,
 		InitialFaction:   view.InitialFaction,
-		OnboardingStatus: view.Player.OnboardingStatus,
+		OnboardingStatus: apiaccount.OnboardingStatus(view.Player.OnboardingStatus),
 		PremiumExpiresAt: view.Player.PremiumExpiresAt,
 		CreatedAt:        view.Player.CreatedAt,
 		UpdatedAt:        view.Player.UpdatedAt,

@@ -13,6 +13,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// topicPremiumUpdated は apishopfake が PublishPremiumUpdated / ExpectPremiumUpdated で
+// 内部的にハードコードしているルーティングキー。raw bytes を broker.Publish するケース
+// (不正 JSON / 未知 event_type) と NewStream の subscribe topic を一致させる必要がある。
+const topicPremiumUpdated = "premium-updated"
+
 // TestConsumes_PremiumUpdated は「premium-updated を受けて
 // players.is_premium と premium_expires_at を冪等に更新する」仕様を
 // Start() → stream.Consume → processEvent の経路で固定する。
@@ -86,7 +91,7 @@ func TestConsumes_PremiumUpdated(t *testing.T) {
 		{
 			name: "不正 JSON: 握りつぶさず NACK",
 			publish: func(_ context.Context, _ *apishopfake.Publisher, broker *apishopfake.Broker) {
-				broker.Publish(apishop.TopicPremiumUpdated, []byte("{malformed"))
+				broker.Publish(topicPremiumUpdated, []byte("{malformed"))
 			},
 			wantAck: false,
 			assertRepos: func(t *testing.T, premiumRepo *fakePremiumRepo) {
@@ -101,7 +106,7 @@ func TestConsumes_PremiumUpdated(t *testing.T) {
 					EventID:   "bbbbbbbb-2222-2222-2222-bbbbbbbbbbbb",
 					PlayerID:  "p-4",
 				})
-				broker.Publish(apishop.TopicPremiumUpdated, payload)
+				broker.Publish(topicPremiumUpdated, payload)
 			},
 			wantAck: true,
 			assertRepos: func(t *testing.T, premiumRepo *fakePremiumRepo) {
@@ -143,7 +148,7 @@ func TestConsumes_PremiumUpdated(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			broker := apishopfake.NewBroker()
 			pub := apishopfake.NewPublisher(broker)
-			stream := apishopfake.NewStream(apishopfake.NewSubscriber(broker), apishop.TopicPremiumUpdated)
+			stream := apishopfake.NewStream(apishopfake.NewSubscriber(broker), topicPremiumUpdated)
 
 			premiumRepo := newFakePremiumRepo()
 			premiumRepo.updatePremiumErr = tt.updateErr

@@ -13,6 +13,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// topicFactionAcquired は apishopfake が PublishFactionAcquired / ExpectFactionAcquired で
+// 内部的にハードコードしているルーティングキー。raw bytes を broker.Publish するケース
+// (不正 JSON / 未知 event_type) と NewStream の subscribe topic を一致させる必要がある。
+const topicFactionAcquired = "faction-acquired"
+
 // TestConsumes_FactionAcquired は「shop 購入起因の faction ロスター追加
 // (is_initial=FALSE 固定) を 1 イベント単位で冪等に処理する」という仕様を
 // Start() → stream.Consume → processEvent の経路で固定する。
@@ -66,7 +71,7 @@ func TestConsumes_FactionAcquired(t *testing.T) {
 		{
 			name: "不正 JSON: 握りつぶさず NACK",
 			publish: func(_ context.Context, _ *apishopfake.Publisher, broker *apishopfake.Broker) {
-				broker.Publish(apishop.TopicFactionAcquired, []byte("{not-json"))
+				broker.Publish(topicFactionAcquired, []byte("{not-json"))
 			},
 			wantAck: false,
 			assertRepos: func(t *testing.T, factionRepo *fakeFactionRepo, _ *fakeProcessedEventRepo) {
@@ -82,7 +87,7 @@ func TestConsumes_FactionAcquired(t *testing.T) {
 					PlayerID:  "p-3",
 					Faction:   "Sugar",
 				})
-				broker.Publish(apishop.TopicFactionAcquired, payload)
+				broker.Publish(topicFactionAcquired, payload)
 			},
 			wantAck: true,
 			assertRepos: func(t *testing.T, factionRepo *fakeFactionRepo, _ *fakeProcessedEventRepo) {
@@ -123,7 +128,7 @@ func TestConsumes_FactionAcquired(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			broker := apishopfake.NewBroker()
 			pub := apishopfake.NewPublisher(broker)
-			stream := apishopfake.NewStream(apishopfake.NewSubscriber(broker), apishop.TopicFactionAcquired)
+			stream := apishopfake.NewStream(apishopfake.NewSubscriber(broker), topicFactionAcquired)
 
 			factionRepo := &fakeFactionRepo{addErr: tt.addErr}
 			eventRepo := newFakeProcessedEventRepo()
