@@ -7,19 +7,18 @@
 // Fn が nil の endpoint は既定値を返す (happy-path を仮定した最低限の応答)。
 //
 // Request / Response 型は api-account の公開型 (apiaccount.RegisterRequest /
-// Player / PlayerResponse 等) を再利用するため、本パッケージは自前の型を
-// 宣言していない。
+// PlayerResponse 等) を再利用するため、本パッケージは自前の型を宣言していない。
 //
-// Go 1.22 ServeMux は `/players/{playerID}/{resource}` 配下のパターン衝突を
-// 検知して登録を拒否することがあるため、`/players/` 配下は 1 つの catch-all
-// handler で受け、path を自前で dispatch する。
+// player-scoped endpoint (/api/v1/account/me/*) は ADR-037 Phase 3 で path / body
+// から playerID を取り除き JWT sub クレーム一本に置換したため、Fn callback の
+// 引数からも playerID は除外する。fake は JWT 検証をスキップするので、consumer 側
+// テストは X-Internal-Auth header を付ける必要すらない。
 package apiaccountserverfake
 
 import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"sync"
 
 	apiaccount "github.com/kenyamaneko/overload-party-account/packages/api-account"
@@ -40,41 +39,47 @@ type Server struct {
 	// 既定は 200 + 空 PlayerResponse。未登録を擬似したい場合は Fn で 404 を返す。
 	FindByFirebaseUIDFn func(firebaseUID string) (int, any)
 
-	// GetPlayerFn: GET /internal/v1/players/{playerID}。既定は 200 + 空 PlayerResponse。
-	GetPlayerFn func(playerID string) (int, any)
-
-	// UpdateNameFn: PUT /internal/v1/players/{playerID}/name。既定は 200 + 空 PlayerResponse。
-	UpdateNameFn func(playerID string, req apiaccount.UpdateNameRequest) (int, any)
-
-	// GetBattleLimitFn: GET /internal/v1/players/{playerID}/battle-limit。
-	// 既定は 200 + 空 BattleLimitResponse。
-	GetBattleLimitFn func(playerID string) (int, any)
-
-	// IncrementBattleCountFn: POST /internal/v1/players/{playerID}/battle-limit/increment。
-	// 既定は 204 No Content。
-	IncrementBattleCountFn func(playerID string) (int, any)
-
-	// UpdatePremiumFn: PUT /internal/v1/players/{playerID}/premium。既定は 204 No Content。
-	UpdatePremiumFn func(playerID string, req apiaccount.UpdatePremiumRequest) (int, any)
-
-	// GrantFactionFn: POST /internal/v1/players/{playerID}/factions。既定は 204 No Content。
-	GrantFactionFn func(playerID string, req apiaccount.FactionGrantRequest) (int, any)
-
-	// ListFactionsFn: GET /internal/v1/players/{playerID}/factions。
-	// 既定は 200 + 空の ListFactionsResponse。
-	ListFactionsFn func(playerID string) (int, any)
-
-	// AddExpFn: POST /internal/v1/players/{playerID}/exp。既定は 204 No Content。
-	AddExpFn func(playerID string, req apiaccount.AddExpRequest) (int, any)
-
 	// AwardGameExpFn: POST /internal/v1/players/award-game-exp。既定は 204 No Content。
 	AwardGameExpFn func(req apiaccount.AwardGameExpRequest) (int, any)
 
-	// GetSettingsFn: GET /internal/v1/players/{playerID}/settings。既定は 200 + 空 PlayerSettings。
-	GetSettingsFn func(playerID string) (int, any)
+	// GetPlayerFn: GET /api/v1/account/me。既定は 200 + 空 PlayerResponse。
+	GetPlayerFn func() (int, any)
 
-	// UpdateSettingsFn: PUT /internal/v1/players/{playerID}/settings。既定は 200 + 空 PlayerSettings。
-	UpdateSettingsFn func(playerID string, req apiaccount.UpdateSettingsRequest) (int, any)
+	// UpdateNameFn: PUT /api/v1/account/me/name。既定は 200 + 空 PlayerResponse。
+	UpdateNameFn func(req apiaccount.UpdateNameRequest) (int, any)
+
+	// ValidateNameForOnboardingFn: POST /api/v1/account/me/onboarding/name/validate。既定は 204 No Content。
+	ValidateNameForOnboardingFn func(req apiaccount.ValidateNameForOnboardingRequest) (int, any)
+
+	// GetBattleLimitFn: GET /api/v1/account/me/battle-limit。
+	// 既定は 200 + 空 BattleLimitResponse。
+	GetBattleLimitFn func() (int, any)
+
+	// IncrementBattleCountFn: POST /api/v1/account/me/battle-limit/increment。
+	// 既定は 204 No Content。
+	IncrementBattleCountFn func() (int, any)
+
+	// UpdatePremiumFn: PUT /api/v1/account/me/premium。既定は 204 No Content。
+	UpdatePremiumFn func(req apiaccount.UpdatePremiumRequest) (int, any)
+
+	// GrantFactionFn: POST /api/v1/account/me/factions。既定は 204 No Content。
+	GrantFactionFn func(req apiaccount.FactionGrantRequest) (int, any)
+
+	// SelectInitialFactionFn: POST /api/v1/account/me/factions/select。既定は 200。
+	SelectInitialFactionFn func(req apiaccount.SelectInitialFactionRequest) (int, any)
+
+	// ListFactionsFn: GET /api/v1/account/me/factions。
+	// 既定は 200 + 空の ListFactionsResponse。
+	ListFactionsFn func() (int, any)
+
+	// AddExpFn: POST /api/v1/account/me/exp。既定は 204 No Content。
+	AddExpFn func(req apiaccount.AddExpRequest) (int, any)
+
+	// GetSettingsFn: GET /api/v1/account/me/settings。既定は 200 + 空 PlayerSettings。
+	GetSettingsFn func() (int, any)
+
+	// UpdateSettingsFn: PUT /api/v1/account/me/settings。既定は 200 + 空 PlayerSettings。
+	UpdateSettingsFn func(req apiaccount.UpdateSettingsRequest) (int, any)
 }
 
 // NewServer は起動済み Server を返す。テスト終了時に Close() すること。
@@ -83,9 +88,21 @@ func NewServer() *Server {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /internal/v1/auth/register", s.handleRegister)
 	mux.HandleFunc("POST /internal/v1/auth/login", s.handleLogin)
-	mux.HandleFunc("GET /internal/v1/auth/by-firebase-uid/{firebaseUID}", s.handleFindByFirebaseUIDRoute)
-	// /players/ 配下はパターン衝突回避のため manual dispatch する。
-	mux.HandleFunc("/internal/v1/players/", s.playersDispatcher)
+	mux.HandleFunc("GET /internal/v1/auth/by-firebase-uid/{firebaseUID}", s.handleFindByFirebaseUID)
+	mux.HandleFunc("POST /internal/v1/players/award-game-exp", s.handleAwardGameExp)
+
+	mux.HandleFunc("GET /api/v1/account/me", s.handleGetPlayer)
+	mux.HandleFunc("PUT /api/v1/account/me/name", s.handleUpdateName)
+	mux.HandleFunc("POST /api/v1/account/me/onboarding/name/validate", s.handleValidateNameForOnboarding)
+	mux.HandleFunc("GET /api/v1/account/me/battle-limit", s.handleGetBattleLimit)
+	mux.HandleFunc("POST /api/v1/account/me/battle-limit/increment", s.handleIncrementBattleCount)
+	mux.HandleFunc("PUT /api/v1/account/me/premium", s.handleUpdatePremium)
+	mux.HandleFunc("POST /api/v1/account/me/exp", s.handleAddExp)
+	mux.HandleFunc("POST /api/v1/account/me/factions", s.handleGrantFaction)
+	mux.HandleFunc("POST /api/v1/account/me/factions/select", s.handleSelectInitialFaction)
+	mux.HandleFunc("GET /api/v1/account/me/factions", s.handleListFactions)
+	mux.HandleFunc("GET /api/v1/account/me/settings", s.handleGetSettings)
+	mux.HandleFunc("PUT /api/v1/account/me/settings", s.handleUpdateSettings)
 	s.srv = httptest.NewServer(mux)
 	return s
 }
@@ -95,83 +112,6 @@ func (s *Server) URL() string { return s.srv.URL }
 
 // Close は内部 httptest.Server を閉じる。
 func (s *Server) Close() { s.srv.Close() }
-
-// handleFindByFirebaseUIDRoute は GET /internal/v1/auth/by-firebase-uid/{firebaseUID}
-// の Go 1.22 ServeMux ハンドラ。path value から UID を抜き出して既存の
-// handleFindByFirebaseUID に委譲する。
-func (s *Server) handleFindByFirebaseUIDRoute(w http.ResponseWriter, r *http.Request) {
-	s.handleFindByFirebaseUID(w, r, r.PathValue("firebaseUID"))
-}
-
-// playersDispatcher は /internal/v1/players/ 配下の全 route を受けて
-// method + path 構造で個別 handler に dispatch する。Go 1.22 ServeMux が
-// `{playerID}/{resource}` 配下のサブツリーで衝突を拒否することがあるため、
-// 自前でルーティングする必要がある。
-func (s *Server) playersDispatcher(w http.ResponseWriter, r *http.Request) {
-	const prefix = "/internal/v1/players/"
-	rest := strings.TrimPrefix(r.URL.Path, prefix)
-	parts := strings.Split(rest, "/")
-
-	switch {
-	case len(parts) == 1 && parts[0] == "award-game-exp" && r.Method == http.MethodPost:
-		s.handleAwardGameExp(w, r)
-		return
-	case len(parts) == 1 && r.Method == http.MethodGet:
-		s.handleGetPlayer(w, r, parts[0])
-		return
-	case len(parts) == 2:
-		s.routePlayerSubresource(w, r, parts[0], parts[1])
-		return
-	case len(parts) == 3 && parts[1] == "battle-limit" && parts[2] == "increment" && r.Method == http.MethodPost:
-		s.handleIncrementBattleCount(w, r, parts[0])
-		return
-	}
-	http.NotFound(w, r)
-}
-
-func (s *Server) routePlayerSubresource(w http.ResponseWriter, r *http.Request, playerID, resource string) {
-	switch resource {
-	case "name":
-		if r.Method == http.MethodPut {
-			s.handleUpdateName(w, r, playerID)
-			return
-		}
-	case "battle-limit":
-		if r.Method == http.MethodGet {
-			s.handleGetBattleLimit(w, r, playerID)
-			return
-		}
-	case "premium":
-		if r.Method == http.MethodPut {
-			s.handleUpdatePremium(w, r, playerID)
-			return
-		}
-	case "factions":
-		switch r.Method {
-		case http.MethodPost:
-			s.handleGrantFaction(w, r, playerID)
-			return
-		case http.MethodGet:
-			s.handleListFactions(w, r, playerID)
-			return
-		}
-	case "exp":
-		if r.Method == http.MethodPost {
-			s.handleAddExp(w, r, playerID)
-			return
-		}
-	case "settings":
-		switch r.Method {
-		case http.MethodGet:
-			s.handleGetSettings(w, r, playerID)
-			return
-		case http.MethodPut:
-			s.handleUpdateSettings(w, r, playerID)
-			return
-		}
-	}
-	http.NotFound(w, r)
-}
 
 func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	var req apiaccount.RegisterRequest
@@ -201,7 +141,8 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, status, body)
 }
 
-func (s *Server) handleFindByFirebaseUID(w http.ResponseWriter, _ *http.Request, firebaseUID string) {
+func (s *Server) handleFindByFirebaseUID(w http.ResponseWriter, r *http.Request) {
+	firebaseUID := r.PathValue("firebaseUID")
 	s.mu.Lock()
 	fn := s.FindByFirebaseUIDFn
 	s.mu.Unlock()
@@ -210,110 +151,6 @@ func (s *Server) handleFindByFirebaseUID(w http.ResponseWriter, _ *http.Request,
 		return
 	}
 	status, body := fn(firebaseUID)
-	writeJSON(w, status, body)
-}
-
-func (s *Server) handleGetPlayer(w http.ResponseWriter, _ *http.Request, playerID string) {
-	s.mu.Lock()
-	fn := s.GetPlayerFn
-	s.mu.Unlock()
-	if fn == nil {
-		writeJSON(w, http.StatusOK, apiaccount.PlayerResponse{})
-		return
-	}
-	status, body := fn(playerID)
-	writeJSON(w, status, body)
-}
-
-func (s *Server) handleUpdateName(w http.ResponseWriter, r *http.Request, playerID string) {
-	var req apiaccount.UpdateNameRequest
-	_ = json.NewDecoder(r.Body).Decode(&req)
-	s.mu.Lock()
-	fn := s.UpdateNameFn
-	s.mu.Unlock()
-	if fn == nil {
-		writeJSON(w, http.StatusOK, apiaccount.PlayerResponse{})
-		return
-	}
-	status, body := fn(playerID, req)
-	writeJSON(w, status, body)
-}
-
-func (s *Server) handleGetBattleLimit(w http.ResponseWriter, _ *http.Request, playerID string) {
-	s.mu.Lock()
-	fn := s.GetBattleLimitFn
-	s.mu.Unlock()
-	if fn == nil {
-		writeJSON(w, http.StatusOK, apiaccount.BattleLimitResponse{})
-		return
-	}
-	status, body := fn(playerID)
-	writeJSON(w, status, body)
-}
-
-func (s *Server) handleIncrementBattleCount(w http.ResponseWriter, _ *http.Request, playerID string) {
-	s.mu.Lock()
-	fn := s.IncrementBattleCountFn
-	s.mu.Unlock()
-	if fn == nil {
-		w.WriteHeader(http.StatusNoContent)
-		return
-	}
-	status, body := fn(playerID)
-	writeJSON(w, status, body)
-}
-
-func (s *Server) handleUpdatePremium(w http.ResponseWriter, r *http.Request, playerID string) {
-	var req apiaccount.UpdatePremiumRequest
-	_ = json.NewDecoder(r.Body).Decode(&req)
-	s.mu.Lock()
-	fn := s.UpdatePremiumFn
-	s.mu.Unlock()
-	if fn == nil {
-		w.WriteHeader(http.StatusNoContent)
-		return
-	}
-	status, body := fn(playerID, req)
-	writeJSON(w, status, body)
-}
-
-func (s *Server) handleGrantFaction(w http.ResponseWriter, r *http.Request, playerID string) {
-	var req apiaccount.FactionGrantRequest
-	_ = json.NewDecoder(r.Body).Decode(&req)
-	s.mu.Lock()
-	fn := s.GrantFactionFn
-	s.mu.Unlock()
-	if fn == nil {
-		w.WriteHeader(http.StatusNoContent)
-		return
-	}
-	status, body := fn(playerID, req)
-	writeJSON(w, status, body)
-}
-
-func (s *Server) handleListFactions(w http.ResponseWriter, _ *http.Request, playerID string) {
-	s.mu.Lock()
-	fn := s.ListFactionsFn
-	s.mu.Unlock()
-	if fn == nil {
-		writeJSON(w, http.StatusOK, apiaccount.ListFactionsResponse{Factions: []string{}})
-		return
-	}
-	status, body := fn(playerID)
-	writeJSON(w, status, body)
-}
-
-func (s *Server) handleAddExp(w http.ResponseWriter, r *http.Request, playerID string) {
-	var req apiaccount.AddExpRequest
-	_ = json.NewDecoder(r.Body).Decode(&req)
-	s.mu.Lock()
-	fn := s.AddExpFn
-	s.mu.Unlock()
-	if fn == nil {
-		w.WriteHeader(http.StatusNoContent)
-		return
-	}
-	status, body := fn(playerID, req)
 	writeJSON(w, status, body)
 }
 
@@ -331,7 +168,139 @@ func (s *Server) handleAwardGameExp(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, status, body)
 }
 
-func (s *Server) handleGetSettings(w http.ResponseWriter, _ *http.Request, playerID string) {
+func (s *Server) handleGetPlayer(w http.ResponseWriter, _ *http.Request) {
+	s.mu.Lock()
+	fn := s.GetPlayerFn
+	s.mu.Unlock()
+	if fn == nil {
+		writeJSON(w, http.StatusOK, apiaccount.PlayerResponse{})
+		return
+	}
+	status, body := fn()
+	writeJSON(w, status, body)
+}
+
+func (s *Server) handleUpdateName(w http.ResponseWriter, r *http.Request) {
+	var req apiaccount.UpdateNameRequest
+	_ = json.NewDecoder(r.Body).Decode(&req)
+	s.mu.Lock()
+	fn := s.UpdateNameFn
+	s.mu.Unlock()
+	if fn == nil {
+		writeJSON(w, http.StatusOK, apiaccount.PlayerResponse{})
+		return
+	}
+	status, body := fn(req)
+	writeJSON(w, status, body)
+}
+
+func (s *Server) handleValidateNameForOnboarding(w http.ResponseWriter, r *http.Request) {
+	var req apiaccount.ValidateNameForOnboardingRequest
+	_ = json.NewDecoder(r.Body).Decode(&req)
+	s.mu.Lock()
+	fn := s.ValidateNameForOnboardingFn
+	s.mu.Unlock()
+	if fn == nil {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	status, body := fn(req)
+	writeJSON(w, status, body)
+}
+
+func (s *Server) handleGetBattleLimit(w http.ResponseWriter, _ *http.Request) {
+	s.mu.Lock()
+	fn := s.GetBattleLimitFn
+	s.mu.Unlock()
+	if fn == nil {
+		writeJSON(w, http.StatusOK, apiaccount.BattleLimitResponse{})
+		return
+	}
+	status, body := fn()
+	writeJSON(w, status, body)
+}
+
+func (s *Server) handleIncrementBattleCount(w http.ResponseWriter, _ *http.Request) {
+	s.mu.Lock()
+	fn := s.IncrementBattleCountFn
+	s.mu.Unlock()
+	if fn == nil {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	status, body := fn()
+	writeJSON(w, status, body)
+}
+
+func (s *Server) handleUpdatePremium(w http.ResponseWriter, r *http.Request) {
+	var req apiaccount.UpdatePremiumRequest
+	_ = json.NewDecoder(r.Body).Decode(&req)
+	s.mu.Lock()
+	fn := s.UpdatePremiumFn
+	s.mu.Unlock()
+	if fn == nil {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	status, body := fn(req)
+	writeJSON(w, status, body)
+}
+
+func (s *Server) handleGrantFaction(w http.ResponseWriter, r *http.Request) {
+	var req apiaccount.FactionGrantRequest
+	_ = json.NewDecoder(r.Body).Decode(&req)
+	s.mu.Lock()
+	fn := s.GrantFactionFn
+	s.mu.Unlock()
+	if fn == nil {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	status, body := fn(req)
+	writeJSON(w, status, body)
+}
+
+func (s *Server) handleSelectInitialFaction(w http.ResponseWriter, r *http.Request) {
+	var req apiaccount.SelectInitialFactionRequest
+	_ = json.NewDecoder(r.Body).Decode(&req)
+	s.mu.Lock()
+	fn := s.SelectInitialFactionFn
+	s.mu.Unlock()
+	if fn == nil {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+	status, body := fn(req)
+	writeJSON(w, status, body)
+}
+
+func (s *Server) handleListFactions(w http.ResponseWriter, _ *http.Request) {
+	s.mu.Lock()
+	fn := s.ListFactionsFn
+	s.mu.Unlock()
+	if fn == nil {
+		writeJSON(w, http.StatusOK, apiaccount.ListFactionsResponse{Factions: []string{}})
+		return
+	}
+	status, body := fn()
+	writeJSON(w, status, body)
+}
+
+func (s *Server) handleAddExp(w http.ResponseWriter, r *http.Request) {
+	var req apiaccount.AddExpRequest
+	_ = json.NewDecoder(r.Body).Decode(&req)
+	s.mu.Lock()
+	fn := s.AddExpFn
+	s.mu.Unlock()
+	if fn == nil {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	status, body := fn(req)
+	writeJSON(w, status, body)
+}
+
+func (s *Server) handleGetSettings(w http.ResponseWriter, _ *http.Request) {
 	s.mu.Lock()
 	fn := s.GetSettingsFn
 	s.mu.Unlock()
@@ -339,11 +308,11 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, _ *http.Request, playe
 		writeJSON(w, http.StatusOK, apiaccount.PlayerSettingsResponse{})
 		return
 	}
-	status, body := fn(playerID)
+	status, body := fn()
 	writeJSON(w, status, body)
 }
 
-func (s *Server) handleUpdateSettings(w http.ResponseWriter, r *http.Request, playerID string) {
+func (s *Server) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 	var req apiaccount.UpdateSettingsRequest
 	_ = json.NewDecoder(r.Body).Decode(&req)
 	s.mu.Lock()
@@ -353,7 +322,7 @@ func (s *Server) handleUpdateSettings(w http.ResponseWriter, r *http.Request, pl
 		writeJSON(w, http.StatusOK, apiaccount.PlayerSettingsResponse{})
 		return
 	}
-	status, body := fn(playerID, req)
+	status, body := fn(req)
 	writeJSON(w, status, body)
 }
 

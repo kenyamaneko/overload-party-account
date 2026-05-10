@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Fn 未設定の endpoint は既定応答を返す (空成功応答 or 204)。全 15 endpoint を
+// Fn 未設定の endpoint は既定応答を返す (空成功応答 or 204)。全 endpoint を
 // 網羅的に既定動作で叩いて一通り応答が得られることを固定する。
 func TestServer_DefaultResponses(t *testing.T) {
 	tests := []struct {
@@ -25,17 +25,19 @@ func TestServer_DefaultResponses(t *testing.T) {
 		{name: "Register 既定は 201", method: http.MethodPost, path: "/internal/v1/auth/register", reqBody: []byte(`{}`), wantStatus: http.StatusCreated},
 		{name: "Login 既定は 200", method: http.MethodPost, path: "/internal/v1/auth/login", reqBody: []byte(`{}`), wantStatus: http.StatusOK},
 		{name: "FindByFirebaseUID 既定は 200", method: http.MethodGet, path: "/internal/v1/auth/by-firebase-uid/uid-1", reqBody: nil, wantStatus: http.StatusOK},
-		{name: "GetPlayer 既定は 200", method: http.MethodGet, path: "/internal/v1/players/p-1", reqBody: nil, wantStatus: http.StatusOK},
-		{name: "UpdateName 既定は 200", method: http.MethodPut, path: "/internal/v1/players/p-1/name", reqBody: []byte(`{}`), wantStatus: http.StatusOK},
-		{name: "GetBattleLimit 既定は 200", method: http.MethodGet, path: "/internal/v1/players/p-1/battle-limit", reqBody: nil, wantStatus: http.StatusOK},
-		{name: "IncrementBattleCount 既定は 204", method: http.MethodPost, path: "/internal/v1/players/p-1/battle-limit/increment", reqBody: nil, wantStatus: http.StatusNoContent},
-		{name: "UpdatePremium 既定は 204", method: http.MethodPut, path: "/internal/v1/players/p-1/premium", reqBody: []byte(`{}`), wantStatus: http.StatusNoContent},
-		{name: "GrantFaction 既定は 204", method: http.MethodPost, path: "/internal/v1/players/p-1/factions", reqBody: []byte(`{}`), wantStatus: http.StatusNoContent},
-		{name: "ListFactions 既定は 200", method: http.MethodGet, path: "/internal/v1/players/p-1/factions", reqBody: nil, wantStatus: http.StatusOK},
-		{name: "AddExp 既定は 204", method: http.MethodPost, path: "/internal/v1/players/p-1/exp", reqBody: []byte(`{}`), wantStatus: http.StatusNoContent},
 		{name: "AwardGameExp 既定は 204", method: http.MethodPost, path: "/internal/v1/players/award-game-exp", reqBody: []byte(`{}`), wantStatus: http.StatusNoContent},
-		{name: "GetSettings 既定は 200", method: http.MethodGet, path: "/internal/v1/players/p-1/settings", reqBody: nil, wantStatus: http.StatusOK},
-		{name: "UpdateSettings 既定は 200", method: http.MethodPut, path: "/internal/v1/players/p-1/settings", reqBody: []byte(`{}`), wantStatus: http.StatusOK},
+		{name: "GetPlayer 既定は 200", method: http.MethodGet, path: "/api/v1/account/me", reqBody: nil, wantStatus: http.StatusOK},
+		{name: "UpdateName 既定は 200", method: http.MethodPut, path: "/api/v1/account/me/name", reqBody: []byte(`{}`), wantStatus: http.StatusOK},
+		{name: "ValidateNameForOnboarding 既定は 204", method: http.MethodPost, path: "/api/v1/account/me/onboarding/name/validate", reqBody: []byte(`{}`), wantStatus: http.StatusNoContent},
+		{name: "GetBattleLimit 既定は 200", method: http.MethodGet, path: "/api/v1/account/me/battle-limit", reqBody: nil, wantStatus: http.StatusOK},
+		{name: "IncrementBattleCount 既定は 204", method: http.MethodPost, path: "/api/v1/account/me/battle-limit/increment", reqBody: nil, wantStatus: http.StatusNoContent},
+		{name: "UpdatePremium 既定は 204", method: http.MethodPut, path: "/api/v1/account/me/premium", reqBody: []byte(`{}`), wantStatus: http.StatusNoContent},
+		{name: "GrantFaction 既定は 204", method: http.MethodPost, path: "/api/v1/account/me/factions", reqBody: []byte(`{}`), wantStatus: http.StatusNoContent},
+		{name: "SelectInitialFaction 既定は 200", method: http.MethodPost, path: "/api/v1/account/me/factions/select", reqBody: []byte(`{}`), wantStatus: http.StatusOK},
+		{name: "ListFactions 既定は 200", method: http.MethodGet, path: "/api/v1/account/me/factions", reqBody: nil, wantStatus: http.StatusOK},
+		{name: "AddExp 既定は 204", method: http.MethodPost, path: "/api/v1/account/me/exp", reqBody: []byte(`{}`), wantStatus: http.StatusNoContent},
+		{name: "GetSettings 既定は 200", method: http.MethodGet, path: "/api/v1/account/me/settings", reqBody: nil, wantStatus: http.StatusOK},
+		{name: "UpdateSettings 既定は 200", method: http.MethodPut, path: "/api/v1/account/me/settings", reqBody: []byte(`{}`), wantStatus: http.StatusOK},
 	}
 
 	for _, tt := range tests {
@@ -110,34 +112,52 @@ func TestServer_RegisterFn_CanReturn409(t *testing.T) {
 	assert.Equal(t, http.StatusConflict, resp.StatusCode)
 }
 
-// path variable 展開が正しく動く (playerID がハンドラーに届く)。
-// UpdateName endpoint を代表例として固定する。他 endpoint も同ロジック。
-func TestServer_PathVariables_ExtractPlayerID(t *testing.T) {
+// FindByFirebaseUID では path variable から Firebase UID が抽出されて Fn に届く。
+func TestServer_FindByFirebaseUID_PathVariable(t *testing.T) {
 	srv := apiaccountserverfake.NewServer()
 	defer srv.Close()
 
-	var gotPlayerID string
+	var gotUID string
+	srv.FindByFirebaseUIDFn = func(firebaseUID string) (int, any) {
+		gotUID = firebaseUID
+		return http.StatusOK, apiaccount.PlayerResponse{PlayerID: "p-1", FirebaseUID: firebaseUID}
+	}
+
+	req, _ := http.NewRequest(http.MethodGet, srv.URL()+"/internal/v1/auth/by-firebase-uid/uid-xyz", nil)
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	assert.Equal(t, "uid-xyz", gotUID)
+}
+
+// player-scoped endpoint の Fn は body のみを受け取る (playerID は path に存在せず、
+// JWT sub から取得する規約のため fake では露出しない)。UpdateName を代表例として固定する。
+func TestServer_UpdateNameFn_RoundTrip(t *testing.T) {
+	srv := apiaccountserverfake.NewServer()
+	defer srv.Close()
+
 	var gotReq apiaccount.UpdateNameRequest
-	srv.UpdateNameFn = func(playerID string, req apiaccount.UpdateNameRequest) (int, any) {
-		gotPlayerID = playerID
+	srv.UpdateNameFn = func(req apiaccount.UpdateNameRequest) (int, any) {
 		gotReq = req
-		return http.StatusOK, apiaccount.PlayerResponse{PlayerID: playerID, Name: &req.Name}
+		name := req.Name
+		return http.StatusOK, apiaccount.PlayerResponse{PlayerID: "p-me", Name: &name}
 	}
 
 	reqBody := []byte(`{"name":"bob"}`)
-	req, _ := http.NewRequest(http.MethodPut, srv.URL()+"/internal/v1/players/p-123/name", bytes.NewReader(reqBody))
+	req, _ := http.NewRequest(http.MethodPut, srv.URL()+"/api/v1/account/me/name", bytes.NewReader(reqBody))
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := http.DefaultClient.Do(req)
 	require.NoError(t, err)
 	defer resp.Body.Close()
 
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
-	assert.Equal(t, "p-123", gotPlayerID)
 	assert.Equal(t, "bob", gotReq.Name)
 }
 
 // AwardGameExpFn は playerID を持たない (body のみで player 2 名を渡す)。
-// award-game-exp だけ path pattern が特殊なので個別テストで covering する。
+// award-game-exp は battle が直接呼ぶサーバー間バッチで /internal 配下に残す。
 func TestServer_AwardGameExpFn_NoPlayerID(t *testing.T) {
 	srv := apiaccountserverfake.NewServer()
 	defer srv.Close()

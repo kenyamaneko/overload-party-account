@@ -21,11 +21,7 @@ func NewPlayerHandler(playerInteractor *usecase.PlayerInteractor) *PlayerHandler
 
 // GetPlayer はプレイヤー情報を返す。
 func (h *PlayerHandler) GetPlayer(c *gin.Context) {
-	playerID := c.Param("playerId")
-	if playerID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "playerId is required"})
-		return
-	}
+	playerID := c.GetString(PlayerIDContextKey)
 	resp, err := h.playerInteractor.GetPlayerResponse(c.Request.Context(), playerID)
 	if err != nil {
 		respondError(c, err)
@@ -36,11 +32,7 @@ func (h *PlayerHandler) GetPlayer(c *gin.Context) {
 
 // UpdateName はプレイヤー名を更新する。
 func (h *PlayerHandler) UpdateName(c *gin.Context) {
-	playerID := c.Param("playerId")
-	if playerID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "playerId is required"})
-		return
-	}
+	playerID := c.GetString(PlayerIDContextKey)
 
 	var req apiaccount.UpdateNameRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -60,11 +52,7 @@ func (h *PlayerHandler) UpdateName(c *gin.Context) {
 // バリデーション専用ハンドラ。書き込みは onboarding-name-set subscriber が担うため、
 // ここでは行わない。
 func (h *PlayerHandler) ValidateNameForOnboarding(c *gin.Context) {
-	playerID := c.Param("playerId")
-	if playerID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "playerId is required"})
-		return
-	}
+	playerID := c.GetString(PlayerIDContextKey)
 
 	var req apiaccount.ValidateNameForOnboardingRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -81,11 +69,7 @@ func (h *PlayerHandler) ValidateNameForOnboarding(c *gin.Context) {
 
 // GetBattleLimit はプレイヤーの日次バトル制限情報を返す。
 func (h *PlayerHandler) GetBattleLimit(c *gin.Context) {
-	playerID := c.Param("playerId")
-	if playerID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "playerId is required"})
-		return
-	}
+	playerID := c.GetString(PlayerIDContextKey)
 	result, err := h.playerInteractor.GetBattleLimit(c.Request.Context(), playerID)
 	if err != nil {
 		respondError(c, err)
@@ -96,11 +80,7 @@ func (h *PlayerHandler) GetBattleLimit(c *gin.Context) {
 
 // IncrementBattleCount は日次バトル回数をインクリメントする。
 func (h *PlayerHandler) IncrementBattleCount(c *gin.Context) {
-	playerID := c.Param("playerId")
-	if playerID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "playerId is required"})
-		return
-	}
+	playerID := c.GetString(PlayerIDContextKey)
 	if err := h.playerInteractor.IncrementBattleCount(c.Request.Context(), playerID); err != nil {
 		respondError(c, err)
 		return
@@ -110,11 +90,7 @@ func (h *PlayerHandler) IncrementBattleCount(c *gin.Context) {
 
 // UpdatePremium はプレイヤーのプレミアムステータスを更新する。
 func (h *PlayerHandler) UpdatePremium(c *gin.Context) {
-	playerID := c.Param("playerId")
-	if playerID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "playerId is required"})
-		return
-	}
+	playerID := c.GetString(PlayerIDContextKey)
 	var req apiaccount.UpdatePremiumRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -129,11 +105,7 @@ func (h *PlayerHandler) UpdatePremium(c *gin.Context) {
 
 // AddExp はプレイヤーに経験値を付与する。
 func (h *PlayerHandler) AddExp(c *gin.Context) {
-	playerID := c.Param("playerId")
-	if playerID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "playerId is required"})
-		return
-	}
+	playerID := c.GetString(PlayerIDContextKey)
 	var req apiaccount.AddExpRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -147,6 +119,8 @@ func (h *PlayerHandler) AddExp(c *gin.Context) {
 }
 
 // AwardGameExp はゲーム終了後の経験値を両プレイヤーに付与する。
+// battle が直接呼ぶサーバー間バッチエンドポイントで body に両 player_id を含むため、
+// JWT sub では表現できない。/internal/v1 配下に残し JWT を要求しない。
 func (h *PlayerHandler) AwardGameExp(c *gin.Context) {
 	var req apiaccount.AwardGameExpRequest
 	if err := c.ShouldBindJSON(&req); err != nil {

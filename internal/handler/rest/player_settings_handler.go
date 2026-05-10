@@ -22,11 +22,7 @@ func NewPlayerSettingsHandler(settingsInteractor *usecase.PlayerSettingsInteract
 
 // GetSettings はプレイヤーの設定を返す。
 func (h *PlayerSettingsHandler) GetSettings(c *gin.Context) {
-	playerID := c.Param("playerId")
-	if playerID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "playerId is required"})
-		return
-	}
+	playerID := c.GetString(PlayerIDContextKey)
 
 	s, err := h.settingsInteractor.Get(c.Request.Context(), playerID)
 	if err != nil {
@@ -39,11 +35,7 @@ func (h *PlayerSettingsHandler) GetSettings(c *gin.Context) {
 // UpdateSettings はプレイヤーの設定を部分更新する。
 // PUT だが partial update 契約 (nil フィールドは現状維持)。全 nil リクエストは 400 で弾く。
 func (h *PlayerSettingsHandler) UpdateSettings(c *gin.Context) {
-	playerID := c.Param("playerId")
-	if playerID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "playerId is required"})
-		return
-	}
+	playerID := c.GetString(PlayerIDContextKey)
 
 	var req apiaccount.UpdateSettingsRequest
 	if err := c.ShouldBindJSON(&req); err != nil {

@@ -3,8 +3,13 @@ info:
   title: overload-party-account
   version: 0.1.0
   description: |
-    Account service の REST 契約 (gateway → account の internal API)。
+    Account service の REST 契約 (gateway / shop / scenario / battle → account)。
     本ファイルが SSoT。`packages/api-account` の Go 型は oapi-codegen が本ファイルから生成する。
+
+    エンドポイント分類 (ADR-037 Phase 3):
+    - `/internal/v1/auth/*`: Firebase UID をキーとする bootstrap 系。player_id 確立前のため認証なし
+    - `/internal/v1/players/award-game-exp`: battle が直接呼ぶサーバー間バッチ。body に 2 プレイヤー分の player_id を含み JWT sub では表現できないため認証なし
+    - `/api/v1/account/me/*`: gateway / shop / scenario が `X-Internal-Auth` (HS256 JWT) を付けて呼ぶ player-scoped API。player_id は sub クレームから解決し path / body には含めない
 
 paths:
   /health:
@@ -24,7 +29,7 @@ paths:
       operationId: registerPlayer
       summary: 新規プレイヤーを登録する (gateway が Firebase UID を中継)
       description: |
-        表示名はオンボード内 name 入力ステップで PUT /internal/v1/players/{playerId}/name 経由で確定するため、
+        表示名はオンボード内 name 入力ステップで PUT /api/v1/account/me/name 経由で確定するため、
         Register 時には受け取らない。
       requestBody:
         required: true
@@ -98,8 +103,10 @@ paths:
   /internal/v1/players/award-game-exp:
     post:
       operationId: awardGameExp
-      summary: 対戦終了後に両プレイヤーへ経験値を付与する (battle → gateway → account)
-      description: サービス間呼び出し用 (playerId パスパラメータなし)。
+      summary: 対戦終了後に両プレイヤーへ経験値を付与する (battle → account)
+      description: |
+        body に両 player_id を含むサーバー間バッチ呼び出し。JWT sub では表現できないため
+        bootstrap 系と同様に認証なし (/internal 配下)。
       requestBody:
         required: true
         content:
@@ -116,12 +123,12 @@ paths:
         "500":
           description: DB 接続エラー
 
-  /internal/v1/players/{playerId}:
+  /api/v1/account/me:
     get:
       operationId: getPlayer
-      summary: プレイヤー情報を返す (レベル進捗を含む)
-      parameters:
-        - $ref: "#/components/parameters/PlayerIdPath"
+      summary: 認証済みプレイヤーの情報を返す (レベル進捗を含む)
+      security:
+        - InternalAuth: []
       responses:
         "200":
           description: プレイヤー情報
@@ -129,19 +136,19 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/PlayerResponse"
-        "400":
-          description: playerId が空
+        "401":
+          description: 認証失敗
         "404":
           description: プレイヤーが存在しない
         "500":
           description: DB 接続エラー
 
-  /internal/v1/players/{playerId}/name:
+  /api/v1/account/me/name:
     put:
       operationId: updateName
-      summary: プレイヤー名を変更する (オンボード後の通常名前変更で gateway 経由で呼ばれる)
-      parameters:
-        - $ref: "#/components/parameters/PlayerIdPath"
+      summary: プレイヤー名を変更する
+      security:
+        - InternalAuth: []
       requestBody:
         required: true
         content:
@@ -156,21 +163,23 @@ paths:
               schema:
                 $ref: "#/components/schemas/PlayerResponse"
         "400":
-          description: playerId が空 / name が空 / バリデーション違反
+          description: name が空 / バリデーション違反
+        "401":
+          description: 認証失敗
         "404":
           description: プレイヤーが存在しない
         "500":
           description: DB 接続エラー
 
-  /internal/v1/players/{playerId}/onboarding/name/validate:
+  /api/v1/account/me/onboarding/name/validate:
     post:
       operationId: validateNameForOnboarding
       summary: オンボード内 name 入力ステップで scenario が呼ぶ表示名バリデーション (書き込みなし)
       description: |
         バリデーション SSoT は account の internal/domain/name.go。
         書き込みは onboarding-name-set subscriber が行う。
-      parameters:
-        - $ref: "#/components/parameters/PlayerIdPath"
+      security:
+        - InternalAuth: []
       requestBody:
         required: true
         content:
@@ -182,17 +191,19 @@ paths:
           description: バリデーション成功
         "400":
           description: name が空 / 全空白 / 制御文字 / 上限超
+        "401":
+          description: 認証失敗
         "404":
           description: プレイヤーが存在しない
         "500":
           description: DB 接続エラー
 
-  /internal/v1/players/{playerId}/battle-limit:
+  /api/v1/account/me/battle-limit:
     get:
       operationId: getBattleLimit
       summary: 1 日のバトル回数制限と残り回数を返す
-      parameters:
-        - $ref: "#/components/parameters/PlayerIdPath"
+      security:
+        - InternalAuth: []
       responses:
         "200":
           description: バトル制限情報
@@ -200,35 +211,35 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/BattleLimitResponse"
-        "400":
-          description: playerId が空
+        "401":
+          description: 認証失敗
         "404":
           description: プレイヤーが存在しない
         "500":
           description: DB 接続エラー
 
-  /internal/v1/players/{playerId}/battle-limit/increment:
+  /api/v1/account/me/battle-limit/increment:
     post:
       operationId: incrementBattleCount
       summary: バトル回数を 1 増やす (バトル開始時に gateway が呼び出す)
-      parameters:
-        - $ref: "#/components/parameters/PlayerIdPath"
+      security:
+        - InternalAuth: []
       responses:
         "204":
           description: インクリメント成功
-        "400":
-          description: playerId が空
+        "401":
+          description: 認証失敗
         "404":
           description: プレイヤーが存在しない
         "500":
           description: DB 接続エラー
 
-  /internal/v1/players/{playerId}/premium:
+  /api/v1/account/me/premium:
     put:
       operationId: updatePremium
       summary: プレミアムステータスを更新する (shop webhook 経由)
-      parameters:
-        - $ref: "#/components/parameters/PlayerIdPath"
+      security:
+        - InternalAuth: []
       requestBody:
         required: true
         content:
@@ -239,18 +250,20 @@ paths:
         "204":
           description: 更新成功
         "400":
-          description: playerId が空 / リクエストボディ不正
+          description: リクエストボディ不正
+        "401":
+          description: 認証失敗
         "404":
           description: プレイヤーが存在しない
         "500":
           description: DB 接続エラー
 
-  /internal/v1/players/{playerId}/exp:
+  /api/v1/account/me/exp:
     post:
       operationId: addExp
       summary: 経験値を加算する
-      parameters:
-        - $ref: "#/components/parameters/PlayerIdPath"
+      security:
+        - InternalAuth: []
       requestBody:
         required: true
         content:
@@ -261,18 +274,20 @@ paths:
         "204":
           description: 加算成功
         "400":
-          description: playerId が空 / リクエストボディ不正
+          description: リクエストボディ不正
+        "401":
+          description: 認証失敗
         "404":
           description: プレイヤーが存在しない
         "500":
           description: DB 接続エラー
 
-  /internal/v1/players/{playerId}/factions:
+  /api/v1/account/me/factions:
     get:
       operationId: listFactions
       summary: プレイヤーが所有するファクション一覧を返す
-      parameters:
-        - $ref: "#/components/parameters/PlayerIdPath"
+      security:
+        - InternalAuth: []
       responses:
         "200":
           description: ファクション一覧
@@ -280,8 +295,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ListFactionsResponse"
-        "400":
-          description: playerId が空
+        "401":
+          description: 認証失敗
         "404":
           description: プレイヤーが存在しない
         "500":
@@ -289,8 +304,8 @@ paths:
     post:
       operationId: grantFaction
       summary: ファクション所有権を付与する (購入・報酬等)
-      parameters:
-        - $ref: "#/components/parameters/PlayerIdPath"
+      security:
+        - InternalAuth: []
       requestBody:
         required: true
         content:
@@ -301,20 +316,22 @@ paths:
         "204":
           description: 付与成功
         "400":
-          description: playerId が空 / faction が空
+          description: faction が空
+        "401":
+          description: 認証失敗
         "404":
           description: プレイヤーが存在しない
         "500":
           description: DB 接続エラー
 
-  /internal/v1/players/{playerId}/factions/select:
+  /api/v1/account/me/factions/select:
     post:
       operationId: selectInitialFaction
       summary: 初期ファクション選択 (チュートリアル完了時に scenario が呼び出す)
       description: |
         冪等。既に選択済みの場合は 409 を返すがクライアントにとってはエラーではない。
-      parameters:
-        - $ref: "#/components/parameters/PlayerIdPath"
+      security:
+        - InternalAuth: []
       requestBody:
         required: true
         content:
@@ -326,6 +343,8 @@ paths:
           description: 選択成功
         "400":
           description: faction_id が空 / 無効なファクション
+        "401":
+          description: 認証失敗
         "404":
           description: プレイヤーが存在しない
         "409":
@@ -333,12 +352,12 @@ paths:
         "500":
           description: DB 接続エラー
 
-  /internal/v1/players/{playerId}/settings:
+  /api/v1/account/me/settings:
     get:
       operationId: getPlayerSettings
       summary: プレイヤー設定を返す
-      parameters:
-        - $ref: "#/components/parameters/PlayerIdPath"
+      security:
+        - InternalAuth: []
       responses:
         "200":
           description: 設定情報
@@ -346,8 +365,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/PlayerSettingsResponse"
-        "400":
-          description: playerId が空
+        "401":
+          description: 認証失敗
         "404":
           description: プレイヤーが存在しない
         "500":
@@ -358,8 +377,8 @@ paths:
       description: |
         Partial update semantics: nil フィールドは現状維持 (COALESCE in SQL)。
         全 nil リクエストは 400 で弾く。
-      parameters:
-        - $ref: "#/components/parameters/PlayerIdPath"
+      security:
+        - InternalAuth: []
       requestBody:
         required: true
         content:
@@ -374,21 +393,21 @@ paths:
               schema:
                 $ref: "#/components/schemas/PlayerSettingsResponse"
         "400":
-          description: playerId が空 / language が空 / 全 nil
+          description: language が空 / 全 nil
+        "401":
+          description: 認証失敗
         "404":
           description: プレイヤーが存在しない
         "500":
           description: DB 接続エラー
 
 components:
-  parameters:
-    PlayerIdPath:
-      name: playerId
-      in: path
-      required: true
-      schema:
-        type: string
-      x-go-name: PlayerID
+  securitySchemes:
+    InternalAuth:
+      type: apiKey
+      in: header
+      name: X-Internal-Auth
+      description: gateway が発行する HS256 JWT。sub クレームに player_id を含む。
 
   schemas:
     # ─── Health ────────────────────────────────────────────────────────
@@ -405,7 +424,7 @@ components:
       type: object
       description: |
         PlayerView + computed level progress を JSON 化した、内部 REST 契約の唯一の
-        Player 表現。GET /players/{playerId} とその親戚 endpoint が共通で返す。
+        Player 表現。GET /api/v1/account/me とその親戚 endpoint が共通で返す。
       required:
         - player_id
         - firebase_uid

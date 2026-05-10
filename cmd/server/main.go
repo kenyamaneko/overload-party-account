@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/kenyamaneko/overload-party-account/internal/adapter/internalauth"
 	pubsubadapter "github.com/kenyamaneko/overload-party-account/internal/adapter/pubsub"
 	"github.com/kenyamaneko/overload-party-account/internal/config"
 	"github.com/kenyamaneko/overload-party-account/internal/handler/rest"
@@ -130,7 +131,11 @@ func run() error {
 	factionH := rest.NewFactionHandler(factionInteractor)
 	settingsH := rest.NewPlayerSettingsHandler(settingsInteractor)
 
-	r := router.New(authH, playerH, factionH, settingsH)
+	authVerifier := internalauth.NewVerifier(
+		internalauth.StaticHS256Resolver([]byte(cfg.InternalAuthSecret), internalauth.DefaultKeyID),
+	)
+
+	r := router.New(authH, playerH, factionH, settingsH, authVerifier)
 
 	srv := &http.Server{
 		Addr:              fmt.Sprintf(":%d", cfg.Port),

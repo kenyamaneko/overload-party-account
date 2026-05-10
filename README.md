@@ -16,8 +16,10 @@ Gateway (唯一の入口)
             ├─ premium-updated-account-sub   ← shop が publish
             └─ player-onboarded-account-sub  ← scenario が publish
 
-Battle → Account (service-to-service)
-  ├─ POST /internal/v1/players/:playerId/battle-limit/increment
+Gateway / shop / scenario → Account (player-scoped, JWT 必須)
+  └─ /api/v1/account/me/...                X-Internal-Auth (HS256 JWT) を検証し sub で player_id 解決
+
+Battle → Account (server-to-server, JWT なし)
   └─ POST /internal/v1/players/award-game-exp
 ```
 
@@ -44,6 +46,7 @@ Secret:
 | 変数名 | 説明 |
 |---|---|
 | `DATABASE_CONN` | PostgreSQL 接続文字列（pgx が解釈できる URL / libpq 形式） |
+| `INTERNAL_AUTH_SECRET` | gateway / 各サービスで共有する HS256 JWT 鍵（ADR-037） |
 
 ConfigMap:
 
