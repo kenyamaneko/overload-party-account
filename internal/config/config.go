@@ -42,6 +42,10 @@ type Config struct {
 	// ローカル/CI では FIRESTORE_EMULATOR_HOST 経由でエミュレーターに接続する。
 	FirestoreProjectID string
 
+	// InternalAuthSecret は gateway / 各サービス間で共有する HMAC 鍵。
+	// X-Internal-Auth (HS256 JWT) の検証に使う。ADR-037 参照。
+	InternalAuthSecret string
+
 	// LogMode は log handler の選択。production / local のいずれか必須。
 	LogMode LogMode
 }
@@ -57,6 +61,7 @@ func FromEnv() (*Config, error) {
 		OnboardingNameSetSubscription:    os.Getenv("ONBOARDING_NAME_SET_SUBSCRIPTION"),
 		OnboardingFactionSetSubscription: os.Getenv("ONBOARDING_FACTION_SET_SUBSCRIPTION"),
 		FirestoreProjectID:               os.Getenv("FIRESTORE_PROJECT_ID"),
+		InternalAuthSecret:               os.Getenv("INTERNAL_AUTH_SECRET"),
 		LogMode:                          LogMode(os.Getenv("LOG_MODE")),
 	}
 
@@ -96,6 +101,9 @@ func FromEnv() (*Config, error) {
 	}
 	if cfg.FirestoreProjectID == "" {
 		return nil, fmt.Errorf("config: FIRESTORE_PROJECT_ID is required (game_config)")
+	}
+	if cfg.InternalAuthSecret == "" {
+		return nil, fmt.Errorf("config: INTERNAL_AUTH_SECRET is required (HS256 JWT shared secret, see ADR-037)")
 	}
 
 	switch cfg.LogMode {

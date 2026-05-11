@@ -7,6 +7,10 @@ import (
 	"time"
 )
 
+const (
+	InternalAuthScopes internalAuthContextKey = "InternalAuth.Scopes"
+)
+
 // Defines values for OnboardingStatus.
 const (
 	OnboardingStatusCompleted  OnboardingStatus = "completed"
@@ -77,7 +81,7 @@ type LoginRequest struct {
 type OnboardingStatus string
 
 // PlayerResponse PlayerView + computed level progress を JSON 化した、内部 REST 契約の唯一の
-// Player 表現。GET /players/{playerId} とその親戚 endpoint が共通で返す。
+// Player 表現。GET /api/v1/account/me とその親戚 endpoint が共通で返す。
 type PlayerResponse struct {
 	CreatedAt      time.Time `json:"created_at"`
 	EquippedIconNo *int64    `json:"equipped_icon_no,omitempty"`
@@ -149,17 +153,8 @@ type ValidateNameForOnboardingRequest struct {
 	Name string `json:"name"`
 }
 
-// PlayerID defines model for PlayerIdPath.
-type PlayerID = string
-
-// LoginPlayerJSONRequestBody defines body for LoginPlayer for application/json ContentType.
-type LoginPlayerJSONRequestBody = LoginRequest
-
-// RegisterPlayerJSONRequestBody defines body for RegisterPlayer for application/json ContentType.
-type RegisterPlayerJSONRequestBody = RegisterRequest
-
-// AwardGameExpJSONRequestBody defines body for AwardGameExp for application/json ContentType.
-type AwardGameExpJSONRequestBody = AwardGameExpRequest
+// internalAuthContextKey is the context key for InternalAuth security scheme
+type internalAuthContextKey string
 
 // AddExpJSONRequestBody defines body for AddExp for application/json ContentType.
 type AddExpJSONRequestBody = AddExpRequest
@@ -181,3 +176,12 @@ type UpdatePremiumJSONRequestBody = UpdatePremiumRequest
 
 // UpdatePlayerSettingsJSONRequestBody defines body for UpdatePlayerSettings for application/json ContentType.
 type UpdatePlayerSettingsJSONRequestBody = UpdateSettingsRequest
+
+// LoginPlayerJSONRequestBody defines body for LoginPlayer for application/json ContentType.
+type LoginPlayerJSONRequestBody = LoginRequest
+
+// RegisterPlayerJSONRequestBody defines body for RegisterPlayer for application/json ContentType.
+type RegisterPlayerJSONRequestBody = RegisterRequest
+
+// AwardGameExpJSONRequestBody defines body for AwardGameExp for application/json ContentType.
+type AwardGameExpJSONRequestBody = AwardGameExpRequest

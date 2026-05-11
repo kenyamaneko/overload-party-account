@@ -119,7 +119,7 @@ TOCTOU は、free プレイヤーの上限超過判定で `GetDailyBattle` → U
 
 ## 5. プレイヤー設定の部分更新契約
 
-`PUT /internal/v1/players/:playerId/settings` は HTTP メソッドこそ PUT だが、**部分更新セマンティクス** を採用する (REST 慣用的には PATCH が正しいが、呼び出し元への影響を避けるため PUT で運用)。
+`PUT /api/v1/account/me/settings` は HTTP メソッドこそ PUT だが、**部分更新セマンティクス** を採用する (REST 慣用的には PATCH が正しいが、呼び出し元への影響を避けるため PUT で運用)。
 
 「クライアントが language だけ変えるつもりで部分送信したら、送信しなかった bgm_volume がゼロ値で上書きされる」事故を避けるための設計。repo 層では `Insert` (Register 用、全フィールド必須) と `UpdatePartial` (更新用、nil は現状維持) の 2 プリミティブに分離し、Upsert のような「書いてあることを丸ごと反映」パターンは排除している。具体的なフィールド型・SQL は実装を参照。
 

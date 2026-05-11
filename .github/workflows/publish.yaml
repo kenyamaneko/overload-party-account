@@ -1,12 +1,20 @@
 name: Publish
 
-# api-account Go モジュールを手動でタグ付け・公開する。
+# api-account (Go module) と api-account-npm (Cloudsmith npm) を手動でタグ付け・公開する。
 # バージョンを上げるタイミングは人が判断して workflow_dispatch で実行する。
 # タグの手動打ちは禁止 — このワークフローがモジュールタグの唯一の発行元。
 
 on:
   workflow_dispatch:
     inputs:
+      target:
+        description: "Package to publish"
+        required: true
+        default: "api-account"
+        type: choice
+        options:
+          - api-account
+          - api-account-npm
       bump:
         description: "Version bump level"
         required: true
@@ -19,15 +27,15 @@ on:
 
 concurrency:
   group: publish-${{ github.ref }}
-  # タグの採番が競合しないように、先行ジョブの完了を待つ
   cancel-in-progress: false
 
 permissions:
-  # タグを push するために write 権限が必要
   contents: write
+  id-token: write
 
 jobs:
-  publish-package:
+  publish-api-account:
+    if: inputs.target == 'api-account'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -52,8 +60,48 @@ jobs:
       - name: Determine next tag
         id: tag
         env:
+          PREFIX: packages/api-account/v
           BUMP: ${{ inputs.bump }}
         run: .github/scripts/publish/next-tag.sh
+
+      - name: Tag and push
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: .github/scripts/publish/tag-and-push.sh
+
+  publish-api-account-npm:
+    if: inputs.target == 'api-account-npm'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Determine next tag
+        id: tag
+        env:
+          PREFIX: packages/api-account-npm/v
+          BUMP: ${{ inputs.bump }}
+        run: .github/scripts/publish/next-tag.sh
+
+      - name: Build & version npm package
+        working-directory: packages/api-account-npm
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: ../../.github/scripts/publish/build-npm.sh
+
+      - name: Publish to Cloudsmith
+        uses: kenyamaneko/overload-party-common/.github/actions/publish-to-cloudsmith@main
+        with:
+          format: npm
+          package-path: packages/api-account-npm
 
       - name: Tag and push
         env:

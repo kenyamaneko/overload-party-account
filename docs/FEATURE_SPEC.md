@@ -78,13 +78,13 @@ Login と同じルックアップだが、ログインという業務イベン�
 
 | メソッド | パス | 概要 |
 |---|---|---|
-| GET | `/internal/v1/players/:playerId` | プレイヤー情報 + レベル進捗を返す |
-| PUT | `/internal/v1/players/:playerId/name` | name 更新 |
-| POST | `/internal/v1/players/:playerId/onboarding/name/validate` | オンボード内 name 入力ステップでの表示名バリデーション（書き込みなし。詳細は §5.1） |
-| PUT | `/internal/v1/players/:playerId/premium` | プレミアムステータス更新（battle 等の内部呼び出し用） |
-| POST | `/internal/v1/players/:playerId/factions` | ファクションの明示的付与（運用用） |
-| GET | `/internal/v1/players/:playerId/factions` | 所持ファクション一覧 |
-| POST | `/internal/v1/players/:playerId/factions/select` | initial faction 選択 (オンボーディング経路。詳細は §5.1) |
+| GET | `/api/v1/account/me` | プレイヤー情報 + レベル進捗を返す |
+| PUT | `/api/v1/account/me/name` | name 更新 |
+| POST | `/api/v1/account/me/onboarding/name/validate` | オンボード内 name 入力ステップでの表示名バリデーション（書き込みなし。詳細は §5.1） |
+| PUT | `/api/v1/account/me/premium` | プレミアムステータス更新（battle 等の内部呼び出し用） |
+| POST | `/api/v1/account/me/factions` | ファクションの明示的付与（運用用） |
+| GET | `/api/v1/account/me/factions` | 所持ファクション一覧 |
+| POST | `/api/v1/account/me/factions/select` | initial faction 選択 (オンボーディング経路。詳細は §5.1) |
 
 ### 3.1 `GetPlayerResponse` のレベル進捗
 
@@ -102,7 +102,7 @@ GetPlayer レスポンスには現在レベル内の `level_exp_current` と `le
 
 ゲーム日は **JST 05:00 = UTC 20:00** にリセットする。実装は `time.Now().UTC().Add(4h)` の日付部分を取る（[ARCHITECTURE.md §4.1](ARCHITECTURE.md)）。
 
-### 4.2 `GET /internal/v1/players/:playerId/battle-limit`
+### 4.2 `GET /api/v1/account/me/battle-limit`
 
 `BattleLimitResponse` を返す:
 
@@ -114,7 +114,7 @@ GetPlayer レスポンスには現在レベル内の `level_exp_current` と `le
 
 上限値は Firestore `game_config.free_daily_battle_limit`。値 0（未設定）は 500 エラー。
 
-### 4.3 `POST /internal/v1/players/:playerId/battle-limit/increment`
+### 4.3 `POST /api/v1/account/me/battle-limit/increment`
 
 battle サービスが試合開始時に呼ぶ。
 
@@ -128,7 +128,7 @@ battle サービスが試合開始時に呼ぶ。
 
 ## 5. ファクション所有
 
-### 5.1 初期ファクション選択 (`POST /internal/v1/players/:playerId/factions/select`)
+### 5.1 初期ファクション選択 (`POST /api/v1/account/me/factions/select`)
 
 オンボーディングで最初に選択した faction を保持する。
 
@@ -143,7 +143,7 @@ battle サービスが試合開始時に呼ぶ。
 4. プレイヤー不在 → 404
 5. 既に選択済み → 409 (`ErrFactionAlreadySelected`、クライアントは 409 を成功と同等に扱う契約)
 
-### 5.2 ファクション付与 (`POST /internal/v1/players/:playerId/factions`)
+### 5.2 ファクション付与 (`POST /api/v1/account/me/factions`)
 
 運用・バックオフィス用途の直接付与。`{faction}` を受け取り `AddPlayerFaction` を呼ぶ (`is_initial=FALSE` 固定)。
 
@@ -170,7 +170,7 @@ battle サービスが試合終了時に呼ぶ唯一の経験値付与エンド�
 
 経験値量 (`exp_win` / `exp_loss` / `exp_draw`) と係数 (`exp_formula_coefficient`) は Firestore `game_config`。未設定・0 以下は 500。
 
-### 6.2 `POST /internal/v1/players/:playerId/exp`
+### 6.2 `POST /api/v1/account/me/exp`
 
 個別プレイヤーへの経験値加算。`AwardGameExp` の内部実装で呼ばれる共通処理と同じ `AddExp` を経由する。`exp_gain <= 0` なら no-op。
 
@@ -189,7 +189,7 @@ battle サービスが試合終了時に呼ぶ唯一の経験値付与エンド�
 ### 7.1 書き込み経路
 
 1. `premium-updated` Pub/Sub イベント（shop が publish）→ `players.is_premium` / `players.premium_expires_at` を UPDATE
-2. `PUT /internal/v1/players/:playerId/premium` REST（内部呼び出し用の直接更新。運用・テスト用途）
+2. `PUT /api/v1/account/me/premium` REST（内部呼び出し用の直接更新。運用・テスト用途）
 
 本番運用では 1 のみが使われる想定。2 は back-door として残しているが、プレミアム状態の変更を account 直接更新で行ってはいけない（shop との不整合が起きる）。
 
@@ -201,11 +201,11 @@ battle サービスが試合終了時に呼ぶ唯一の経験値付与エンド�
 
 ## 8. ユーザー設定
 
-### 8.1 `GET /internal/v1/players/:playerId/settings`
+### 8.1 `GET /api/v1/account/me/settings`
 
 `player_settings` を返す。Register と同一トランザクションで必ず INSERT される契約のため、行が存在しないのは Register 未実施または不整合の症状。デフォルト値で隠さず **404 (`port.ErrNotFound`)** を返す。
 
-### 8.2 `PUT /internal/v1/players/:playerId/settings`
+### 8.2 `PUT /api/v1/account/me/settings`
 
 部分更新。body の各フィールドは **ポインタ型** で、省略（nil / JSON で存在しないキー）は「変更なし」を意味する:
 

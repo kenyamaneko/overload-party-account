@@ -19,6 +19,7 @@ var allEnvKeys = []string{
 	"ONBOARDING_NAME_SET_SUBSCRIPTION",
 	"ONBOARDING_FACTION_SET_SUBSCRIPTION",
 	"FIRESTORE_PROJECT_ID",
+	"INTERNAL_AUTH_SECRET",
 	"LOG_MODE",
 }
 
@@ -55,6 +56,7 @@ var validLocalEnv = map[string]string{
 	"ONBOARDING_NAME_SET_SUBSCRIPTION":    "onboarding-name-set-account-sub",
 	"ONBOARDING_FACTION_SET_SUBSCRIPTION": "onboarding-faction-set-account-sub",
 	"FIRESTORE_PROJECT_ID":                "account-local",
+	"INTERNAL_AUTH_SECRET":                "test-internal-auth-secret-do-not-use-in-prod-xxxxx",
 	"LOG_MODE":                            "local",
 }
 
@@ -170,6 +172,11 @@ func TestFromEnv_Errors(t *testing.T) {
 			name:    "FIRESTORE_PROJECT_ID が未設定ならエラー",
 			envs:    mergeEnv(validLocalEnv, map[string]string{"FIRESTORE_PROJECT_ID": ""}),
 			wantErr: "FIRESTORE_PROJECT_ID is required",
+		},
+		{
+			name:    "INTERNAL_AUTH_SECRET が未設定ならエラー",
+			envs:    mergeEnv(validLocalEnv, map[string]string{"INTERNAL_AUTH_SECRET": ""}),
+			wantErr: "INTERNAL_AUTH_SECRET is required",
 		},
 		{
 			name:    "LOG_MODE が未設定ならエラー",
