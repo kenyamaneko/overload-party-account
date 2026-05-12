@@ -11,14 +11,15 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/kenyamaneko/overload-party-account/internal/handler/rest"
-	"github.com/kenyamaneko/overload-party-account/internal/port"
+
+	internalauth "github.com/kenyamaneko/overload-party-gateway/packages/internalauth-go"
 )
 
 func init() {
 	gin.SetMode(gin.TestMode)
 }
 
-// fakeRouterVerifier は router 単体テスト用の port.InternalAuthVerifier 最小 fake。
+// fakeRouterVerifier は router 単体テスト用の internalauth.Verifier 最小 fake。
 type fakeRouterVerifier struct {
 	playerID string
 	err      error
@@ -35,7 +36,7 @@ func (nullVerifier) Verify(string) (string, error) {
 	panic("Verify should not be called for routes outside /api/v1/account")
 }
 
-func newTestRouter(verifier port.InternalAuthVerifier) *gin.Engine {
+func newTestRouter(verifier internalauth.Verifier) *gin.Engine {
 	return New(
 		rest.NewAuthHandler(nil),
 		rest.NewPlayerHandler(nil),
@@ -109,7 +110,7 @@ func TestNew_ApiRouteRejectsVerifierError(t *testing.T) {
 	r := newTestRouter(fakeRouterVerifier{err: errors.New("invalid token")})
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/account/me", nil)
-	req.Header.Set(rest.HeaderName, "any.token")
+	req.Header.Set(internalauth.HeaderName, "any.token")
 	r.ServeHTTP(w, req)
 	assert.Equal(t, http.StatusUnauthorized, w.Code)
 }

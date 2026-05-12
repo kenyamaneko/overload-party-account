@@ -6,7 +6,8 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/kenyamaneko/overload-party-account/internal/handler/rest"
-	"github.com/kenyamaneko/overload-party-account/internal/port"
+
+	internalauth "github.com/kenyamaneko/overload-party-gateway/packages/internalauth-go"
 )
 
 // New は account サービスの HTTP ルーターを構築する。
@@ -24,7 +25,7 @@ func New(
 	playerH *rest.PlayerHandler,
 	factionH *rest.FactionHandler,
 	settingsH *rest.PlayerSettingsHandler,
-	authVerifier port.InternalAuthVerifier,
+	authVerifier internalauth.Verifier,
 ) *gin.Engine {
 	r := gin.New()
 	r.Use(gin.Recovery())
@@ -43,7 +44,7 @@ func New(
 	}
 
 	api := r.Group("/api/v1/account")
-	api.Use(rest.VerifyInternalAuth(authVerifier))
+	api.Use(internalauth.VerifyInternalAuth(authVerifier))
 	{
 		me := api.Group("/me")
 		{
