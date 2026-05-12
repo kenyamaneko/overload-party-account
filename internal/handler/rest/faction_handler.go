@@ -7,6 +7,8 @@ import (
 
 	"github.com/kenyamaneko/overload-party-account/internal/usecase"
 	apiaccount "github.com/kenyamaneko/overload-party-account/packages/api-account"
+
+	internalauth "github.com/kenyamaneko/overload-party-gateway/packages/internalauth-go"
 )
 
 // FactionHandler は初期ファクション選択フローの REST エンドポイントを処理する。
@@ -21,7 +23,7 @@ func NewFactionHandler(factionInteractor *usecase.FactionInteractor) *FactionHan
 
 // SelectInitialFaction は初期ファクション選択を処理する。
 func (h *FactionHandler) SelectInitialFaction(c *gin.Context) {
-	playerID := c.GetString(PlayerIDContextKey)
+	playerID := c.GetString(internalauth.PlayerIDContextKey)
 
 	var req apiaccount.SelectInitialFactionRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -42,7 +44,7 @@ func (h *FactionHandler) SelectInitialFaction(c *gin.Context) {
 
 // GrantFaction はプレイヤーにファクションを付与する。
 func (h *FactionHandler) GrantFaction(c *gin.Context) {
-	playerID := c.GetString(PlayerIDContextKey)
+	playerID := c.GetString(internalauth.PlayerIDContextKey)
 	var req apiaccount.FactionGrantRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -61,7 +63,7 @@ func (h *FactionHandler) GrantFaction(c *gin.Context) {
 
 // ListFactions はプレイヤーの所持ファクション一覧を返す。
 func (h *FactionHandler) ListFactions(c *gin.Context) {
-	playerID := c.GetString(PlayerIDContextKey)
+	playerID := c.GetString(internalauth.PlayerIDContextKey)
 	factions, err := h.factionInteractor.ListFactions(c.Request.Context(), playerID)
 	if err != nil {
 		respondError(c, err)

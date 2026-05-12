@@ -7,6 +7,8 @@ import (
 
 	"github.com/kenyamaneko/overload-party-account/internal/usecase"
 	apiaccount "github.com/kenyamaneko/overload-party-account/packages/api-account"
+
+	internalauth "github.com/kenyamaneko/overload-party-gateway/packages/internalauth-go"
 )
 
 // PlayerHandler はプレイヤー情報の REST エンドポイントを処理する。
@@ -21,7 +23,7 @@ func NewPlayerHandler(playerInteractor *usecase.PlayerInteractor) *PlayerHandler
 
 // GetPlayer はプレイヤー情報を返す。
 func (h *PlayerHandler) GetPlayer(c *gin.Context) {
-	playerID := c.GetString(PlayerIDContextKey)
+	playerID := c.GetString(internalauth.PlayerIDContextKey)
 	resp, err := h.playerInteractor.GetPlayerResponse(c.Request.Context(), playerID)
 	if err != nil {
 		respondError(c, err)
@@ -32,7 +34,7 @@ func (h *PlayerHandler) GetPlayer(c *gin.Context) {
 
 // UpdateName はプレイヤー名を更新する。
 func (h *PlayerHandler) UpdateName(c *gin.Context) {
-	playerID := c.GetString(PlayerIDContextKey)
+	playerID := c.GetString(internalauth.PlayerIDContextKey)
 
 	var req apiaccount.UpdateNameRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -52,7 +54,7 @@ func (h *PlayerHandler) UpdateName(c *gin.Context) {
 // バリデーション専用ハンドラ。書き込みは onboarding-name-set subscriber が担うため、
 // ここでは行わない。
 func (h *PlayerHandler) ValidateNameForOnboarding(c *gin.Context) {
-	playerID := c.GetString(PlayerIDContextKey)
+	playerID := c.GetString(internalauth.PlayerIDContextKey)
 
 	var req apiaccount.ValidateNameForOnboardingRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -69,7 +71,7 @@ func (h *PlayerHandler) ValidateNameForOnboarding(c *gin.Context) {
 
 // GetBattleLimit はプレイヤーの日次バトル制限情報を返す。
 func (h *PlayerHandler) GetBattleLimit(c *gin.Context) {
-	playerID := c.GetString(PlayerIDContextKey)
+	playerID := c.GetString(internalauth.PlayerIDContextKey)
 	result, err := h.playerInteractor.GetBattleLimit(c.Request.Context(), playerID)
 	if err != nil {
 		respondError(c, err)
@@ -80,7 +82,7 @@ func (h *PlayerHandler) GetBattleLimit(c *gin.Context) {
 
 // IncrementBattleCount は日次バトル回数をインクリメントする。
 func (h *PlayerHandler) IncrementBattleCount(c *gin.Context) {
-	playerID := c.GetString(PlayerIDContextKey)
+	playerID := c.GetString(internalauth.PlayerIDContextKey)
 	if err := h.playerInteractor.IncrementBattleCount(c.Request.Context(), playerID); err != nil {
 		respondError(c, err)
 		return
@@ -90,7 +92,7 @@ func (h *PlayerHandler) IncrementBattleCount(c *gin.Context) {
 
 // UpdatePremium はプレイヤーのプレミアムステータスを更新する。
 func (h *PlayerHandler) UpdatePremium(c *gin.Context) {
-	playerID := c.GetString(PlayerIDContextKey)
+	playerID := c.GetString(internalauth.PlayerIDContextKey)
 	var req apiaccount.UpdatePremiumRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -105,7 +107,7 @@ func (h *PlayerHandler) UpdatePremium(c *gin.Context) {
 
 // AddExp はプレイヤーに経験値を付与する。
 func (h *PlayerHandler) AddExp(c *gin.Context) {
-	playerID := c.GetString(PlayerIDContextKey)
+	playerID := c.GetString(internalauth.PlayerIDContextKey)
 	var req apiaccount.AddExpRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
