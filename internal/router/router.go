@@ -17,6 +17,8 @@ import (
 //     のため JWT を要求しない
 //   - /internal/v1/players/award-game-exp: battle が直接呼ぶサーバー間バッチ。body に
 //     2 プレイヤー分の player_id を含み JWT sub では表現できないため /internal に残す
+//   - /internal/v1/players/:playerID: path に呼び出し主体ではない player_id を含む
+//     lookup。JWT sub では表現できないため /internal に残す
 //   - /api/v1/account/me/*: gateway / shop / scenario が JWT を付けて呼ぶ player-scoped
 //     API。VerifyInternalAuth が sub クレーム (= player_id) を context に注入し、
 //     handler は path / body から player_id を読まない
@@ -41,6 +43,7 @@ func New(
 		internal.GET("/auth/by-firebase-uid/:firebaseUID", authH.GetPlayerByFirebaseUID)
 
 		internal.POST("/players/award-game-exp", playerH.AwardGameExp)
+		internal.GET("/players/:playerID", playerH.GetPlayerByID)
 	}
 
 	api := r.Group("/api/v1/account")

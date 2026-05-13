@@ -123,6 +123,31 @@ paths:
         "500":
           description: DB 接続エラー
 
+  /internal/v1/players/{playerID}:
+    get:
+      operationId: getPlayerByID
+      summary: 指定 player_id のプレイヤー情報を返す
+      description: |
+        path に呼び出し主体ではない player_id を含むサーバー間 lookup。JWT sub では
+        表現できないため bootstrap 系と同様に認証なし (/internal 配下)。
+      parameters:
+        - name: playerID
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: プレイヤー情報
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlayerResponse"
+        "404":
+          description: プレイヤーが存在しない
+        "500":
+          description: DB 接続エラー
+
   /api/v1/account/me:
     get:
       operationId: getPlayer
