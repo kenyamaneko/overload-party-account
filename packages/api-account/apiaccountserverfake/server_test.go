@@ -113,17 +113,15 @@ func TestServer_RegisterFn_CanReturn409(t *testing.T) {
 	assert.Equal(t, http.StatusConflict, resp.StatusCode)
 }
 
-// GetPlayerByID では path variable から player_id が抽出されて Fn に届き、
-// Fn が 404 を返せば accountclient 側で ErrNotFound に変換される (contract 整合)。
-func TestServer_GetPlayerByIDFn_PathVariable(t *testing.T) {
+// GetPlayerByID では path variable から player_id が Fn に届く。
+func TestServer_GetPlayerByIDFn_ExtractsPathVariable(t *testing.T) {
 	srv := apiaccountserverfake.NewServer()
 	defer srv.Close()
 
 	var gotPlayerID string
 	srv.GetPlayerByIDFn = func(playerID string) (int, any) {
 		gotPlayerID = playerID
-		name := "alice"
-		return http.StatusOK, apiaccount.PlayerResponse{PlayerID: playerID, Name: &name, Level: 7}
+		return http.StatusOK, apiaccount.PlayerResponse{}
 	}
 
 	req, _ := http.NewRequest(http.MethodGet, srv.URL()+"/internal/v1/players/p-target", nil)
@@ -131,15 +129,28 @@ func TestServer_GetPlayerByIDFn_PathVariable(t *testing.T) {
 	require.NoError(t, err)
 	defer resp.Body.Close()
 
-	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	assert.Equal(t, "p-target", gotPlayerID)
+}
+
+// GetPlayerByIDFn が返した PlayerResponse がそのまま client 側 body に届く (round trip)。
+func TestServer_GetPlayerByIDFn_ReturnsFnBody(t *testing.T) {
+	srv := apiaccountserverfake.NewServer()
+	defer srv.Close()
+
+	name := "alice"
+	want := apiaccount.PlayerResponse{PlayerID: "p-target", Name: &name, Level: 7}
+	srv.GetPlayerByIDFn = func(_ string) (int, any) {
+		return http.StatusOK, want
+	}
+
+	req, _ := http.NewRequest(http.MethodGet, srv.URL()+"/internal/v1/players/p-target", nil)
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
 
 	var decoded apiaccount.PlayerResponse
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&decoded))
-	assert.Equal(t, "p-target", decoded.PlayerID)
-	require.NotNil(t, decoded.Name)
-	assert.Equal(t, "alice", *decoded.Name)
-	assert.Equal(t, int64(7), decoded.Level)
+	assert.Equal(t, want, decoded)
 }
 
 // GetPlayerByIDFn で 404 を返すと accountclient は ErrNotFound に変換する。

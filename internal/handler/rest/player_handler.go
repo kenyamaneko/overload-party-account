@@ -33,8 +33,6 @@ func (h *PlayerHandler) GetPlayer(c *gin.Context) {
 }
 
 // GetPlayerByID は path で指定された player_id のプレイヤー情報を返す。
-// 呼び出し主体ではない player の lookup を許す経路で、JWT sub では表現できないため
-// /internal 配下に置く。
 func (h *PlayerHandler) GetPlayerByID(c *gin.Context) {
 	playerID := c.Param("playerID")
 	resp, err := h.playerInteractor.GetPlayerResponse(c.Request.Context(), playerID)
