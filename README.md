@@ -53,13 +53,12 @@ ConfigMap:
 | 変数名 | 説明 |
 |---|---|
 | `PORT` | HTTP リッスンポート（1-65535） |
-| `PUBSUB_PROJECT_ID` | Pub/Sub の Google Cloud プロジェクト ID |
+| `GOOGLE_CLOUD_PROJECT_ID` | Pub/Sub 購読 / Firestore (`game_config`) で利用する Google Cloud プロジェクト ID |
 | `FACTION_ACQUIRED_SUBSCRIPTION` | faction-acquired の pull subscription 名 |
 | `PREMIUM_UPDATED_SUBSCRIPTION` | premium-updated の pull subscription 名 |
 | `PLAYER_ONBOARDED_SUBSCRIPTION` | player-onboarded の pull subscription 名 |
 | `ONBOARDING_NAME_SET_SUBSCRIPTION` | onboarding-name-set の pull subscription 名 |
 | `ONBOARDING_FACTION_SET_SUBSCRIPTION` | onboarding-faction-set の pull subscription 名 |
-| `FIRESTORE_PROJECT_ID` | `game_config` を読む Firestore プロジェクト ID |
 | `LOG_MODE` | `production`（Cloud Logging 互換 JSON）/ `local`（TextHandler）|
 
 ローカルで Pub/Sub / Firestore emulator に接続する場合は `PUBSUB_EMULATOR_HOST` / `FIRESTORE_EMULATOR_HOST` を併せて設定する（`make run` が既定値を渡す）。

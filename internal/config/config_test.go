@@ -12,13 +12,12 @@ import (
 var allEnvKeys = []string{
 	"PORT",
 	"DATABASE_CONN",
-	"PUBSUB_PROJECT_ID",
+	"GOOGLE_CLOUD_PROJECT_ID",
 	"FACTION_ACQUIRED_SUBSCRIPTION",
 	"PREMIUM_UPDATED_SUBSCRIPTION",
 	"PLAYER_ONBOARDED_SUBSCRIPTION",
 	"ONBOARDING_NAME_SET_SUBSCRIPTION",
 	"ONBOARDING_FACTION_SET_SUBSCRIPTION",
-	"FIRESTORE_PROJECT_ID",
 	"INTERNAL_AUTH_SECRET",
 	"LOG_MODE",
 }
@@ -49,13 +48,12 @@ func mergeEnv(maps ...map[string]string) map[string]string {
 var validLocalEnv = map[string]string{
 	"PORT":                                "9005",
 	"DATABASE_CONN":                       "host=localhost port=5432 dbname=account user=account password=account sslmode=disable",
-	"PUBSUB_PROJECT_ID":                   "account-local",
-	"FACTION_ACQUIRED_SUBSCRIPTION":      "faction-acquired-account-sub",
+	"GOOGLE_CLOUD_PROJECT_ID":             "account-local",
+	"FACTION_ACQUIRED_SUBSCRIPTION":       "faction-acquired-account-sub",
 	"PREMIUM_UPDATED_SUBSCRIPTION":        "premium-updated-account-sub",
 	"PLAYER_ONBOARDED_SUBSCRIPTION":       "player-onboarded-account-sub",
 	"ONBOARDING_NAME_SET_SUBSCRIPTION":    "onboarding-name-set-account-sub",
 	"ONBOARDING_FACTION_SET_SUBSCRIPTION": "onboarding-faction-set-account-sub",
-	"FIRESTORE_PROJECT_ID":                "account-local",
 	"INTERNAL_AUTH_SECRET":                "test-internal-auth-secret-do-not-use-in-prod-xxxxx",
 	"LOG_MODE":                            "local",
 }
@@ -72,11 +70,10 @@ func TestFromEnv_Success(t *testing.T) {
 			assert: func(t *testing.T, cfg *Config) {
 				assert.Equal(t, 9005, cfg.Port)
 				assert.Equal(t, "host=localhost port=5432 dbname=account user=account password=account sslmode=disable", cfg.DatabaseConn)
-				assert.Equal(t, "account-local", cfg.PubsubProjectID)
+				assert.Equal(t, "account-local", cfg.GoogleCloudProjectID)
 				assert.Equal(t, "faction-acquired-account-sub", cfg.FactionAcquiredSubscription)
 				assert.Equal(t, "premium-updated-account-sub", cfg.PremiumUpdatedSubscription)
 				assert.Equal(t, "player-onboarded-account-sub", cfg.PlayerOnboardedSubscription)
-				assert.Equal(t, "account-local", cfg.FirestoreProjectID)
 				assert.Equal(t, LogModeLocal, cfg.LogMode)
 			},
 		},
@@ -139,9 +136,9 @@ func TestFromEnv_Errors(t *testing.T) {
 			wantErr: "DATABASE_CONN is required",
 		},
 		{
-			name:    "PUBSUB_PROJECT_ID が未設定ならエラー",
-			envs:    mergeEnv(validLocalEnv, map[string]string{"PUBSUB_PROJECT_ID": ""}),
-			wantErr: "PUBSUB_PROJECT_ID is required",
+			name:    "GOOGLE_CLOUD_PROJECT_ID が未設定ならエラー",
+			envs:    mergeEnv(validLocalEnv, map[string]string{"GOOGLE_CLOUD_PROJECT_ID": ""}),
+			wantErr: "GOOGLE_CLOUD_PROJECT_ID is required",
 		},
 		{
 			name:    "FACTION_ACQUIRED_SUBSCRIPTION が未設定ならエラー",
@@ -167,11 +164,6 @@ func TestFromEnv_Errors(t *testing.T) {
 			name:    "ONBOARDING_FACTION_SET_SUBSCRIPTION が未設定ならエラー",
 			envs:    mergeEnv(validLocalEnv, map[string]string{"ONBOARDING_FACTION_SET_SUBSCRIPTION": ""}),
 			wantErr: "ONBOARDING_FACTION_SET_SUBSCRIPTION is required",
-		},
-		{
-			name:    "FIRESTORE_PROJECT_ID が未設定ならエラー",
-			envs:    mergeEnv(validLocalEnv, map[string]string{"FIRESTORE_PROJECT_ID": ""}),
-			wantErr: "FIRESTORE_PROJECT_ID is required",
 		},
 		{
 			name:    "INTERNAL_AUTH_SECRET が未設定ならエラー",

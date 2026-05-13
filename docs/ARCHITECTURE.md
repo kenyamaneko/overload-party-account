@@ -284,7 +284,7 @@ usecase 層は HTTP ステータスを知らず、handler 層は SQL を知ら�
 環境変数の一覧と必須条件は [internal/config/config.go](../internal/config/config.go) の `FromEnv` が SSoT（欠ければ即 fail）。運用上の注意点のみ:
 
 - `DATABASE_URL` は Secret Manager 由来。k8s マニフェストにインラインしない
-- `PUBSUB_PROJECT_ID` / `FIRESTORE_PROJECT_ID` は ConfigMap 経由で環境ごとに切り替え
+- `GOOGLE_CLOUD_PROJECT_ID` は ConfigMap 経由で環境ごとに切り替え (Pub/Sub 購読・Firestore 双方で共有)
 - `FACTION_ACQUIRED_SUBSCRIPTION` / `PREMIUM_UPDATED_SUBSCRIPTION` / `PLAYER_ONBOARDED_SUBSCRIPTION` / `ONBOARDING_NAME_SET_SUBSCRIPTION` / `ONBOARDING_FACTION_SET_SUBSCRIPTION` はデフォルトで本番名と一致するため通常は未設定でよい。環境分離検証時のみ上書き
 
 ### 10.2 Pub/Sub トピックと subscriber

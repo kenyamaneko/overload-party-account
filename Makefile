@@ -33,8 +33,7 @@ db-reset: ## Drop volume and recreate DB
 run: db-up ## Run account server locally against compose Postgres (local env 込み)
 	PORT=9005 \
 	DATABASE_CONN="postgres://account:account@localhost:5432/account?sslmode=disable" \
-	PUBSUB_PROJECT_ID=account-local \
-	FIRESTORE_PROJECT_ID=account-local \
+	GOOGLE_CLOUD_PROJECT_ID=account-local \
 	FACTION_ACQUIRED_SUBSCRIPTION=faction-acquired-account-sub \
 	PREMIUM_UPDATED_SUBSCRIPTION=premium-updated-account-sub \
 	PLAYER_ONBOARDED_SUBSCRIPTION=player-onboarded-account-sub \
