@@ -97,7 +97,7 @@ func run() error {
 	}
 	defer pool.Close()
 
-	fsClient, err := firestore.NewClient(ctx, cfg.FirestoreProjectID)
+	fsClient, err := firestore.NewClient(ctx, cfg.GoogleCloudProjectID)
 	if err != nil {
 		return fmt.Errorf("firestore new client: %w", err)
 	}
@@ -158,8 +158,7 @@ func run() error {
 
 	slog.Info("account starting",
 		"addr", srv.Addr,
-		"pubsub_project", cfg.PubsubProjectID,
-		"firestore_project", cfg.FirestoreProjectID,
+		"google_cloud_project", cfg.GoogleCloudProjectID,
 	)
 
 	return runHTTPAndSubscribers(ctx, srv, factionSub, premiumSub, onboardedSub, nameSetSub, factionSetSub)
@@ -242,7 +241,7 @@ func openSubscriptionStreams(ctx context.Context, cfg *config.Config) (*subscrip
 	}
 
 	for _, spec := range specs {
-		st, err := pubsubadapter.NewStream(ctx, cfg.PubsubProjectID, spec.subscriptionID)
+		st, err := pubsubadapter.NewStream(ctx, cfg.GoogleCloudProjectID, spec.subscriptionID)
 		if err != nil {
 			closeAll()
 			return nil, nil, fmt.Errorf("%s stream: %w", spec.name, err)
