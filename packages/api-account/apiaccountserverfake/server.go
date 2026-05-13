@@ -73,7 +73,7 @@ type Server struct {
 	SelectInitialFactionFn func(req apiaccount.SelectInitialFactionRequest) (int, any)
 
 	// ListFactionsFn: GET /api/v1/account/me/factions。
-	// 既定は 200 + 空の ListFactionsResponse。
+	// 既定は 200 + 空の FactionListing。
 	ListFactionsFn func() (int, any)
 
 	// AddExpFn: POST /api/v1/account/me/exp。既定は 204 No Content。
@@ -297,7 +297,7 @@ func (s *Server) handleListFactions(w http.ResponseWriter, _ *http.Request) {
 	fn := s.ListFactionsFn
 	s.mu.Unlock()
 	if fn == nil {
-		writeJSON(w, http.StatusOK, apiaccount.ListFactionsResponse{Factions: []string{}})
+		writeJSON(w, http.StatusOK, apiaccount.FactionListing{Factions: []string{}})
 		return
 	}
 	status, body := fn()

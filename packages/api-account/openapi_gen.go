@@ -4,7 +4,17 @@
 package apiaccount
 
 import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"net/url"
+	"strings"
 	"time"
+
+	"github.com/oapi-codegen/runtime"
 )
 
 const (
@@ -61,14 +71,14 @@ type FactionGrantRequest struct {
 	Faction string `json:"faction"`
 }
 
+// FactionListing defines model for FactionListing.
+type FactionListing struct {
+	Factions []string `json:"factions"`
+}
+
 // HealthResponse defines model for HealthResponse.
 type HealthResponse struct {
 	Status string `json:"status"`
-}
-
-// ListFactionsResponse defines model for ListFactionsResponse.
-type ListFactionsResponse struct {
-	Factions []string `json:"factions"`
 }
 
 // LoginRequest defines model for LoginRequest.
@@ -185,3 +195,2408 @@ type RegisterPlayerJSONRequestBody = RegisterRequest
 
 // AwardGameExpJSONRequestBody defines body for AwardGameExp for application/json ContentType.
 type AwardGameExpJSONRequestBody = AwardGameExpRequest
+
+// RequestEditorFn  is the function signature for the RequestEditor callback function
+type RequestEditorFn func(ctx context.Context, req *http.Request) error
+
+// Doer performs HTTP requests.
+//
+// The standard http.Client implements this interface.
+type HttpRequestDoer interface {
+	Do(req *http.Request) (*http.Response, error)
+}
+
+// Client which conforms to the OpenAPI3 specification for this service.
+type Client struct {
+	// The endpoint of the server conforming to this interface, with scheme,
+	// https://api.deepmap.com for example. This can contain a path relative
+	// to the server, such as https://api.deepmap.com/dev-test, and all the
+	// paths in the swagger spec will be appended to the server.
+	Server string
+
+	// Doer for performing requests, typically a *http.Client with any
+	// customized settings, such as certificate chains.
+	Client HttpRequestDoer
+
+	// A list of callbacks for modifying requests which are generated before sending over
+	// the network.
+	RequestEditors []RequestEditorFn
+}
+
+// ClientOption allows setting custom parameters during construction
+type ClientOption func(*Client) error
+
+// Creates a new Client, with reasonable defaults
+func NewClient(server string, opts ...ClientOption) (*Client, error) {
+	// create a client with sane default values
+	client := Client{
+		Server: server,
+	}
+	// mutate client and add all optional params
+	for _, o := range opts {
+		if err := o(&client); err != nil {
+			return nil, err
+		}
+	}
+	// ensure the server URL always has a trailing slash
+	if !strings.HasSuffix(client.Server, "/") {
+		client.Server += "/"
+	}
+	// create httpClient, if not already present
+	if client.Client == nil {
+		client.Client = &http.Client{}
+	}
+	return &client, nil
+}
+
+// WithHTTPClient allows overriding the default Doer, which is
+// automatically created using http.Client. This is useful for tests.
+func WithHTTPClient(doer HttpRequestDoer) ClientOption {
+	return func(c *Client) error {
+		c.Client = doer
+		return nil
+	}
+}
+
+// WithRequestEditorFn allows setting up a callback function, which will be
+// called right before sending the request. This can be used to mutate the request.
+func WithRequestEditorFn(fn RequestEditorFn) ClientOption {
+	return func(c *Client) error {
+		c.RequestEditors = append(c.RequestEditors, fn)
+		return nil
+	}
+}
+
+// The interface specification for the client above.
+type ClientInterface interface {
+	// GetPlayer request
+	GetPlayer(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetBattleLimit request
+	GetBattleLimit(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// IncrementBattleCount request
+	IncrementBattleCount(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// AddExpWithBody request with any body
+	AddExpWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	AddExp(ctx context.Context, body AddExpJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListFactions request
+	ListFactions(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GrantFactionWithBody request with any body
+	GrantFactionWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	GrantFaction(ctx context.Context, body GrantFactionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// SelectInitialFactionWithBody request with any body
+	SelectInitialFactionWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	SelectInitialFaction(ctx context.Context, body SelectInitialFactionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// UpdateNameWithBody request with any body
+	UpdateNameWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	UpdateName(ctx context.Context, body UpdateNameJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ValidateNameForOnboardingWithBody request with any body
+	ValidateNameForOnboardingWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	ValidateNameForOnboarding(ctx context.Context, body ValidateNameForOnboardingJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// UpdatePremiumWithBody request with any body
+	UpdatePremiumWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	UpdatePremium(ctx context.Context, body UpdatePremiumJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetPlayerSettings request
+	GetPlayerSettings(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// UpdatePlayerSettingsWithBody request with any body
+	UpdatePlayerSettingsWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	UpdatePlayerSettings(ctx context.Context, body UpdatePlayerSettingsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetHealth request
+	GetHealth(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetPlayerByFirebaseUID request
+	GetPlayerByFirebaseUID(ctx context.Context, firebaseUID string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// LoginPlayerWithBody request with any body
+	LoginPlayerWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	LoginPlayer(ctx context.Context, body LoginPlayerJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// RegisterPlayerWithBody request with any body
+	RegisterPlayerWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	RegisterPlayer(ctx context.Context, body RegisterPlayerJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// AwardGameExpWithBody request with any body
+	AwardGameExpWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	AwardGameExp(ctx context.Context, body AwardGameExpJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetPlayerByID request
+	GetPlayerByID(ctx context.Context, playerID string, reqEditors ...RequestEditorFn) (*http.Response, error)
+}
+
+func (c *Client) GetPlayer(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetPlayerRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetBattleLimit(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetBattleLimitRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) IncrementBattleCount(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewIncrementBattleCountRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) AddExpWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewAddExpRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) AddExp(ctx context.Context, body AddExpJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewAddExpRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ListFactions(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListFactionsRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GrantFactionWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGrantFactionRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GrantFaction(ctx context.Context, body GrantFactionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGrantFactionRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) SelectInitialFactionWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSelectInitialFactionRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) SelectInitialFaction(ctx context.Context, body SelectInitialFactionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSelectInitialFactionRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) UpdateNameWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdateNameRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) UpdateName(ctx context.Context, body UpdateNameJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdateNameRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ValidateNameForOnboardingWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewValidateNameForOnboardingRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ValidateNameForOnboarding(ctx context.Context, body ValidateNameForOnboardingJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewValidateNameForOnboardingRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) UpdatePremiumWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdatePremiumRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) UpdatePremium(ctx context.Context, body UpdatePremiumJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdatePremiumRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetPlayerSettings(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetPlayerSettingsRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) UpdatePlayerSettingsWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdatePlayerSettingsRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) UpdatePlayerSettings(ctx context.Context, body UpdatePlayerSettingsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdatePlayerSettingsRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetHealth(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetHealthRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetPlayerByFirebaseUID(ctx context.Context, firebaseUID string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetPlayerByFirebaseUIDRequest(c.Server, firebaseUID)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) LoginPlayerWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewLoginPlayerRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) LoginPlayer(ctx context.Context, body LoginPlayerJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewLoginPlayerRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) RegisterPlayerWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRegisterPlayerRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) RegisterPlayer(ctx context.Context, body RegisterPlayerJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRegisterPlayerRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) AwardGameExpWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewAwardGameExpRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) AwardGameExp(ctx context.Context, body AwardGameExpJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewAwardGameExpRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetPlayerByID(ctx context.Context, playerID string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetPlayerByIDRequest(c.Server, playerID)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// NewGetPlayerRequest generates requests for GetPlayer
+func NewGetPlayerRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/account/me")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetBattleLimitRequest generates requests for GetBattleLimit
+func NewGetBattleLimitRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/account/me/battle-limit")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewIncrementBattleCountRequest generates requests for IncrementBattleCount
+func NewIncrementBattleCountRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/account/me/battle-limit/increment")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewAddExpRequest calls the generic AddExp builder with application/json body
+func NewAddExpRequest(server string, body AddExpJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewAddExpRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewAddExpRequestWithBody generates requests for AddExp with any type of body
+func NewAddExpRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/account/me/exp")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewListFactionsRequest generates requests for ListFactions
+func NewListFactionsRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/account/me/factions")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGrantFactionRequest calls the generic GrantFaction builder with application/json body
+func NewGrantFactionRequest(server string, body GrantFactionJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewGrantFactionRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewGrantFactionRequestWithBody generates requests for GrantFaction with any type of body
+func NewGrantFactionRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/account/me/factions")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewSelectInitialFactionRequest calls the generic SelectInitialFaction builder with application/json body
+func NewSelectInitialFactionRequest(server string, body SelectInitialFactionJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewSelectInitialFactionRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewSelectInitialFactionRequestWithBody generates requests for SelectInitialFaction with any type of body
+func NewSelectInitialFactionRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/account/me/factions/select")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewUpdateNameRequest calls the generic UpdateName builder with application/json body
+func NewUpdateNameRequest(server string, body UpdateNameJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewUpdateNameRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewUpdateNameRequestWithBody generates requests for UpdateName with any type of body
+func NewUpdateNameRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/account/me/name")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPut, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewValidateNameForOnboardingRequest calls the generic ValidateNameForOnboarding builder with application/json body
+func NewValidateNameForOnboardingRequest(server string, body ValidateNameForOnboardingJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewValidateNameForOnboardingRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewValidateNameForOnboardingRequestWithBody generates requests for ValidateNameForOnboarding with any type of body
+func NewValidateNameForOnboardingRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/account/me/onboarding/name/validate")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewUpdatePremiumRequest calls the generic UpdatePremium builder with application/json body
+func NewUpdatePremiumRequest(server string, body UpdatePremiumJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewUpdatePremiumRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewUpdatePremiumRequestWithBody generates requests for UpdatePremium with any type of body
+func NewUpdatePremiumRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/account/me/premium")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPut, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewGetPlayerSettingsRequest generates requests for GetPlayerSettings
+func NewGetPlayerSettingsRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/account/me/settings")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewUpdatePlayerSettingsRequest calls the generic UpdatePlayerSettings builder with application/json body
+func NewUpdatePlayerSettingsRequest(server string, body UpdatePlayerSettingsJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewUpdatePlayerSettingsRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewUpdatePlayerSettingsRequestWithBody generates requests for UpdatePlayerSettings with any type of body
+func NewUpdatePlayerSettingsRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/account/me/settings")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPut, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewGetHealthRequest generates requests for GetHealth
+func NewGetHealthRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/health")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetPlayerByFirebaseUIDRequest generates requests for GetPlayerByFirebaseUID
+func NewGetPlayerByFirebaseUIDRequest(server string, firebaseUID string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "firebaseUID", firebaseUID, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/internal/v1/auth/by-firebase-uid/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewLoginPlayerRequest calls the generic LoginPlayer builder with application/json body
+func NewLoginPlayerRequest(server string, body LoginPlayerJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewLoginPlayerRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewLoginPlayerRequestWithBody generates requests for LoginPlayer with any type of body
+func NewLoginPlayerRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/internal/v1/auth/login")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewRegisterPlayerRequest calls the generic RegisterPlayer builder with application/json body
+func NewRegisterPlayerRequest(server string, body RegisterPlayerJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewRegisterPlayerRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewRegisterPlayerRequestWithBody generates requests for RegisterPlayer with any type of body
+func NewRegisterPlayerRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/internal/v1/auth/register")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewAwardGameExpRequest calls the generic AwardGameExp builder with application/json body
+func NewAwardGameExpRequest(server string, body AwardGameExpJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewAwardGameExpRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewAwardGameExpRequestWithBody generates requests for AwardGameExp with any type of body
+func NewAwardGameExpRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/internal/v1/players/award-game-exp")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewGetPlayerByIDRequest generates requests for GetPlayerByID
+func NewGetPlayerByIDRequest(server string, playerID string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "playerID", playerID, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/internal/v1/players/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+func (c *Client) applyEditors(ctx context.Context, req *http.Request, additionalEditors []RequestEditorFn) error {
+	for _, r := range c.RequestEditors {
+		if err := r(ctx, req); err != nil {
+			return err
+		}
+	}
+	for _, r := range additionalEditors {
+		if err := r(ctx, req); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// ClientWithResponses builds on ClientInterface to offer response payloads
+type ClientWithResponses struct {
+	ClientInterface
+}
+
+// NewClientWithResponses creates a new ClientWithResponses, which wraps
+// Client with return type handling
+func NewClientWithResponses(server string, opts ...ClientOption) (*ClientWithResponses, error) {
+	client, err := NewClient(server, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return &ClientWithResponses{client}, nil
+}
+
+// WithBaseURL overrides the baseURL.
+func WithBaseURL(baseURL string) ClientOption {
+	return func(c *Client) error {
+		newBaseURL, err := url.Parse(baseURL)
+		if err != nil {
+			return err
+		}
+		c.Server = newBaseURL.String()
+		return nil
+	}
+}
+
+// ClientWithResponsesInterface is the interface specification for the client with responses above.
+type ClientWithResponsesInterface interface {
+	// GetPlayerWithResponse request
+	GetPlayerWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetPlayerResponse, error)
+
+	// GetBattleLimitWithResponse request
+	GetBattleLimitWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetBattleLimitResponse, error)
+
+	// IncrementBattleCountWithResponse request
+	IncrementBattleCountWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*IncrementBattleCountResponse, error)
+
+	// AddExpWithBodyWithResponse request with any body
+	AddExpWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*AddExpResponse, error)
+
+	AddExpWithResponse(ctx context.Context, body AddExpJSONRequestBody, reqEditors ...RequestEditorFn) (*AddExpResponse, error)
+
+	// ListFactionsWithResponse request
+	ListFactionsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListFactionsResponse, error)
+
+	// GrantFactionWithBodyWithResponse request with any body
+	GrantFactionWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*GrantFactionResponse, error)
+
+	GrantFactionWithResponse(ctx context.Context, body GrantFactionJSONRequestBody, reqEditors ...RequestEditorFn) (*GrantFactionResponse, error)
+
+	// SelectInitialFactionWithBodyWithResponse request with any body
+	SelectInitialFactionWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SelectInitialFactionResponse, error)
+
+	SelectInitialFactionWithResponse(ctx context.Context, body SelectInitialFactionJSONRequestBody, reqEditors ...RequestEditorFn) (*SelectInitialFactionResponse, error)
+
+	// UpdateNameWithBodyWithResponse request with any body
+	UpdateNameWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateNameResponse, error)
+
+	UpdateNameWithResponse(ctx context.Context, body UpdateNameJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateNameResponse, error)
+
+	// ValidateNameForOnboardingWithBodyWithResponse request with any body
+	ValidateNameForOnboardingWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ValidateNameForOnboardingResponse, error)
+
+	ValidateNameForOnboardingWithResponse(ctx context.Context, body ValidateNameForOnboardingJSONRequestBody, reqEditors ...RequestEditorFn) (*ValidateNameForOnboardingResponse, error)
+
+	// UpdatePremiumWithBodyWithResponse request with any body
+	UpdatePremiumWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdatePremiumResponse, error)
+
+	UpdatePremiumWithResponse(ctx context.Context, body UpdatePremiumJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdatePremiumResponse, error)
+
+	// GetPlayerSettingsWithResponse request
+	GetPlayerSettingsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetPlayerSettingsResponse, error)
+
+	// UpdatePlayerSettingsWithBodyWithResponse request with any body
+	UpdatePlayerSettingsWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdatePlayerSettingsResponse, error)
+
+	UpdatePlayerSettingsWithResponse(ctx context.Context, body UpdatePlayerSettingsJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdatePlayerSettingsResponse, error)
+
+	// GetHealthWithResponse request
+	GetHealthWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetHealthResponse, error)
+
+	// GetPlayerByFirebaseUIDWithResponse request
+	GetPlayerByFirebaseUIDWithResponse(ctx context.Context, firebaseUID string, reqEditors ...RequestEditorFn) (*GetPlayerByFirebaseUIDResponse, error)
+
+	// LoginPlayerWithBodyWithResponse request with any body
+	LoginPlayerWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*LoginPlayerResponse, error)
+
+	LoginPlayerWithResponse(ctx context.Context, body LoginPlayerJSONRequestBody, reqEditors ...RequestEditorFn) (*LoginPlayerResponse, error)
+
+	// RegisterPlayerWithBodyWithResponse request with any body
+	RegisterPlayerWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RegisterPlayerResponse, error)
+
+	RegisterPlayerWithResponse(ctx context.Context, body RegisterPlayerJSONRequestBody, reqEditors ...RequestEditorFn) (*RegisterPlayerResponse, error)
+
+	// AwardGameExpWithBodyWithResponse request with any body
+	AwardGameExpWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*AwardGameExpResponse, error)
+
+	AwardGameExpWithResponse(ctx context.Context, body AwardGameExpJSONRequestBody, reqEditors ...RequestEditorFn) (*AwardGameExpResponse, error)
+
+	// GetPlayerByIDWithResponse request
+	GetPlayerByIDWithResponse(ctx context.Context, playerID string, reqEditors ...RequestEditorFn) (*GetPlayerByIDResponse, error)
+}
+
+type GetPlayerResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *PlayerResponse
+}
+
+// Status returns HTTPResponse.Status
+func (r GetPlayerResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetPlayerResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetPlayerResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetBattleLimitResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *BattleLimitResponse
+}
+
+// Status returns HTTPResponse.Status
+func (r GetBattleLimitResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetBattleLimitResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetBattleLimitResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type IncrementBattleCountResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+}
+
+// Status returns HTTPResponse.Status
+func (r IncrementBattleCountResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r IncrementBattleCountResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r IncrementBattleCountResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type AddExpResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+}
+
+// Status returns HTTPResponse.Status
+func (r AddExpResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r AddExpResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r AddExpResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type ListFactionsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *FactionListing
+}
+
+// Status returns HTTPResponse.Status
+func (r ListFactionsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListFactionsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListFactionsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GrantFactionResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+}
+
+// Status returns HTTPResponse.Status
+func (r GrantFactionResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GrantFactionResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GrantFactionResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type SelectInitialFactionResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+}
+
+// Status returns HTTPResponse.Status
+func (r SelectInitialFactionResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r SelectInitialFactionResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r SelectInitialFactionResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type UpdateNameResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *PlayerResponse
+}
+
+// Status returns HTTPResponse.Status
+func (r UpdateNameResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r UpdateNameResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r UpdateNameResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type ValidateNameForOnboardingResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+}
+
+// Status returns HTTPResponse.Status
+func (r ValidateNameForOnboardingResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ValidateNameForOnboardingResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ValidateNameForOnboardingResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type UpdatePremiumResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+}
+
+// Status returns HTTPResponse.Status
+func (r UpdatePremiumResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r UpdatePremiumResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r UpdatePremiumResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetPlayerSettingsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *PlayerSettingsResponse
+}
+
+// Status returns HTTPResponse.Status
+func (r GetPlayerSettingsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetPlayerSettingsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetPlayerSettingsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type UpdatePlayerSettingsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *PlayerSettingsResponse
+}
+
+// Status returns HTTPResponse.Status
+func (r UpdatePlayerSettingsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r UpdatePlayerSettingsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r UpdatePlayerSettingsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetHealthResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *HealthResponse
+}
+
+// Status returns HTTPResponse.Status
+func (r GetHealthResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetHealthResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetHealthResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetPlayerByFirebaseUIDResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *PlayerResponse
+}
+
+// Status returns HTTPResponse.Status
+func (r GetPlayerByFirebaseUIDResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetPlayerByFirebaseUIDResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetPlayerByFirebaseUIDResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type LoginPlayerResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *PlayerResponse
+}
+
+// Status returns HTTPResponse.Status
+func (r LoginPlayerResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r LoginPlayerResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r LoginPlayerResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type RegisterPlayerResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON201      *PlayerResponse
+}
+
+// Status returns HTTPResponse.Status
+func (r RegisterPlayerResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r RegisterPlayerResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r RegisterPlayerResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type AwardGameExpResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+}
+
+// Status returns HTTPResponse.Status
+func (r AwardGameExpResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r AwardGameExpResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r AwardGameExpResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetPlayerByIDResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *PlayerResponse
+}
+
+// Status returns HTTPResponse.Status
+func (r GetPlayerByIDResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetPlayerByIDResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetPlayerByIDResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// GetPlayerWithResponse request returning *GetPlayerResponse
+func (c *ClientWithResponses) GetPlayerWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetPlayerResponse, error) {
+	rsp, err := c.GetPlayer(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetPlayerResponse(rsp)
+}
+
+// GetBattleLimitWithResponse request returning *GetBattleLimitResponse
+func (c *ClientWithResponses) GetBattleLimitWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetBattleLimitResponse, error) {
+	rsp, err := c.GetBattleLimit(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetBattleLimitResponse(rsp)
+}
+
+// IncrementBattleCountWithResponse request returning *IncrementBattleCountResponse
+func (c *ClientWithResponses) IncrementBattleCountWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*IncrementBattleCountResponse, error) {
+	rsp, err := c.IncrementBattleCount(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseIncrementBattleCountResponse(rsp)
+}
+
+// AddExpWithBodyWithResponse request with arbitrary body returning *AddExpResponse
+func (c *ClientWithResponses) AddExpWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*AddExpResponse, error) {
+	rsp, err := c.AddExpWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseAddExpResponse(rsp)
+}
+
+func (c *ClientWithResponses) AddExpWithResponse(ctx context.Context, body AddExpJSONRequestBody, reqEditors ...RequestEditorFn) (*AddExpResponse, error) {
+	rsp, err := c.AddExp(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseAddExpResponse(rsp)
+}
+
+// ListFactionsWithResponse request returning *ListFactionsResponse
+func (c *ClientWithResponses) ListFactionsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListFactionsResponse, error) {
+	rsp, err := c.ListFactions(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListFactionsResponse(rsp)
+}
+
+// GrantFactionWithBodyWithResponse request with arbitrary body returning *GrantFactionResponse
+func (c *ClientWithResponses) GrantFactionWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*GrantFactionResponse, error) {
+	rsp, err := c.GrantFactionWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGrantFactionResponse(rsp)
+}
+
+func (c *ClientWithResponses) GrantFactionWithResponse(ctx context.Context, body GrantFactionJSONRequestBody, reqEditors ...RequestEditorFn) (*GrantFactionResponse, error) {
+	rsp, err := c.GrantFaction(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGrantFactionResponse(rsp)
+}
+
+// SelectInitialFactionWithBodyWithResponse request with arbitrary body returning *SelectInitialFactionResponse
+func (c *ClientWithResponses) SelectInitialFactionWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SelectInitialFactionResponse, error) {
+	rsp, err := c.SelectInitialFactionWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSelectInitialFactionResponse(rsp)
+}
+
+func (c *ClientWithResponses) SelectInitialFactionWithResponse(ctx context.Context, body SelectInitialFactionJSONRequestBody, reqEditors ...RequestEditorFn) (*SelectInitialFactionResponse, error) {
+	rsp, err := c.SelectInitialFaction(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSelectInitialFactionResponse(rsp)
+}
+
+// UpdateNameWithBodyWithResponse request with arbitrary body returning *UpdateNameResponse
+func (c *ClientWithResponses) UpdateNameWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateNameResponse, error) {
+	rsp, err := c.UpdateNameWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpdateNameResponse(rsp)
+}
+
+func (c *ClientWithResponses) UpdateNameWithResponse(ctx context.Context, body UpdateNameJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateNameResponse, error) {
+	rsp, err := c.UpdateName(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpdateNameResponse(rsp)
+}
+
+// ValidateNameForOnboardingWithBodyWithResponse request with arbitrary body returning *ValidateNameForOnboardingResponse
+func (c *ClientWithResponses) ValidateNameForOnboardingWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ValidateNameForOnboardingResponse, error) {
+	rsp, err := c.ValidateNameForOnboardingWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseValidateNameForOnboardingResponse(rsp)
+}
+
+func (c *ClientWithResponses) ValidateNameForOnboardingWithResponse(ctx context.Context, body ValidateNameForOnboardingJSONRequestBody, reqEditors ...RequestEditorFn) (*ValidateNameForOnboardingResponse, error) {
+	rsp, err := c.ValidateNameForOnboarding(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseValidateNameForOnboardingResponse(rsp)
+}
+
+// UpdatePremiumWithBodyWithResponse request with arbitrary body returning *UpdatePremiumResponse
+func (c *ClientWithResponses) UpdatePremiumWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdatePremiumResponse, error) {
+	rsp, err := c.UpdatePremiumWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpdatePremiumResponse(rsp)
+}
+
+func (c *ClientWithResponses) UpdatePremiumWithResponse(ctx context.Context, body UpdatePremiumJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdatePremiumResponse, error) {
+	rsp, err := c.UpdatePremium(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpdatePremiumResponse(rsp)
+}
+
+// GetPlayerSettingsWithResponse request returning *GetPlayerSettingsResponse
+func (c *ClientWithResponses) GetPlayerSettingsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetPlayerSettingsResponse, error) {
+	rsp, err := c.GetPlayerSettings(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetPlayerSettingsResponse(rsp)
+}
+
+// UpdatePlayerSettingsWithBodyWithResponse request with arbitrary body returning *UpdatePlayerSettingsResponse
+func (c *ClientWithResponses) UpdatePlayerSettingsWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdatePlayerSettingsResponse, error) {
+	rsp, err := c.UpdatePlayerSettingsWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpdatePlayerSettingsResponse(rsp)
+}
+
+func (c *ClientWithResponses) UpdatePlayerSettingsWithResponse(ctx context.Context, body UpdatePlayerSettingsJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdatePlayerSettingsResponse, error) {
+	rsp, err := c.UpdatePlayerSettings(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpdatePlayerSettingsResponse(rsp)
+}
+
+// GetHealthWithResponse request returning *GetHealthResponse
+func (c *ClientWithResponses) GetHealthWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetHealthResponse, error) {
+	rsp, err := c.GetHealth(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetHealthResponse(rsp)
+}
+
+// GetPlayerByFirebaseUIDWithResponse request returning *GetPlayerByFirebaseUIDResponse
+func (c *ClientWithResponses) GetPlayerByFirebaseUIDWithResponse(ctx context.Context, firebaseUID string, reqEditors ...RequestEditorFn) (*GetPlayerByFirebaseUIDResponse, error) {
+	rsp, err := c.GetPlayerByFirebaseUID(ctx, firebaseUID, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetPlayerByFirebaseUIDResponse(rsp)
+}
+
+// LoginPlayerWithBodyWithResponse request with arbitrary body returning *LoginPlayerResponse
+func (c *ClientWithResponses) LoginPlayerWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*LoginPlayerResponse, error) {
+	rsp, err := c.LoginPlayerWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseLoginPlayerResponse(rsp)
+}
+
+func (c *ClientWithResponses) LoginPlayerWithResponse(ctx context.Context, body LoginPlayerJSONRequestBody, reqEditors ...RequestEditorFn) (*LoginPlayerResponse, error) {
+	rsp, err := c.LoginPlayer(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseLoginPlayerResponse(rsp)
+}
+
+// RegisterPlayerWithBodyWithResponse request with arbitrary body returning *RegisterPlayerResponse
+func (c *ClientWithResponses) RegisterPlayerWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RegisterPlayerResponse, error) {
+	rsp, err := c.RegisterPlayerWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRegisterPlayerResponse(rsp)
+}
+
+func (c *ClientWithResponses) RegisterPlayerWithResponse(ctx context.Context, body RegisterPlayerJSONRequestBody, reqEditors ...RequestEditorFn) (*RegisterPlayerResponse, error) {
+	rsp, err := c.RegisterPlayer(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRegisterPlayerResponse(rsp)
+}
+
+// AwardGameExpWithBodyWithResponse request with arbitrary body returning *AwardGameExpResponse
+func (c *ClientWithResponses) AwardGameExpWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*AwardGameExpResponse, error) {
+	rsp, err := c.AwardGameExpWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseAwardGameExpResponse(rsp)
+}
+
+func (c *ClientWithResponses) AwardGameExpWithResponse(ctx context.Context, body AwardGameExpJSONRequestBody, reqEditors ...RequestEditorFn) (*AwardGameExpResponse, error) {
+	rsp, err := c.AwardGameExp(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseAwardGameExpResponse(rsp)
+}
+
+// GetPlayerByIDWithResponse request returning *GetPlayerByIDResponse
+func (c *ClientWithResponses) GetPlayerByIDWithResponse(ctx context.Context, playerID string, reqEditors ...RequestEditorFn) (*GetPlayerByIDResponse, error) {
+	rsp, err := c.GetPlayerByID(ctx, playerID, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetPlayerByIDResponse(rsp)
+}
+
+// ParseGetPlayerResponse parses an HTTP response from a GetPlayerWithResponse call
+func ParseGetPlayerResponse(rsp *http.Response) (*GetPlayerResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetPlayerResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest PlayerResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetBattleLimitResponse parses an HTTP response from a GetBattleLimitWithResponse call
+func ParseGetBattleLimitResponse(rsp *http.Response) (*GetBattleLimitResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetBattleLimitResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest BattleLimitResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseIncrementBattleCountResponse parses an HTTP response from a IncrementBattleCountWithResponse call
+func ParseIncrementBattleCountResponse(rsp *http.Response) (*IncrementBattleCountResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &IncrementBattleCountResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	return response, nil
+}
+
+// ParseAddExpResponse parses an HTTP response from a AddExpWithResponse call
+func ParseAddExpResponse(rsp *http.Response) (*AddExpResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &AddExpResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	return response, nil
+}
+
+// ParseListFactionsResponse parses an HTTP response from a ListFactionsWithResponse call
+func ParseListFactionsResponse(rsp *http.Response) (*ListFactionsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListFactionsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest FactionListing
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGrantFactionResponse parses an HTTP response from a GrantFactionWithResponse call
+func ParseGrantFactionResponse(rsp *http.Response) (*GrantFactionResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GrantFactionResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	return response, nil
+}
+
+// ParseSelectInitialFactionResponse parses an HTTP response from a SelectInitialFactionWithResponse call
+func ParseSelectInitialFactionResponse(rsp *http.Response) (*SelectInitialFactionResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &SelectInitialFactionResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	return response, nil
+}
+
+// ParseUpdateNameResponse parses an HTTP response from a UpdateNameWithResponse call
+func ParseUpdateNameResponse(rsp *http.Response) (*UpdateNameResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &UpdateNameResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest PlayerResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseValidateNameForOnboardingResponse parses an HTTP response from a ValidateNameForOnboardingWithResponse call
+func ParseValidateNameForOnboardingResponse(rsp *http.Response) (*ValidateNameForOnboardingResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ValidateNameForOnboardingResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	return response, nil
+}
+
+// ParseUpdatePremiumResponse parses an HTTP response from a UpdatePremiumWithResponse call
+func ParseUpdatePremiumResponse(rsp *http.Response) (*UpdatePremiumResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &UpdatePremiumResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	return response, nil
+}
+
+// ParseGetPlayerSettingsResponse parses an HTTP response from a GetPlayerSettingsWithResponse call
+func ParseGetPlayerSettingsResponse(rsp *http.Response) (*GetPlayerSettingsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetPlayerSettingsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest PlayerSettingsResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseUpdatePlayerSettingsResponse parses an HTTP response from a UpdatePlayerSettingsWithResponse call
+func ParseUpdatePlayerSettingsResponse(rsp *http.Response) (*UpdatePlayerSettingsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &UpdatePlayerSettingsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest PlayerSettingsResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetHealthResponse parses an HTTP response from a GetHealthWithResponse call
+func ParseGetHealthResponse(rsp *http.Response) (*GetHealthResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetHealthResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest HealthResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetPlayerByFirebaseUIDResponse parses an HTTP response from a GetPlayerByFirebaseUIDWithResponse call
+func ParseGetPlayerByFirebaseUIDResponse(rsp *http.Response) (*GetPlayerByFirebaseUIDResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetPlayerByFirebaseUIDResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest PlayerResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseLoginPlayerResponse parses an HTTP response from a LoginPlayerWithResponse call
+func ParseLoginPlayerResponse(rsp *http.Response) (*LoginPlayerResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &LoginPlayerResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest PlayerResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseRegisterPlayerResponse parses an HTTP response from a RegisterPlayerWithResponse call
+func ParseRegisterPlayerResponse(rsp *http.Response) (*RegisterPlayerResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &RegisterPlayerResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest PlayerResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseAwardGameExpResponse parses an HTTP response from a AwardGameExpWithResponse call
+func ParseAwardGameExpResponse(rsp *http.Response) (*AwardGameExpResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &AwardGameExpResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	return response, nil
+}
+
+// ParseGetPlayerByIDResponse parses an HTTP response from a GetPlayerByIDWithResponse call
+func ParseGetPlayerByIDResponse(rsp *http.Response) (*GetPlayerByIDResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetPlayerByIDResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest PlayerResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	}
+
+	return response, nil
+}
