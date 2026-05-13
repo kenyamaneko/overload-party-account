@@ -69,5 +69,5 @@ func (h *FactionHandler) ListFactions(c *gin.Context) {
 		respondError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, apiaccount.ListFactionsResponse{Factions: factions})
+	c.JSON(http.StatusOK, apiaccount.FactionListing{Factions: factions})
 }

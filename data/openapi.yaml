@@ -319,7 +319,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ListFactionsResponse"
+                $ref: "#/components/schemas/FactionListing"
         "401":
           description: 認証失敗
         "404":
@@ -543,7 +543,7 @@ components:
         can_battle:
           type: boolean
 
-    ListFactionsResponse:
+    FactionListing:
       type: object
       required: [factions]
       properties:
