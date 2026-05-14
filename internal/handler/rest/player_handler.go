@@ -32,17 +32,6 @@ func (h *PlayerHandler) GetPlayer(c *gin.Context) {
 	c.JSON(http.StatusOK, resp)
 }
 
-// GetPlayerByID は path で指定された player_id のプレイヤー情報を返す。
-func (h *PlayerHandler) GetPlayerByID(c *gin.Context) {
-	playerID := c.Param("playerID")
-	resp, err := h.playerInteractor.GetPlayerResponse(c.Request.Context(), playerID)
-	if err != nil {
-		respondError(c, err)
-		return
-	}
-	c.JSON(http.StatusOK, resp)
-}
-
 // UpdateName はプレイヤー名を更新する。
 func (h *PlayerHandler) UpdateName(c *gin.Context) {
 	playerID := c.GetString(internalauth.PlayerIDContextKey)

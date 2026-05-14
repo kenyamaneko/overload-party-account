@@ -67,7 +67,6 @@ func TestNew_InternalRoutesAreAuthFree(t *testing.T) {
 		{name: "auth/login は auth-free", method: http.MethodPost, path: "/internal/v1/auth/login"},
 		{name: "auth/by-firebase-uid は auth-free", method: http.MethodGet, path: "/internal/v1/auth/by-firebase-uid/uid-1"},
 		{name: "players/award-game-exp は auth-free", method: http.MethodPost, path: "/internal/v1/players/award-game-exp"},
-		{name: "players/{playerID} は auth-free", method: http.MethodGet, path: "/internal/v1/players/some-player-id"},
 	}
 
 	r := newTestRouter(nullVerifier{})

@@ -26,7 +26,6 @@ func TestServer_DefaultResponses(t *testing.T) {
 		{name: "Login 既定は 200", method: http.MethodPost, path: "/internal/v1/auth/login", reqBody: []byte(`{}`), wantStatus: http.StatusOK},
 		{name: "FindByFirebaseUID 既定は 200", method: http.MethodGet, path: "/internal/v1/auth/by-firebase-uid/uid-1", reqBody: nil, wantStatus: http.StatusOK},
 		{name: "AwardGameExp 既定は 204", method: http.MethodPost, path: "/internal/v1/players/award-game-exp", reqBody: []byte(`{}`), wantStatus: http.StatusNoContent},
-		{name: "GetPlayerByID 既定は 200", method: http.MethodGet, path: "/internal/v1/players/p-1", reqBody: nil, wantStatus: http.StatusOK},
 		{name: "GetPlayer 既定は 200", method: http.MethodGet, path: "/api/v1/account/me", reqBody: nil, wantStatus: http.StatusOK},
 		{name: "UpdateName 既定は 200", method: http.MethodPut, path: "/api/v1/account/me/name", reqBody: []byte(`{}`), wantStatus: http.StatusOK},
 		{name: "ValidateNameForOnboarding 既定は 204", method: http.MethodPost, path: "/api/v1/account/me/onboarding/name/validate", reqBody: []byte(`{}`), wantStatus: http.StatusNoContent},
@@ -111,64 +110,6 @@ func TestServer_RegisterFn_CanReturn409(t *testing.T) {
 	defer resp.Body.Close()
 
 	assert.Equal(t, http.StatusConflict, resp.StatusCode)
-}
-
-// GetPlayerByID では path variable から player_id が Fn に届く。
-func TestServer_GetPlayerByIDFn_ExtractsPathVariable(t *testing.T) {
-	srv := apiaccountserverfake.NewServer()
-	defer srv.Close()
-
-	var gotPlayerID string
-	srv.GetPlayerByIDFn = func(playerID string) (int, any) {
-		gotPlayerID = playerID
-		return http.StatusOK, apiaccount.PlayerResponse{}
-	}
-
-	req, _ := http.NewRequest(http.MethodGet, srv.URL()+"/internal/v1/players/p-target", nil)
-	resp, err := http.DefaultClient.Do(req)
-	require.NoError(t, err)
-	defer resp.Body.Close()
-
-	assert.Equal(t, "p-target", gotPlayerID)
-}
-
-// GetPlayerByIDFn が返した PlayerResponse がそのまま client 側 body に届く (round trip)。
-func TestServer_GetPlayerByIDFn_ReturnsFnBody(t *testing.T) {
-	srv := apiaccountserverfake.NewServer()
-	defer srv.Close()
-
-	name := "alice"
-	want := apiaccount.PlayerResponse{PlayerID: "p-target", Name: &name, Level: 7}
-	srv.GetPlayerByIDFn = func(_ string) (int, any) {
-		return http.StatusOK, want
-	}
-
-	req, _ := http.NewRequest(http.MethodGet, srv.URL()+"/internal/v1/players/p-target", nil)
-	resp, err := http.DefaultClient.Do(req)
-	require.NoError(t, err)
-	defer resp.Body.Close()
-
-	var decoded apiaccount.PlayerResponse
-	require.NoError(t, json.NewDecoder(resp.Body).Decode(&decoded))
-	assert.Equal(t, want, decoded)
-}
-
-// GetPlayerByIDFn で 404 を返すと accountclient は ErrNotFound に変換する。
-// 未登録 player_id を擬似する経路の contract 整合を固定する。
-func TestServer_GetPlayerByIDFn_CanReturn404(t *testing.T) {
-	srv := apiaccountserverfake.NewServer()
-	defer srv.Close()
-
-	srv.GetPlayerByIDFn = func(_ string) (int, any) {
-		return http.StatusNotFound, nil
-	}
-
-	req, _ := http.NewRequest(http.MethodGet, srv.URL()+"/internal/v1/players/missing", nil)
-	resp, err := http.DefaultClient.Do(req)
-	require.NoError(t, err)
-	defer resp.Body.Close()
-
-	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
 }
 
 // FindByFirebaseUID では path variable から Firebase UID が抽出されて Fn に届く。
