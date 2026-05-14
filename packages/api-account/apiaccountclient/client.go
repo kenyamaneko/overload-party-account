@@ -137,18 +137,6 @@ func (c *Client) AwardGameExp(ctx context.Context, req apiaccount.AwardGameExpRe
 	return statusError("AwardGameExp", resp.StatusCode())
 }
 
-// GetPlayerByID は指定 player ID の lookup 用 endpoint。
-func (c *Client) GetPlayerByID(ctx context.Context, playerID string) (*apiaccount.PlayerResponse, error) {
-	resp, err := c.api.GetPlayerByIDWithResponse(ctx, playerID)
-	if err != nil {
-		return nil, fmt.Errorf("apiaccountclient: GetPlayerByID: %w", err)
-	}
-	if resp.JSON200 != nil {
-		return resp.JSON200, nil
-	}
-	return nil, statusError("GetPlayerByID", resp.StatusCode())
-}
-
 // GetPlayer は呼出元 player 自身の情報を返す (X-Internal-Auth の sub から解決)。
 func (c *Client) GetPlayer(ctx context.Context) (*apiaccount.PlayerResponse, error) {
 	resp, err := c.api.GetPlayerWithResponse(ctx)
