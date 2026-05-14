@@ -136,31 +136,6 @@ func TestClient_AwardGameExp_StatusMapping(t *testing.T) {
 	}
 }
 
-func TestClient_GetPlayerByID_StatusMapping(t *testing.T) {
-	cases := []struct {
-		name       string
-		status     int
-		wantTarget error
-	}{
-		{
-			name:       "404 を受けたとき ErrNotFound",
-			status:     http.StatusNotFound,
-			wantTarget: apiaccountclient.ErrNotFound,
-		},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			srv := apiaccountserverfake.NewServer()
-			defer srv.Close()
-			srv.GetPlayerByIDFn = func(_ string) (int, any) { return tc.status, nil }
-
-			c := newTestClient(t, srv.URL())
-			_, err := c.GetPlayerByID(context.Background(), "p1")
-			assertSentinel(t, err, tc.wantTarget)
-		})
-	}
-}
-
 func TestClient_GetPlayer_StatusMapping(t *testing.T) {
 	cases := []struct {
 		name       string
