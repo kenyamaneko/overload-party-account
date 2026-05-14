@@ -42,10 +42,6 @@ type Server struct {
 	// AwardGameExpFn: POST /internal/v1/players/award-game-exp。既定は 204 No Content。
 	AwardGameExpFn func(req apiaccount.AwardGameExpRequest) (int, any)
 
-	// GetPlayerByIDFn: GET /internal/v1/players/{playerID}。既定は 200 + 空 PlayerResponse。
-	// 未登録を擬似したい場合は Fn で 404 を返す。
-	GetPlayerByIDFn func(playerID string) (int, any)
-
 	// GetPlayerFn: GET /api/v1/account/me。既定は 200 + 空 PlayerResponse。
 	GetPlayerFn func() (int, any)
 
@@ -94,7 +90,6 @@ func NewServer() *Server {
 	mux.HandleFunc("POST /internal/v1/auth/login", s.handleLogin)
 	mux.HandleFunc("GET /internal/v1/auth/by-firebase-uid/{firebaseUID}", s.handleFindByFirebaseUID)
 	mux.HandleFunc("POST /internal/v1/players/award-game-exp", s.handleAwardGameExp)
-	mux.HandleFunc("GET /internal/v1/players/{playerID}", s.handleGetPlayerByID)
 
 	mux.HandleFunc("GET /api/v1/account/me", s.handleGetPlayer)
 	mux.HandleFunc("PUT /api/v1/account/me/name", s.handleUpdateName)
@@ -170,19 +165,6 @@ func (s *Server) handleAwardGameExp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	status, body := fn(req)
-	writeJSON(w, status, body)
-}
-
-func (s *Server) handleGetPlayerByID(w http.ResponseWriter, r *http.Request) {
-	playerID := r.PathValue("playerID")
-	s.mu.Lock()
-	fn := s.GetPlayerByIDFn
-	s.mu.Unlock()
-	if fn == nil {
-		writeJSON(w, http.StatusOK, apiaccount.PlayerResponse{})
-		return
-	}
-	status, body := fn(playerID)
 	writeJSON(w, status, body)
 }
 
