@@ -30,7 +30,11 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** 新規プレイヤーを登録する (gateway が Firebase UID を中継) */
+        /**
+         * 新規プレイヤーを登録する (gateway が Firebase UID を中継)
+         * @description 表示名はオンボード内 name 入力ステップで PUT /api/v1/account/me/name 経由で確定するため、
+         *     Register 時には受け取らない。
+         */
         post: operations["registerPlayer"];
         delete?: never;
         options?: never;
@@ -81,7 +85,11 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** 対戦終了後に両プレイヤーへ経験値を付与する (battle → account) */
+        /**
+         * 対戦終了後に両プレイヤーへ経験値を付与する (battle → account)
+         * @description body に両 player_id を含むサーバー間バッチ呼び出し。JWT sub では表現できないため
+         *     bootstrap 系と同様に認証なし (/internal 配下)。
+         */
         post: operations["awardGameExp"];
         delete?: never;
         options?: never;
@@ -132,7 +140,11 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** オンボード内 name 入力ステップで scenario が呼ぶ表示名バリデーション (書き込みなし) */
+        /**
+         * オンボード内 name 入力ステップで scenario が呼ぶ表示名バリデーション (書き込みなし)
+         * @description バリデーション SSoT は account の internal/domain/name.go。
+         *     書き込みは onboarding-name-set subscriber が行う。
+         */
         post: operations["validateNameForOnboarding"];
         delete?: never;
         options?: never;
@@ -235,7 +247,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** 初期ファクション選択 (チュートリアル完了時に scenario が呼び出す) */
+        /**
+         * 初期ファクション選択 (チュートリアル完了時に scenario が呼び出す)
+         * @description 冪等。既に選択済みの場合は 409 を返すがクライアントにとってはエラーではない。
+         */
         post: operations["selectInitialFaction"];
         delete?: never;
         options?: never;
@@ -252,7 +267,11 @@ export interface paths {
         };
         /** プレイヤー設定を返す */
         get: operations["getPlayerSettings"];
-        /** プレイヤー設定を部分更新する */
+        /**
+         * プレイヤー設定を部分更新する
+         * @description Partial update semantics: nil フィールドは現状維持 (COALESCE in SQL)。
+         *     全 nil リクエストは 400 で弾く。
+         */
         put: operations["updatePlayerSettings"];
         post?: never;
         delete?: never;
@@ -269,9 +288,10 @@ export interface components {
             /** @example ok */
             status: string;
         };
-        /** @description PlayerView + computed level progress を JSON 化した、内部 REST 契約の唯一の
+        /**
+         * @description PlayerView + computed level progress を JSON 化した、内部 REST 契約の唯一の
          *     Player 表現。GET /api/v1/account/me とその親戚 endpoint が共通で返す。
-         *      */
+         */
         PlayerResponse: {
             player_id: string;
             firebase_uid: string;
@@ -316,7 +336,7 @@ export interface components {
             daily_battle_limit: number;
             can_battle: boolean;
         };
-        ListFactionsResponse: {
+        FactionListing: {
             factions: string[];
         };
         RegisterRequest: {
@@ -328,14 +348,14 @@ export interface components {
         UpdateNameRequest: {
             name: string;
         };
-        /** @description オンボード内 name 入力ステップで scenario が呼ぶ表示名バリデーション専用 DTO。
+        /**
+         * @description オンボード内 name 入力ステップで scenario が呼ぶ表示名バリデーション専用 DTO。
          *     値は永続化されない。書き込みは onboarding-name-set subscriber 経由。
-         *      */
+         */
         ValidateNameForOnboardingRequest: {
             name: string;
         };
-        /** @description ExpiresAtMillis は UNIX ミリ秒タイムスタンプ。null は NULL リセット。
-         *      */
+        /** @description ExpiresAtMillis は UNIX ミリ秒タイムスタンプ。null は NULL リセット。 */
         UpdatePremiumRequest: {
             is_premium: boolean;
             /** Format: int64 */
@@ -356,15 +376,17 @@ export interface components {
         FactionGrantRequest: {
             faction: string;
         };
-        /** @description Scenario calls this once the tutorial/story pins the player's faction choice;
+        /**
+         * @description Scenario calls this once the tutorial/story pins the player's faction choice;
          *     account UPSERTs player_factions with is_initial=TRUE in one tx.
-         *      */
+         */
         SelectInitialFactionRequest: {
             faction_id: string;
         };
-        /** @description Partial update: nil フィールドは現状維持 (COALESCE in SQL)。
+        /**
+         * @description Partial update: nil フィールドは現状維持 (COALESCE in SQL)。
          *     最低 1 つは non-nil である必要がある (handler 層で検証)。
-         *      */
+         */
         UpdateSettingsRequest: {
             language?: string;
             /** Format: int64 */
@@ -376,7 +398,6 @@ export interface components {
         /**
          * @description オンボーディング進捗。`internal/domain/onboarding_status.go` の定数群と完全一致。
          *     drift は enum_drift_test.go で検知する。
-         *
          * @enum {string}
          */
         OnboardingStatus: "not_started" | "name_set" | "faction_set" | "completed";
@@ -923,7 +944,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ListFactionsResponse"];
+                    "application/json": components["schemas"]["FactionListing"];
                 };
             };
             /** @description 認証失敗 */
