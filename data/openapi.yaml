@@ -100,6 +100,30 @@ paths:
         "500":
           description: DB 接続エラー
 
+  /internal/v1/players/{playerID}/factions:
+    get:
+      operationId: listPlayerFactions
+      summary: 指定プレイヤーの所持ファクション一覧を返す (card → account)
+      description: |
+        card がデッキ作成/編集時に宣言ファクションの所持を検証するためのサービス間ルックアップ。
+        player_id を path で受けるため bootstrap 系と同様に認証なし (/internal 配下)。
+      parameters:
+        - name: playerID
+          in: path
+          required: true
+          schema:
+            type: string
+          x-go-name: PlayerID
+      responses:
+        "200":
+          description: 所持ファクション一覧
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FactionListing"
+        "500":
+          description: DB 接続エラー
+
   /internal/v1/players/award-game-exp:
     post:
       operationId: awardGameExp

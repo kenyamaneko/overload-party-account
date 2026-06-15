@@ -71,3 +71,14 @@ func (h *FactionHandler) ListFactions(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, apiaccount.FactionListing{Factions: factions})
 }
+
+// ListPlayerFactions は path の player_id の所持ファクション一覧を返す (サービス間ルックアップ)。
+func (h *FactionHandler) ListPlayerFactions(c *gin.Context) {
+	playerID := c.Param("playerID")
+	factions, err := h.factionInteractor.ListFactions(c.Request.Context(), playerID)
+	if err != nil {
+		respondError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, apiaccount.FactionListing{Factions: factions})
+}
