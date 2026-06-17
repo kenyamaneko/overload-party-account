@@ -76,6 +76,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/internal/v1/players/{playerID}/factions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 指定プレイヤーの所持ファクション一覧を返す (card → account)
+         * @description card がデッキ作成/編集時に宣言ファクションの所持を検証するためのサービス間ルックアップ。
+         *     player_id を path で受けるため bootstrap 系と同様に認証なし (/internal 配下)。
+         */
+        get: operations["listPlayerFactions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/internal/v1/players/award-game-exp": {
         parameters: {
             query?: never;
@@ -553,6 +574,35 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description DB 接続エラー */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    listPlayerFactions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                playerID: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 所持ファクション一覧 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FactionListing"];
+                };
             };
             /** @description DB 接続エラー */
             500: {

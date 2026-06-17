@@ -339,6 +339,9 @@ type ClientInterface interface {
 	AwardGameExpWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	AwardGameExp(ctx context.Context, body AwardGameExpJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListPlayerFactions request
+	ListPlayerFactions(ctx context.Context, playerID string, reqEditors ...RequestEditorFn) (*http.Response, error)
 }
 
 func (c *Client) GetPlayer(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -655,6 +658,18 @@ func (c *Client) AwardGameExpWithBody(ctx context.Context, contentType string, b
 
 func (c *Client) AwardGameExp(ctx context.Context, body AwardGameExpJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewAwardGameExpRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ListPlayerFactions(ctx context.Context, playerID string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListPlayerFactionsRequest(c.Server, playerID)
 	if err != nil {
 		return nil, err
 	}
@@ -1261,6 +1276,40 @@ func NewAwardGameExpRequestWithBody(server string, contentType string, body io.R
 	return req, nil
 }
 
+// NewListPlayerFactionsRequest generates requests for ListPlayerFactions
+func NewListPlayerFactionsRequest(server string, playerID string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "playerID", playerID, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/internal/v1/players/%s/factions", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 func (c *Client) applyEditors(ctx context.Context, req *http.Request, additionalEditors []RequestEditorFn) error {
 	for _, r := range c.RequestEditors {
 		if err := r(ctx, req); err != nil {
@@ -1374,6 +1423,9 @@ type ClientWithResponsesInterface interface {
 	AwardGameExpWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*AwardGameExpResponse, error)
 
 	AwardGameExpWithResponse(ctx context.Context, body AwardGameExpJSONRequestBody, reqEditors ...RequestEditorFn) (*AwardGameExpResponse, error)
+
+	// ListPlayerFactionsWithResponse request
+	ListPlayerFactionsWithResponse(ctx context.Context, playerID string, reqEditors ...RequestEditorFn) (*ListPlayerFactionsResponse, error)
 }
 
 type GetPlayerResponse struct {
@@ -1879,6 +1931,36 @@ func (r AwardGameExpResponse) ContentType() string {
 	return ""
 }
 
+type ListPlayerFactionsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *FactionListing
+}
+
+// Status returns HTTPResponse.Status
+func (r ListPlayerFactionsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListPlayerFactionsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListPlayerFactionsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 // GetPlayerWithResponse request returning *GetPlayerResponse
 func (c *ClientWithResponses) GetPlayerWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetPlayerResponse, error) {
 	rsp, err := c.GetPlayer(ctx, reqEditors...)
@@ -2110,6 +2192,15 @@ func (c *ClientWithResponses) AwardGameExpWithResponse(ctx context.Context, body
 		return nil, err
 	}
 	return ParseAwardGameExpResponse(rsp)
+}
+
+// ListPlayerFactionsWithResponse request returning *ListPlayerFactionsResponse
+func (c *ClientWithResponses) ListPlayerFactionsWithResponse(ctx context.Context, playerID string, reqEditors ...RequestEditorFn) (*ListPlayerFactionsResponse, error) {
+	rsp, err := c.ListPlayerFactions(ctx, playerID, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListPlayerFactionsResponse(rsp)
 }
 
 // ParseGetPlayerResponse parses an HTTP response from a GetPlayerWithResponse call
@@ -2479,6 +2570,32 @@ func ParseAwardGameExpResponse(rsp *http.Response) (*AwardGameExpResponse, error
 	response := &AwardGameExpResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
+	}
+
+	return response, nil
+}
+
+// ParseListPlayerFactionsResponse parses an HTTP response from a ListPlayerFactionsWithResponse call
+func ParseListPlayerFactionsResponse(rsp *http.Response) (*ListPlayerFactionsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListPlayerFactionsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest FactionListing
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
 	}
 
 	return response, nil

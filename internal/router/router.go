@@ -40,6 +40,7 @@ func New(
 		internal.POST("/auth/login", authH.Login)
 		internal.GET("/auth/by-firebase-uid/:firebaseUID", authH.GetPlayerByFirebaseUID)
 
+		internal.GET("/players/:playerID/factions", factionH.ListPlayerFactions)
 		internal.POST("/players/award-game-exp", playerH.AwardGameExp)
 	}
 
