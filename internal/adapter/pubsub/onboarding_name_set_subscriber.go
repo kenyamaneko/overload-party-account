@@ -35,31 +35,31 @@ func (s *OnboardingNameSetSubscriber) Start(ctx context.Context) error {
 }
 
 func (s *OnboardingNameSetSubscriber) processEvent(ctx context.Context, data []byte) error {
-	var ev apiscenario.OnboardingNameSetEvent
-	if err := json.Unmarshal(data, &ev); err != nil {
+	var event apiscenario.OnboardingNameSetEvent
+	if err := json.Unmarshal(data, &event); err != nil {
 		slog.Error("onboarding-name-set subscriber: bad payload (nack)", "error", err)
 		return fmt.Errorf("onboarding-name-set: bad payload: %w", err)
 	}
-	if ev.EventType != apiscenario.EventTypeOnboardingNameSet {
+	if event.EventType != apiscenario.EventTypeOnboardingNameSet {
 		slog.Warn("onboarding-name-set subscriber: unknown event_type, acking",
-			"event_type", ev.EventType, "event_id", ev.EventID)
+			"event_type", event.EventType, "event_id", event.EventID)
 		return nil
 	}
-	if ev.PlayerID == "" || ev.Name == "" {
+	if event.PlayerID == "" || event.Name == "" {
 		slog.Error("onboarding-name-set subscriber: missing required field (nack)",
-			"event_id", ev.EventID, "player_id", ev.PlayerID, "name_empty", ev.Name == "")
+			"event_id", event.EventID, "player_id", event.PlayerID, "name_empty", event.Name == "")
 		return fmt.Errorf("onboarding-name-set: missing required field")
 	}
 
-	processed, err := s.applier.ApplyNameSet(ctx, ev.EventID, ev.EventType, ev.PlayerID, ev.Name)
+	processed, err := s.applier.ApplyNameSet(ctx, event.EventID, event.EventType, event.PlayerID, event.Name)
 	if err != nil {
 		if usecase.IsPublisherBug(err) {
 			slog.Error("onboarding-name-set subscriber: publisher bug",
-				"event_id", ev.EventID, "player_id", ev.PlayerID, "error", err)
+				"event_id", event.EventID, "player_id", event.PlayerID, "error", err)
 			return fmt.Errorf("onboarding-name-set: publisher bug: %w", err)
 		}
 		slog.Error("onboarding-name-set subscriber: apply failed",
-			"event_id", ev.EventID, "player_id", ev.PlayerID, "error", err)
+			"event_id", event.EventID, "player_id", event.PlayerID, "error", err)
 		return fmt.Errorf("onboarding-name-set: apply: %w", err)
 	}
 	if !processed {

@@ -50,11 +50,11 @@ func (s *FactionInteractor) SelectInitialFaction(ctx context.Context, playerID, 
 	}
 
 	return s.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
-		exists, err := s.playerRepo.Exists(txCtx, playerID)
+		isFound, err := s.playerRepo.Exists(txCtx, playerID)
 		if err != nil {
 			return fmt.Errorf("check player exists: %w", err)
 		}
-		if !exists {
+		if !isFound {
 			return fmt.Errorf("player %s: %w", playerID, port.ErrNotFound)
 		}
 		existing, err := s.factionRepo.GetInitialFaction(txCtx, playerID)

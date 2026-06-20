@@ -41,31 +41,31 @@ func (s *PremiumUpdatedSubscriber) Start(ctx context.Context) error {
 }
 
 func (s *PremiumUpdatedSubscriber) processEvent(ctx context.Context, data []byte) error {
-	var ev apishop.PremiumUpdatedEvent
-	if err := json.Unmarshal(data, &ev); err != nil {
+	var event apishop.PremiumUpdatedEvent
+	if err := json.Unmarshal(data, &event); err != nil {
 		slog.Error("premium-updated subscriber: bad payload (nack)", "error", err)
 		return fmt.Errorf("premium-updated: bad payload: %w", err)
 	}
-	if ev.EventType != apishop.EventTypePremiumUpdated {
-		slog.Warn("premium-updated subscriber: unknown event_type, acking", "event_type", ev.EventType)
+	if event.EventType != apishop.EventTypePremiumUpdated {
+		slog.Warn("premium-updated subscriber: unknown event_type, acking", "event_type", event.EventType)
 		return nil
 	}
 
 	if err := s.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
-		inserted, err := s.eventRepo.Insert(txCtx, ev.EventID, ev.EventType)
+		inserted, err := s.eventRepo.Insert(txCtx, event.EventID, event.EventType)
 		if err != nil {
 			return fmt.Errorf("insert processed_events: %w", err)
 		}
 		if !inserted {
 			return nil
 		}
-		if err := s.premiumRepo.UpdatePremium(txCtx, ev.PlayerID, ev.IsPremium, ev.PremiumExpiresAt); err != nil {
+		if err := s.premiumRepo.UpdatePremium(txCtx, event.PlayerID, event.IsPremium, event.PremiumExpiresAt); err != nil {
 			return fmt.Errorf("update premium: %w", err)
 		}
 		return nil
 	}); err != nil {
 		slog.Error("premium-updated subscriber: handler failed",
-			"event_id", ev.EventID, "player_id", ev.PlayerID, "error", err)
+			"event_id", event.EventID, "player_id", event.PlayerID, "error", err)
 		return fmt.Errorf("premium-updated: handler failed: %w", err)
 	}
 	return nil
