@@ -86,7 +86,7 @@ func (c *Client) GetHealth(ctx context.Context) (*apiaccount.HealthResponse, err
 	if resp.JSON200 != nil {
 		return resp.JSON200, nil
 	}
-	return nil, statusError("GetHealth", resp.StatusCode())
+	return nil, newStatusError("GetHealth", resp.StatusCode())
 }
 
 // RegisterPlayer は新規プレイヤーを登録する。spec は 201 Created を返す。
@@ -98,7 +98,7 @@ func (c *Client) RegisterPlayer(ctx context.Context, req apiaccount.RegisterRequ
 	if resp.JSON201 != nil {
 		return resp.JSON201, nil
 	}
-	return nil, statusError("RegisterPlayer", resp.StatusCode())
+	return nil, newStatusError("RegisterPlayer", resp.StatusCode())
 }
 
 // LoginPlayer は既存プレイヤーをログインさせる。
@@ -110,7 +110,7 @@ func (c *Client) LoginPlayer(ctx context.Context, req apiaccount.LoginRequest) (
 	if resp.JSON200 != nil {
 		return resp.JSON200, nil
 	}
-	return nil, statusError("LoginPlayer", resp.StatusCode())
+	return nil, newStatusError("LoginPlayer", resp.StatusCode())
 }
 
 // GetPlayerByFirebaseUID は Firebase UID で player を引く。
@@ -122,7 +122,7 @@ func (c *Client) GetPlayerByFirebaseUID(ctx context.Context, firebaseUID string)
 	if resp.JSON200 != nil {
 		return resp.JSON200, nil
 	}
-	return nil, statusError("GetPlayerByFirebaseUID", resp.StatusCode())
+	return nil, newStatusError("GetPlayerByFirebaseUID", resp.StatusCode())
 }
 
 // AwardGameExp はゲーム結果に基づき player に exp を付与する。spec は 204 を返す。
@@ -134,7 +134,7 @@ func (c *Client) AwardGameExp(ctx context.Context, req apiaccount.AwardGameExpRe
 	if resp.StatusCode() == http.StatusNoContent {
 		return nil
 	}
-	return statusError("AwardGameExp", resp.StatusCode())
+	return newStatusError("AwardGameExp", resp.StatusCode())
 }
 
 // GetPlayer は呼出元 player 自身の情報を返す (X-Internal-Auth の sub から解決)。
@@ -146,7 +146,7 @@ func (c *Client) GetPlayer(ctx context.Context) (*apiaccount.PlayerResponse, err
 	if resp.JSON200 != nil {
 		return resp.JSON200, nil
 	}
-	return nil, statusError("GetPlayer", resp.StatusCode())
+	return nil, newStatusError("GetPlayer", resp.StatusCode())
 }
 
 // UpdateName は player 表示名を更新する。
@@ -158,7 +158,7 @@ func (c *Client) UpdateName(ctx context.Context, req apiaccount.UpdateNameReques
 	if resp.JSON200 != nil {
 		return resp.JSON200, nil
 	}
-	return nil, statusError("UpdateName", resp.StatusCode())
+	return nil, newStatusError("UpdateName", resp.StatusCode())
 }
 
 // ValidateNameForOnboarding は表示名のバリデーションを問い合わせる (書き込みなし)。spec は 204 を返す。
@@ -170,7 +170,7 @@ func (c *Client) ValidateNameForOnboarding(ctx context.Context, req apiaccount.V
 	if resp.StatusCode() == http.StatusNoContent {
 		return nil
 	}
-	return statusError("ValidateNameForOnboarding", resp.StatusCode())
+	return newStatusError("ValidateNameForOnboarding", resp.StatusCode())
 }
 
 // GetBattleLimit は 1 日のバトル回数制限と残り回数を返す。
@@ -182,7 +182,7 @@ func (c *Client) GetBattleLimit(ctx context.Context) (*apiaccount.BattleLimitRes
 	if resp.JSON200 != nil {
 		return resp.JSON200, nil
 	}
-	return nil, statusError("GetBattleLimit", resp.StatusCode())
+	return nil, newStatusError("GetBattleLimit", resp.StatusCode())
 }
 
 // IncrementBattleCount は当日のバトルカウントをインクリメントする。spec は 204 を返す。
@@ -194,7 +194,7 @@ func (c *Client) IncrementBattleCount(ctx context.Context) error {
 	if resp.StatusCode() == http.StatusNoContent {
 		return nil
 	}
-	return statusError("IncrementBattleCount", resp.StatusCode())
+	return newStatusError("IncrementBattleCount", resp.StatusCode())
 }
 
 // UpdatePremium は player の premium 状態を更新する。spec は 204 を返す。
@@ -206,7 +206,7 @@ func (c *Client) UpdatePremium(ctx context.Context, req apiaccount.UpdatePremium
 	if resp.StatusCode() == http.StatusNoContent {
 		return nil
 	}
-	return statusError("UpdatePremium", resp.StatusCode())
+	return newStatusError("UpdatePremium", resp.StatusCode())
 }
 
 // AddExp は exp を加算する (主に dev 用)。spec は 204 を返す。
@@ -218,7 +218,7 @@ func (c *Client) AddExp(ctx context.Context, req apiaccount.AddExpRequest) error
 	if resp.StatusCode() == http.StatusNoContent {
 		return nil
 	}
-	return statusError("AddExp", resp.StatusCode())
+	return newStatusError("AddExp", resp.StatusCode())
 }
 
 // ListFactions は player が所有する faction 一覧を返す。
@@ -230,7 +230,7 @@ func (c *Client) ListFactions(ctx context.Context) (*apiaccount.FactionListing, 
 	if resp.JSON200 != nil {
 		return resp.JSON200, nil
 	}
-	return nil, statusError("ListFactions", resp.StatusCode())
+	return nil, newStatusError("ListFactions", resp.StatusCode())
 }
 
 // GrantFaction は faction を player に付与する。spec は 204 を返す。
@@ -242,7 +242,7 @@ func (c *Client) GrantFaction(ctx context.Context, req apiaccount.FactionGrantRe
 	if resp.StatusCode() == http.StatusNoContent {
 		return nil
 	}
-	return statusError("GrantFaction", resp.StatusCode())
+	return newStatusError("GrantFaction", resp.StatusCode())
 }
 
 // SelectInitialFaction はオンボーディングで初期 faction を選択する。spec は 200 を返す。
@@ -254,7 +254,7 @@ func (c *Client) SelectInitialFaction(ctx context.Context, req apiaccount.Select
 	if resp.StatusCode() == http.StatusOK {
 		return nil
 	}
-	return statusError("SelectInitialFaction", resp.StatusCode())
+	return newStatusError("SelectInitialFaction", resp.StatusCode())
 }
 
 // GetPlayerSettings は player の設定値を返す。
@@ -266,7 +266,7 @@ func (c *Client) GetPlayerSettings(ctx context.Context) (*apiaccount.PlayerSetti
 	if resp.JSON200 != nil {
 		return resp.JSON200, nil
 	}
-	return nil, statusError("GetPlayerSettings", resp.StatusCode())
+	return nil, newStatusError("GetPlayerSettings", resp.StatusCode())
 }
 
 // UpdatePlayerSettings は player の設定値を更新する。
@@ -278,11 +278,11 @@ func (c *Client) UpdatePlayerSettings(ctx context.Context, req apiaccount.Update
 	if resp.JSON200 != nil {
 		return resp.JSON200, nil
 	}
-	return nil, statusError("UpdatePlayerSettings", resp.StatusCode())
+	return nil, newStatusError("UpdatePlayerSettings", resp.StatusCode())
 }
 
-// statusError は HTTP status code を sentinel error (errors.Is 分岐可能) に変換する。
-func statusError(op string, code int) error {
+// newStatusError は HTTP status code を sentinel error (errors.Is 分岐可能) に変換する。
+func newStatusError(op string, code int) error {
 	var sentinel error
 	switch {
 	case code == http.StatusUnauthorized:

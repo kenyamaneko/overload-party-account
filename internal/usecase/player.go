@@ -87,11 +87,11 @@ func (s *PlayerInteractor) UpdateName(ctx context.Context, playerID string, name
 // ValidateNameForOnboarding は表示名のバリデーションのみを行う。書き込みはしない。
 // scenario が onboarding-name-set publish 前に呼んで 4xx を同期にユーザーへ返すための専用エントリ。
 func (s *PlayerInteractor) ValidateNameForOnboarding(ctx context.Context, playerID, name string) error {
-	exists, err := s.playerRepo.Exists(ctx, playerID)
+	isFound, err := s.playerRepo.Exists(ctx, playerID)
 	if err != nil {
 		return fmt.Errorf("check player exists: %w", err)
 	}
-	if !exists {
+	if !isFound {
 		return fmt.Errorf("player %s: %w", playerID, port.ErrNotFound)
 	}
 	return domain.ValidateName(name)
@@ -106,7 +106,7 @@ func (s *PlayerInteractor) GetBattleLimit(ctx context.Context, playerID string) 
 		return nil, fmt.Errorf("find player: %w", err)
 	}
 
-	today := currentGameDay()
+	today := computeCurrentGameDay()
 	db, err := s.battleRepo.GetDailyBattle(ctx, playerID, today)
 	if err != nil {
 		return nil, fmt.Errorf("get daily battle: %w", err)
@@ -147,7 +147,7 @@ func (s *PlayerInteractor) IncrementBattleCount(ctx context.Context, playerID st
 	if err != nil {
 		return fmt.Errorf("find player: %w", err)
 	}
-	today := currentGameDay()
+	today := computeCurrentGameDay()
 
 	if err := s.ensureWithinFreeBattleLimit(ctx, player, today); err != nil {
 		return err
@@ -270,6 +270,7 @@ func (s *PlayerInteractor) GetPlayerResponse(ctx context.Context, playerID strin
 	return presenter.BuildPlayerResponse(view, coeff)
 }
 
-func currentGameDay() civil.Date {
+// computeCurrentGameDay はゲーム日境界オフセットを適用した現在のゲーム内日付を返す。
+func computeCurrentGameDay() civil.Date {
 	return civil.DateOf(time.Now().UTC().Add(gameDayOffset))
 }

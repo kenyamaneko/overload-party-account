@@ -35,31 +35,31 @@ func (s *PlayerOnboardedSubscriber) Start(ctx context.Context) error {
 }
 
 func (s *PlayerOnboardedSubscriber) processEvent(ctx context.Context, data []byte) error {
-	var ev apiscenario.PlayerOnboardedEvent
-	if err := json.Unmarshal(data, &ev); err != nil {
+	var event apiscenario.PlayerOnboardedEvent
+	if err := json.Unmarshal(data, &event); err != nil {
 		slog.Error("player-onboarded subscriber: bad payload (nack)", "error", err)
 		return fmt.Errorf("player-onboarded: bad payload: %w", err)
 	}
-	if ev.EventType != apiscenario.EventTypePlayerOnboarded {
+	if event.EventType != apiscenario.EventTypePlayerOnboarded {
 		slog.Warn("player-onboarded subscriber: unknown event_type, acking",
-			"event_type", ev.EventType, "event_id", ev.EventID)
+			"event_type", event.EventType, "event_id", event.EventID)
 		return nil
 	}
-	if ev.PlayerID == "" {
+	if event.PlayerID == "" {
 		slog.Error("player-onboarded subscriber: missing player_id (nack)",
-			"event_id", ev.EventID)
+			"event_id", event.EventID)
 		return fmt.Errorf("player-onboarded: missing player_id")
 	}
 
-	processed, err := s.applier.ApplyCompleted(ctx, ev.EventID, ev.EventType, ev.PlayerID)
+	processed, err := s.applier.ApplyCompleted(ctx, event.EventID, event.EventType, event.PlayerID)
 	if err != nil {
 		if usecase.IsPublisherBug(err) {
 			slog.Error("player-onboarded subscriber: publisher bug",
-				"event_id", ev.EventID, "player_id", ev.PlayerID, "error", err)
+				"event_id", event.EventID, "player_id", event.PlayerID, "error", err)
 			return fmt.Errorf("player-onboarded: publisher bug: %w", err)
 		}
 		slog.Error("player-onboarded subscriber: apply failed",
-			"event_id", ev.EventID, "player_id", ev.PlayerID, "error", err)
+			"event_id", event.EventID, "player_id", event.PlayerID, "error", err)
 		return fmt.Errorf("player-onboarded: apply: %w", err)
 	}
 	if !processed {

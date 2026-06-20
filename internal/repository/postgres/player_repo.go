@@ -125,26 +125,26 @@ func (r *PlayerRepository) FindByFirebaseUID(ctx context.Context, firebaseUID st
 
 // Exists は player_id に対応する行の存在のみを確認する。
 func (r *PlayerRepository) Exists(ctx context.Context, playerID string) (bool, error) {
-	var exists bool
+	var isFound bool
 	if err := connFrom(ctx, r.pool).QueryRow(ctx,
 		`SELECT EXISTS(SELECT 1 FROM account.players WHERE player_id = $1)`,
 		playerID,
-	).Scan(&exists); err != nil {
+	).Scan(&isFound); err != nil {
 		return false, fmt.Errorf("check player exists: %w", err)
 	}
-	return exists, nil
+	return isFound, nil
 }
 
 // ExistsByFirebaseUID は firebase_uid に対応する行の存在のみを確認する。
 func (r *PlayerRepository) ExistsByFirebaseUID(ctx context.Context, firebaseUID string) (bool, error) {
-	var exists bool
+	var isFound bool
 	if err := connFrom(ctx, r.pool).QueryRow(ctx,
 		`SELECT EXISTS(SELECT 1 FROM account.players WHERE firebase_uid = $1)`,
 		firebaseUID,
-	).Scan(&exists); err != nil {
+	).Scan(&isFound); err != nil {
 		return false, fmt.Errorf("check player exists by firebase_uid: %w", err)
 	}
-	return exists, nil
+	return isFound, nil
 }
 
 // GetDailyBattle は (player_id, gameDate) の行を返す。該当なしは (nil, nil)。

@@ -12,9 +12,9 @@ import (
 	"github.com/kenyamaneko/overload-party-account/internal/usecase"
 )
 
-// errorStatus はドメインエラーを HTTP ステータスコードに変換する。
+// toHTTPStatus はドメインエラーを HTTP ステータスコードに変換する。
 // 該当なしは 500 にフォールバックしクライアントのリトライを促す。
-func errorStatus(err error) int {
+func toHTTPStatus(err error) int {
 	switch {
 	case isNotFound(err):
 		return http.StatusNotFound
@@ -32,7 +32,7 @@ func errorStatus(err error) int {
 // respondError は Gin context に統一フォーマットの JSON エラーを書き込む。
 // 5xx はクライアントに実体を伝搬できないため ops 可視性のために構造化ログに記録する。
 func respondError(c *gin.Context, err error) {
-	status := errorStatus(err)
+	status := toHTTPStatus(err)
 	if status >= http.StatusInternalServerError {
 		slog.ErrorContext(c.Request.Context(), "handler internal error",
 			"method", c.Request.Method,
