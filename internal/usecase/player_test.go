@@ -136,7 +136,7 @@ func TestGetBattleLimit(t *testing.T) {
 }
 
 // IncrementBattleCount の正常系仕様:
-//   - 当日 (currentGameDay) の行が無ければ count=1 で発生
+//   - 当日 (computeCurrentGameDay) の行が無ければ count=1 で発生
 //   - 当日の行があれば +1 加算
 //   - 別ゲーム日の履歴は当日カウントに影響しない (UPSERT が日単位で独立)
 //   - free プレイヤーはインクリメント後のカウントが上限内なら通る

@@ -19,7 +19,7 @@ import (
 // error status を取り上げ、errors.Is で意図した sentinel に一致することを確認する。
 //
 // account は 18 endpoint と多いため、各 endpoint で代表 status 1-3 件を検証する。
-// statusError の switch logic は共通実装で各 endpoint test が交差カバーする。
+// newStatusError の switch logic は共通実装で各 endpoint test が交差カバーする。
 
 func TestClient_RegisterPlayer_StatusMapping(t *testing.T) {
 	cases := []struct {
