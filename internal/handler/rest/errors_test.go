@@ -44,6 +44,7 @@ func newContractEngine(playerID string) *gin.Engine {
 	return r
 }
 
+// TestHandlerErrorStatusContract は実 HTTP 経路でエラー種別が期待ステータスへ写像される契約を検証する。
 func TestHandlerErrorStatusContract(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
