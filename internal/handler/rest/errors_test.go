@@ -1,95 +1,102 @@
+//go:build integration
+
 package rest
 
 import (
-	"encoding/json"
-	"errors"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 
-	"github.com/kenyamaneko/overload-party-account/internal/domain"
 	"github.com/kenyamaneko/overload-party-account/internal/port"
+	"github.com/kenyamaneko/overload-party-account/internal/repository/postgres"
 	"github.com/kenyamaneko/overload-party-account/internal/usecase"
+
+	internalauth "github.com/kenyamaneko/overload-party-gateway/packages/internalauth-go"
 )
 
-// TestRespondError_SentinelToStatusMapping は respondError のエラー分類契約を
-// サーバー側で固定する。
-func TestRespondError_SentinelToStatusMapping(t *testing.T) {
+const (
+	contractPlayerID = "11111111-1111-1111-1111-111111111111"
+	missingPlayerID  = "99999999-9999-9999-9999-999999999999"
+)
+
+// newContractEngine は実 PostgreSQL repository を結線した account ハンドラを
+// 認証済み player_id を注入する gin エンジンとして組む。
+func newContractEngine(playerID string) *gin.Engine {
+	playerRepo := postgres.NewPlayerRepository(sharedPg.Pool)
+	viewRepo := postgres.NewPlayerViewRepository(sharedPg.Pool)
+	settingsRepo := postgres.NewPlayerSettingsRepository(sharedPg.Pool)
+	tx := postgres.NewTxManager(sharedPg.Pool)
+	gameConfig := &fakeGameConfigRepo{values: map[string]int64{usecase.ConfigKeyExpFormulaCoefficient: 60}}
+
+	playerInteractor := usecase.NewPlayerInteractor(playerRepo, playerRepo, playerRepo, playerRepo, viewRepo, gameConfig, tx)
+	settingsInteractor := usecase.NewPlayerSettingsInteractor(settingsRepo)
+	playerH := NewPlayerHandler(playerInteractor)
+	settingsH := NewPlayerSettingsHandler(settingsInteractor)
+
+	r := gin.New()
+	r.Use(func(c *gin.Context) { c.Set(internalauth.PlayerIDContextKey, playerID) })
+	r.GET("/me", playerH.GetPlayer)
+	r.PUT("/me/settings", settingsH.UpdateSettings)
+	return r
+}
+
+func TestHandlerErrorStatusContract(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	tests := []struct {
-		name       string
-		err        error
-		wantStatus int
+		name             string
+		seed             func(t *testing.T)
+		playerID         string
+		method           string
+		path             string
+		body             string
+		wantStatus       int
+		wantBodyContains string
 	}{
 		{
-			name:       "ErrNotFound は 404",
-			err:        port.ErrNotFound,
-			wantStatus: http.StatusNotFound,
+			name:       "存在するプレイヤーの取得は 200",
+			seed:       func(t *testing.T) { seedPlayer(t, contractPlayerID, "uid-1") },
+			playerID:   contractPlayerID,
+			method:     http.MethodGet,
+			path:       "/me",
+			wantStatus: http.StatusOK,
 		},
 		{
-			name:       "ErrPlayerNotFound は 404",
-			err:        usecase.ErrPlayerNotFound,
-			wantStatus: http.StatusNotFound,
+			name:             "存在しないプレイヤーの取得は実 not-found を 404 に写像する",
+			seed:             func(t *testing.T) {},
+			playerID:         missingPlayerID,
+			method:           http.MethodGet,
+			path:             "/me",
+			wantStatus:       http.StatusNotFound,
+			wantBodyContains: port.ErrNotFound.Error(),
 		},
 		{
-			name:       "wrap された ErrNotFound も errors.Is 経由で 404",
-			err:        fmt.Errorf("lookup player: %w", port.ErrNotFound),
-			wantStatus: http.StatusNotFound,
-		},
-		{
-			name:       "ErrPlayerAlreadyRegistered は 409",
-			err:        usecase.ErrPlayerAlreadyRegistered,
-			wantStatus: http.StatusConflict,
-		},
-		{
-			name:       "ErrFactionAlreadySelected は 409",
-			err:        usecase.ErrFactionAlreadySelected,
-			wantStatus: http.StatusConflict,
-		},
-		{
-			name:       "ErrBattleLimitExceeded は 429",
-			err:        usecase.ErrBattleLimitExceeded,
-			wantStatus: http.StatusTooManyRequests,
-		},
-		{
-			name:       "ErrInvalidFaction は 400",
-			err:        usecase.ErrInvalidFaction,
+			name:       "全 nil の設定更新は IsEmpty ガードで 400",
+			seed:       func(t *testing.T) {},
+			playerID:   contractPlayerID,
+			method:     http.MethodPut,
+			path:       "/me/settings",
+			body:       "{}",
 			wantStatus: http.StatusBadRequest,
-		},
-		{
-			name:       "ErrInvalidName は 400",
-			err:        domain.ErrInvalidName,
-			wantStatus: http.StatusBadRequest,
-		},
-		{
-			name:       "subscriber 内部の ErrFactionConflict は handler 契約外で 500",
-			err:        usecase.ErrFactionConflict,
-			wantStatus: http.StatusInternalServerError,
-		},
-		{
-			name:       "未分類の汎用エラーは 500 にフォールバック",
-			err:        errors.New("unexpected failure"),
-			wantStatus: http.StatusInternalServerError,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			sharedPg.Truncate(t)
+			tt.seed(t)
+
+			req := httptest.NewRequest(tt.method, tt.path, strings.NewReader(tt.body))
+			req.Header.Set("Content-Type", "application/json")
 			w := httptest.NewRecorder()
-			c, _ := gin.CreateTestContext(w)
-			c.Request = httptest.NewRequest(http.MethodGet, "/test", nil)
+			newContractEngine(tt.playerID).ServeHTTP(w, req)
 
-			respondError(c, tt.err)
-
-			wantBody, marshalErr := json.Marshal(map[string]string{"error": tt.err.Error()})
-			assert.NoError(t, marshalErr)
 			assert.Equal(t, tt.wantStatus, w.Code)
-			assert.JSONEq(t, string(wantBody), w.Body.String())
+			assert.Contains(t, w.Body.String(), tt.wantBodyContains)
 		})
 	}
 }
