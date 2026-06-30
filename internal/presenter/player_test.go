@@ -39,9 +39,11 @@ func TestBuildPlayerResponse(t *testing.T) {
 		Exp:            500,
 		InitialFaction: &faction,
 	}
-	const coeff = int64(100)
-	wantProgress, err := domain.ComputeExpProgress(view.Level, view.Exp, coeff)
-	assert.NoError(t, err)
+	const (
+		coeff                = int64(100)
+		wantLevelExpCurrent  = int64(100)
+		wantLevelExpRequired = int64(500)
+	)
 
 	got, err := presenter.BuildPlayerResponse(view, coeff)
 	assert.NoError(t, err)
@@ -58,8 +60,8 @@ func TestBuildPlayerResponse(t *testing.T) {
 	assert.Equal(t, apiaccount.OnboardingStatus(domain.OnboardingStatusCompleted), got.OnboardingStatus)
 	assert.Equal(t, created, got.CreatedAt)
 	assert.Equal(t, updated, got.UpdatedAt)
-	assert.Equal(t, wantProgress.LevelExpCurrent, got.LevelExpCurrent)
-	assert.Equal(t, wantProgress.LevelExpRequired, got.LevelExpRequired)
+	assert.Equal(t, wantLevelExpCurrent, got.LevelExpCurrent)
+	assert.Equal(t, wantLevelExpRequired, got.LevelExpRequired)
 }
 
 func TestBuildPlayerSettingsResponse(t *testing.T) {
