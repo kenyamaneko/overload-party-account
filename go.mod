@@ -8,7 +8,7 @@ require (
 	cloud.google.com/go/pubsub/v2 v2.0.0
 	github.com/gin-gonic/gin v1.11.0
 	github.com/google/uuid v1.6.0
-	github.com/jackc/pgx/v5 v5.9.0
+	github.com/jackc/pgx/v5 v5.9.2
 	github.com/kenyamaneko/overload-party-account/packages/api-account v0.0.0
 	github.com/kenyamaneko/overload-party-battle/packages/game-logic-constants-go v0.1.0
 	github.com/kenyamaneko/overload-party-common/packages/game-design-constants v0.1.0
