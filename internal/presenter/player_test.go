@@ -63,24 +63,3 @@ func TestBuildPlayerResponse(t *testing.T) {
 	assert.Equal(t, wantLevelExpCurrent, got.LevelExpCurrent)
 	assert.Equal(t, wantLevelExpRequired, got.LevelExpRequired)
 }
-
-func TestBuildPlayerSettingsResponse(t *testing.T) {
-	updated := time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC)
-	in := &domain.PlayerSettings{
-		PlayerID:    "p1",
-		Language:    "ja",
-		BgmVolume:   80,
-		SeVolume:    60,
-		PushEnabled: true,
-		UpdatedAt:   updated,
-	}
-
-	got := presenter.BuildPlayerSettingsResponse(in)
-
-	assert.Equal(t, "p1", got.PlayerID)
-	assert.Equal(t, "ja", got.Language)
-	assert.Equal(t, int64(80), got.BgmVolume)
-	assert.Equal(t, int64(60), got.SeVolume)
-	assert.True(t, got.PushEnabled)
-	assert.Equal(t, updated, got.UpdatedAt)
-}

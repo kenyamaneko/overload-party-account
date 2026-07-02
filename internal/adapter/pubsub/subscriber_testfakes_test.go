@@ -35,8 +35,7 @@ func (fakeTxRunner) RunInTx(ctx context.Context, fn func(context.Context) error)
 // Insert は同一 event_id で 2 回目に false を返し、subscriber の idempotent ack
 // 経路を検証できるようにする。
 type fakeProcessedEventRepo struct {
-	seen    map[string]string // event_id -> event_type
-	insertN int
+	seen map[string]string // event_id -> event_type
 	// insertErr を設定すると Insert が常にこのエラーを返す (DB 障害の再現)。
 	insertErr error
 }
@@ -46,7 +45,6 @@ func newFakeProcessedEventRepo() *fakeProcessedEventRepo {
 }
 
 func (r *fakeProcessedEventRepo) Insert(_ context.Context, eventID, eventType string) (bool, error) {
-	r.insertN++
 	if r.insertErr != nil {
 		return false, r.insertErr
 	}
