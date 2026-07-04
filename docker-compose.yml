@@ -1,19 +1,4 @@
-# account のローカル開発スタック。
-#
-# インフラ (Postgres / Firestore / Pub/Sub emulator) はホストへ publish せず、
-# compose 内部ネットワークのサービス名 DNS で参照する。ホストへ出すのは account
-# 自身の API ポート 9005 のみで、ホストのポート空間には他リポと衝突しうる番号を出さない。
-#
-# アプリはコンテナ内で `go run` し、ソースを bind-mount する。ソースを編集して
-# `account` コンテナを再起動すれば、イメージを作り直さずに最新コードが反映される。
-# private module は host の module cache (make run が go env GOMODCACHE を渡す) を
-# 読み取り専用でマウントして解決するため、コンテナ内での fetch もトークンも要らない。
-#
-# game_config の seed は common が持つ SSoT の yaml を ops の seed ツールで流し込む。
-# このため account 単体起動でも overload-party-ops / overload-party-common を
-# 兄弟ディレクトリに checkout している必要がある。
-#
-# 起動: make run
+# account のローカル開発スタック。構成と使い方は README「ローカル開発」を参照。
 name: overload-party-account
 
 # 購読 subscription 名は account 本体と pubsub-init の双方が参照するため、ここで一度だけ定義する。
