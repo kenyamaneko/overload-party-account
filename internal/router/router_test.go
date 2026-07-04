@@ -25,16 +25,6 @@ func init() {
 	gin.SetMode(gin.TestMode)
 }
 
-// fakeRouterVerifier は router 単体テスト用の internalauth.Verifier 最小 fake。
-type fakeRouterVerifier struct {
-	playerID string
-	err      error
-}
-
-func (f fakeRouterVerifier) Verify(string) (string, error) {
-	return f.playerID, f.err
-}
-
 // stubPlayerRepo は「未登録の firebase_uid」「存在するプレイヤー」を返す port.PlayerRepo スタブ。
 type stubPlayerRepo struct{}
 
@@ -203,7 +193,8 @@ func newTestRouter(verifier internalauth.Verifier) *gin.Engine {
 
 // /health は auth middleware を通らず常に 200 を返す。
 func TestNew_HealthEndpoint(t *testing.T) {
-	r := newTestRouter(fakeRouterVerifier{})
+	// VerifyFn 未設定: /health が verifier に到達しないことの検出を兼ねる
+	r := newTestRouter(&internalauth.MockVerifier{})
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/health", nil))
 	assert.Equal(t, http.StatusOK, w.Code)
@@ -252,7 +243,8 @@ func TestNew_InternalRoutesAreAuthFree(t *testing.T) {
 		},
 	}
 
-	r := newTestRouter(fakeRouterVerifier{})
+	// VerifyFn 未設定: auth-free ルートが verifier に到達しないことの検出を兼ねる
+	r := newTestRouter(&internalauth.MockVerifier{})
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			w := httptest.NewRecorder()
@@ -267,7 +259,8 @@ func TestNew_InternalRoutesAreAuthFree(t *testing.T) {
 // /api/v1/account 配下は auth middleware を通る。
 // header 欠落時は 401 を返し、handler に到達しないことを確認する。
 func TestNew_ApiRouteRequiresInternalAuth(t *testing.T) {
-	r := newTestRouter(fakeRouterVerifier{playerID: "TST-PLAYER-1"})
+	// VerifyFn 未設定: header 欠落時は middleware が verifier に到達しないことの検出を兼ねる
+	r := newTestRouter(&internalauth.MockVerifier{})
 
 	cases := []struct {
 		name   string
@@ -290,7 +283,9 @@ func TestNew_ApiRouteRequiresInternalAuth(t *testing.T) {
 
 // verifier が error を返すと 401 を返し handler に到達しない。
 func TestNew_ApiRouteRejectsVerifierError(t *testing.T) {
-	r := newTestRouter(fakeRouterVerifier{err: errors.New("invalid token")})
+	r := newTestRouter(&internalauth.MockVerifier{
+		VerifyFn: func(string) (string, error) { return "", errors.New("invalid token") },
+	})
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/account/me", nil)
 	req.Header.Set(internalauth.HeaderName, "any.token")
@@ -299,7 +294,9 @@ func TestNew_ApiRouteRejectsVerifierError(t *testing.T) {
 }
 
 func TestNew_ApiRouteWithValidTokenReachesHandler(t *testing.T) {
-	r := newTestRouter(fakeRouterVerifier{playerID: "TST-PLAYER-1"})
+	r := newTestRouter(&internalauth.MockVerifier{
+		VerifyFn: func(string) (string, error) { return "TST-PLAYER-1", nil },
+	})
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/account/me", nil)
 	req.Header.Set(internalauth.HeaderName, "any.token")

@@ -158,6 +158,8 @@ github.com/kenyamaneko/overload-party-common/packages/game-design-constants v0.1
 github.com/kenyamaneko/overload-party-common/packages/game-design-constants v0.1.0/go.mod h1:4z5Ry1Y8LZQM4OKqLivo/OhVefKloLZP2vUDQ1Yo0UI=
 github.com/kenyamaneko/overload-party-gateway/packages/internalauth-go v0.1.0 h1:jelOrekonalPLzxfa2lxhQom/2HIQUZjBwlmnpieDfA=
 github.com/kenyamaneko/overload-party-gateway/packages/internalauth-go v0.1.0/go.mod h1:vaJLbLIlD3ysKZmTMaLGSHXwLCNvvbe684QzX9O1200=
+github.com/kenyamaneko/overload-party-gateway/packages/internalauth-go v0.1.3 h1:UV09OVOxHhJy59WAsPVIDiYxEf2XiyrQ8sHzmkPjon4=
+github.com/kenyamaneko/overload-party-gateway/packages/internalauth-go v0.1.3/go.mod h1:vaJLbLIlD3ysKZmTMaLGSHXwLCNvvbe684QzX9O1200=
 github.com/kenyamaneko/overload-party-scenario/packages/api-scenario v0.3.0 h1:+YFGW2nJD43VEs4jUXsFhxKi4SqdwaP47L93NtD6Tpc=
 github.com/kenyamaneko/overload-party-scenario/packages/api-scenario v0.3.0/go.mod h1:AauRTtb5HBZSMgEDGKH1xej12CFznB22RQPxK+rhSNA=
 github.com/kenyamaneko/overload-party-shop/packages/api-shop v1.0.0 h1:m+jQuwDPTgINnRCFTJi2sgdOZPkcv0X+TEsoEJLwPyk=
