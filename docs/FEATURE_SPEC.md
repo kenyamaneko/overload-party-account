@@ -271,7 +271,7 @@ subscription: `onboarding-faction-set-account-sub`
 
 subscription: `player-onboarded-account-sub`
 
-- publisher: scenario のみ（オンボーディングシナリオ読了時に transactional outbox 経由で publish、[ADR-021](../../overload-party-common/docs/adr/021-onboarding-scenario.md) §5.1、ADR-022 で 1 イベント設計に縮退）
+- publisher: scenario のみ（オンボーディングシナリオ読了時に transactional outbox 経由で publish、[ADR-021](../../overload-party-common/docs/adr/021-onboarding-scenario.md)、ADR-022 で 1 イベント設計に縮退）
 - 副作用: `players.onboarding_status='completed'` への遷移のみ
 - 表示名 (`players.name`) は本経路では扱わない (入力時点で先行する `onboarding-name-set` subscriber が確定する設計)
 - initial faction の永続化は先行する `onboarding-faction-set` subscriber (「`onboarding-faction-set`」、[ARCHITECTURE.md](ARCHITECTURE.md) の「onboarding-faction-set subscriber」) が完了している前提
