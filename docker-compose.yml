@@ -1,6 +1,13 @@
-# ローカル動作確認用の PostgreSQL。
-# テストでは Testcontainers が別途コンテナを起動するため、
-# 本 compose はあくまで `make run` (cmd/server) のローカル動作確認用。
+# account のローカル開発スタック。構成と使い方は README「ローカル開発」を参照。
+name: overload-party-account
+
+# 購読 subscription 名は account 本体と pubsub-init の双方が参照するため、ここで一度だけ定義する。
+x-faction-acquired-sub: &faction_acquired_sub faction-acquired-account-sub
+x-premium-updated-sub: &premium_updated_sub premium-updated-account-sub
+x-player-onboarded-sub: &player_onboarded_sub player-onboarded-account-sub
+x-onboarding-name-set-sub: &onboarding_name_set_sub onboarding-name-set-account-sub
+x-onboarding-faction-set-sub: &onboarding_faction_set_sub onboarding-faction-set-account-sub
+
 services:
   postgres:
     image: postgres:16-alpine
@@ -8,8 +15,6 @@ services:
       POSTGRES_USER: account
       POSTGRES_PASSWORD: account
       POSTGRES_DB: account
-    ports:
-      - "5432:5432"
     volumes:
       - ./db/schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
       - account_pgdata:/var/lib/postgresql/data
@@ -19,5 +24,112 @@ services:
       timeout: 2s
       retries: 15
 
+  firestore-emulator:
+    image: gcr.io/google.com/cloudsdktool/google-cloud-cli:emulators
+    command: >
+      gcloud beta emulators firestore start
+      --project=overload-party-local
+      --host-port=0.0.0.0:8080
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8080 || exit 1"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  # account は起動時に game_config の必須キーを検証するため、seed 完了を待たせる。
+  firestore-init:
+    image: python:3.12-slim
+    depends_on:
+      firestore-emulator:
+        condition: service_healthy
+    environment:
+      FIRESTORE_EMULATOR_HOST: firestore-emulator:8080
+    volumes:
+      - ../overload-party-ops/firestore-seed/seed_game_config.py:/seed/seed_game_config.py:ro
+      - ../overload-party-common/data/game_config_defaults.yaml:/seed/game_config_defaults.yaml:ro
+    entrypoint:
+      - /bin/sh
+      - -c
+      - pip install --quiet google-cloud-firestore pyyaml && python3 /seed/seed_game_config.py --project overload-party-local --source /seed/game_config_defaults.yaml
+    restart: "no"
+
+  pubsub-emulator:
+    image: gcr.io/google.com/cloudsdktool/google-cloud-cli:emulators
+    command: >
+      gcloud beta emulators pubsub start
+      --project=overload-party-local
+      --host-port=0.0.0.0:8085
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8085 || exit 1"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  # account が購読する subscription を emulator に用意する。account は起動時に
+  # 全 subscription の stream を開くため、作成完了を待たせる。
+  pubsub-init:
+    image: gcr.io/google.com/cloudsdktool/google-cloud-cli:emulators
+    depends_on:
+      pubsub-emulator:
+        condition: service_healthy
+    environment:
+      PUBSUB_EMULATOR_HOST: pubsub-emulator:8085
+      PUBSUB_PROJECT_ID: overload-party-local
+      FACTION_ACQUIRED_TOPIC: faction-acquired
+      FACTION_ACQUIRED_SUBSCRIPTION: *faction_acquired_sub
+      PREMIUM_UPDATED_TOPIC: premium-updated
+      PREMIUM_UPDATED_SUBSCRIPTION: *premium_updated_sub
+      PLAYER_ONBOARDED_TOPIC: player-onboarded
+      PLAYER_ONBOARDED_SUBSCRIPTION: *player_onboarded_sub
+      ONBOARDING_NAME_SET_TOPIC: onboarding-name-set
+      ONBOARDING_NAME_SET_SUBSCRIPTION: *onboarding_name_set_sub
+      ONBOARDING_FACTION_SET_TOPIC: onboarding-faction-set
+      ONBOARDING_FACTION_SET_SUBSCRIPTION: *onboarding_faction_set_sub
+    volumes:
+      - ./docker/pubsub/init-topics.sh:/init-topics.sh:ro
+    entrypoint: ["/bin/bash", "/init-topics.sh"]
+    restart: "no"
+
+  account:
+    image: golang:1.25-alpine
+    working_dir: /src
+    command: go run ./cmd/server
+    depends_on:
+      postgres:
+        condition: service_healthy
+      firestore-init:
+        condition: service_completed_successfully
+      pubsub-init:
+        condition: service_completed_successfully
+    environment:
+      CGO_ENABLED: "0"
+      # module cache は host のものを読み取り専用でマウントするため、コンテナ内 fetch を
+      # 禁止して cache 欠落を即エラーにする。private module の解決は host 側 (make run の
+      # go mod download) が担い、コンテナはトークン無しで cache を読むだけにする。
+      GOPROXY: "off"
+      GOPRIVATE: github.com/kenyamaneko/*
+      # host の go.work (sibling module のローカル overlay) を bind-mount が持ち込むが、
+      # コンテナには sibling が無い。workspace を無効化し go.mod の公開版で解決させる。
+      GOWORK: "off"
+      LOG_MODE: local
+      PORT: "9005"
+      DATABASE_CONN: postgres://account:account@postgres:5432/account?sslmode=disable
+      GOOGLE_CLOUD_PROJECT_ID: overload-party-local
+      INTERNAL_AUTH_SECRET: dev-secret-not-for-prod
+      PUBSUB_EMULATOR_HOST: pubsub-emulator:8085
+      FIRESTORE_EMULATOR_HOST: firestore-emulator:8080
+      FACTION_ACQUIRED_SUBSCRIPTION: *faction_acquired_sub
+      PREMIUM_UPDATED_SUBSCRIPTION: *premium_updated_sub
+      PLAYER_ONBOARDED_SUBSCRIPTION: *player_onboarded_sub
+      ONBOARDING_NAME_SET_SUBSCRIPTION: *onboarding_name_set_sub
+      ONBOARDING_FACTION_SET_SUBSCRIPTION: *onboarding_faction_set_sub
+    volumes:
+      - ./:/src
+      - ${HOST_GOMODCACHE:?make run 経由で起動すること (go env GOMODCACHE を渡す必要がある)}:/go/pkg/mod:ro
+      - account_gobuild:/root/.cache/go-build
+    ports:
+      - "9005:9005"
+
 volumes:
   account_pgdata:
+  account_gobuild:
