@@ -12,9 +12,11 @@ Gateway (唯一の入口)
        ├─ PostgreSQL (account スキーマ)
        ├─ Cloud Firestore (game_config 読み取り専用)
        └─ Pub/Sub subscriber
-            ├─ faction-acquired-account-sub  ← shop が publish
-            ├─ premium-updated-account-sub   ← shop が publish
-            └─ player-onboarded-account-sub  ← scenario が publish
+            ├─ faction-acquired-account-sub        ← shop が publish
+            ├─ premium-updated-account-sub         ← shop が publish
+            ├─ onboarding-name-set-account-sub     ← scenario が publish
+            ├─ onboarding-faction-set-account-sub  ← scenario が publish
+            └─ player-onboarded-account-sub        ← scenario が publish
 
 Gateway / shop / scenario → Account (player-scoped, JWT 必須)
   └─ /api/v1/account/me/...                X-Internal-Auth (HS256 JWT) を検証し sub で player_id 解決

@@ -9,7 +9,7 @@
 
 ---
 
-## 1. サービス責務
+## サービス責務
 
 account は以下の機能ドメインを所有する。
 
@@ -17,20 +17,20 @@ account は以下の機能ドメインを所有する。
 |---|---|
 | プレイヤー登録・ログイン | Firebase UID と player_id の紐付け。初期行の作成（players / player_progression / player_settings）。表示名はオンボーディング完了時に別経路で確定するため Register 時には受け取らない |
 | プレイヤー情報の参照・更新 | プレイヤー名・選択ファクション・装備アイコンの参照/更新。レベル進捗の算出 |
-| デイリーバトル制限 | JST 05:00 境界の制限回数管理。increment は冪等 |
-| ファクション所有 | onboarding 完了時の初期 faction 登録（`player-onboarded` イベント）と shop 購入時の追加（`faction-acquired` イベント）を `player_factions` に射影 |
+| デイリーバトル制限 | JST 05:00 境界の制限回数管理。increment は非冪等で、二重呼び出し防止は battle 側の責務 |
+| ファクション所有 | オンボード内 faction 選択時の初期 faction 登録（`onboarding-faction-set` イベント）と shop 購入時の追加（`faction-acquired` イベント）を `player_factions` に射影 |
 | 経験値・レベル | `AwardGameExp` による両プレイヤー同時付与。係数変更時もレベルは下がらない |
 | プレミアムステータス | `premium-updated` イベントから `is_premium` を射影保持 |
-| 表示名の検証・反映 | `PUT /players/:id/name` で表示名を受け、業務ルール (空・空白のみ・制御文字・`MaxNameRunes` 超) を [domain.ValidateName](../internal/domain/name.go) で検証して `players.name` を UPDATE |
+| 表示名の検証・反映 | `PUT /api/v1/account/me/name` で表示名を受け、業務ルール (空・空白のみ・制御文字・`MaxNameRunes` 超) を [domain.ValidateName](../internal/domain/name.go) で検証して `players.name` を UPDATE |
 | ユーザー設定 | 言語・音量・通知フラグの参照/更新 |
 
 account は **account スキーマの DB 行と Pub/Sub から取り込んだ状態を唯一の真実とし**、他サービスを直接呼び出さず、自らイベントを publish もしない。
 
 ---
 
-## 2. Register / Login
+## Register / Login
 
-### 2.1 `POST /internal/v1/auth/register`
+### `POST /internal/v1/auth/register`
 
 **入力**: `{firebase_uid}`（gateway が ID Token 検証済み前提）
 **成功**: `201 Created` + `Player` レスポンス（`name` は `null`）
@@ -42,21 +42,22 @@ account は **account スキーマの DB 行と Pub/Sub から取り込んだ状
    - `player_progression` INSERT (level=1, exp=0)
    - `player_settings` INSERT (アプリ層デフォルト値)
 
-`player_daily_battle` は Register では作らない。1 行/プレイヤー/ゲーム日の履歴台帳で、初回バトルの `IncrementDailyBattleCount` UPSERT で発生する (詳細は §4)。
+`player_daily_battle` は Register では作らない。1 行/プレイヤー/ゲーム日の履歴台帳で、初回バトルの `IncrementDailyBattleCount` UPSERT で発生する (詳細は「デイリーバトル制限」)。
 
 `name` は本エンドポイントでは受け取らない。表示名はオンボーディングシナリオの中で
-ユーザーが入力した時点で §3 `PUT /players/:id/name` を呼んで account に確定する
-(`MaxNameRunes` などの業務バリデーション SSoT は account)。これによりオンボーディング途中で
-離脱しても再 Register を強要せず、シナリオ再開時は `players.name` の有無を見て
-入力ステップをスキップ判定できる。
+ユーザーが入力した時点で `POST /api/v1/account/me/onboarding/name/validate` で検証され、
+scenario が publish する `onboarding-name-set` イベント (「`onboarding-name-set`」) で
+`players.name` に確定する (`MaxNameRunes` などの業務バリデーション SSoT は account)。
+これによりオンボーディング途中で離脱しても再 Register を強要せず、シナリオ再開時は
+`players.name` の有無を見て入力ステップをスキップ判定できる。
 
-### 2.2 Register の冪等性契約
+### Register の冪等性契約
 
 - **冪等ではない**。同一 `firebase_uid` の二重 Register は 409 を返す
 - gateway 側で「Register を試して 409 なら Login にフォールバック」する契約を採用している。account 単体では吸収しない
-- スターターカード配布・初期ファクション選択は Register に含まれない（[ARCHITECTURE.md §3.1](ARCHITECTURE.md)）
+- スターターカード配布・初期ファクション選択は Register に含まれない（[ARCHITECTURE.md](ARCHITECTURE.md) の「なぜスターターカードや初期ファクションを含めないか」）
 
-### 2.3 `POST /internal/v1/auth/login`
+### `POST /internal/v1/auth/login`
 
 **入力**: `{firebase_uid}`
 **成功**: `200 OK` + `Player` レスポンス
@@ -64,7 +65,7 @@ account は **account スキーマの DB 行と Pub/Sub から取り込んだ状
 
 副作用なし。
 
-### 2.4 `GET /internal/v1/auth/by-firebase-uid/:firebaseUID`
+### `GET /internal/v1/auth/by-firebase-uid/:firebaseUID`
 
 **入力**: パスパラメータ `firebaseUID`
 **成功**: `200 OK` + `Player` レスポンス
@@ -74,19 +75,19 @@ Login と同じルックアップだが、ログインという業務イベン�
 
 ---
 
-## 3. プレイヤー情報の参照・更新
+## プレイヤー情報の参照・更新
 
 | メソッド | パス | 概要 |
 |---|---|---|
 | GET | `/api/v1/account/me` | プレイヤー情報 + レベル進捗を返す |
 | PUT | `/api/v1/account/me/name` | name 更新 |
-| POST | `/api/v1/account/me/onboarding/name/validate` | オンボード内 name 入力ステップでの表示名バリデーション（書き込みなし。詳細は §5.1） |
+| POST | `/api/v1/account/me/onboarding/name/validate` | オンボード内 name 入力ステップでの表示名バリデーション（書き込みなし） |
 | PUT | `/api/v1/account/me/premium` | プレミアムステータス更新（battle 等の内部呼び出し用） |
 | POST | `/api/v1/account/me/factions` | ファクションの明示的付与（運用用） |
 | GET | `/api/v1/account/me/factions` | 所持ファクション一覧 |
-| POST | `/api/v1/account/me/factions/select` | initial faction 選択 (オンボーディング経路。詳細は §5.1) |
+| POST | `/api/v1/account/me/factions/select` | initial faction 選択 (オンボーディング経路。詳細は「初期ファクション選択」) |
 
-### 3.1 `GetPlayerResponse` のレベル進捗
+### `GetPlayerResponse` のレベル進捗
 
 GetPlayer レスポンスには現在レベル内の `level_exp_current` と `level_exp_required` を含める。
 
@@ -96,13 +97,13 @@ GetPlayer レスポンスには現在レベル内の `level_exp_current` と `le
 
 ---
 
-## 4. デイリーバトル制限
+## デイリーバトル制限
 
-### 4.1 ゲーム日の境界
+### ゲーム日の境界
 
-ゲーム日は **JST 05:00 = UTC 20:00** にリセットする。実装は `time.Now().UTC().Add(4h)` の日付部分を取る（[ARCHITECTURE.md §4.1](ARCHITECTURE.md)）。
+ゲーム日は **JST 05:00 = UTC 20:00** にリセットする。実装は `time.Now().UTC().Add(4h)` の日付部分を取る（[ARCHITECTURE.md](ARCHITECTURE.md) の「ゲーム日の境界 (JST 05:00)」）。
 
-### 4.2 `GET /api/v1/account/me/battle-limit`
+### `GET /api/v1/account/me/battle-limit`
 
 `BattleLimitResponse` を返す:
 
@@ -114,7 +115,7 @@ GetPlayer レスポンスには現在レベル内の `level_exp_current` と `le
 
 上限値は Firestore `game_config.free_daily_battle_limit`。値 0（未設定）は 500 エラー。
 
-### 4.3 `POST /api/v1/account/me/battle-limit/increment`
+### `POST /api/v1/account/me/battle-limit/increment`
 
 battle サービスが試合開始時に呼ぶ。
 
@@ -126,9 +127,9 @@ battle サービスが試合開始時に呼ぶ。
 
 ---
 
-## 5. ファクション所有
+## ファクション所有
 
-### 5.1 初期ファクション選択 (`POST /api/v1/account/me/factions/select`)
+### 初期ファクション選択 (`POST /api/v1/account/me/factions/select`)
 
 オンボーディングで最初に選択した faction を保持する。
 
@@ -143,15 +144,15 @@ battle サービスが試合開始時に呼ぶ。
 4. プレイヤー不在 → 404
 5. 既に選択済み → 409 (`ErrFactionAlreadySelected`、クライアントは 409 を成功と同等に扱う契約)
 
-### 5.2 ファクション付与 (`POST /api/v1/account/me/factions`)
+### ファクション付与 (`POST /api/v1/account/me/factions`)
 
 運用・バックオフィス用途の直接付与。`{faction}` を受け取り `AddPlayerFaction` を呼ぶ (`is_initial=FALSE` 固定)。
 
 ---
 
-## 6. 経験値・レベル
+## 経験値・レベル
 
-### 6.1 `POST /internal/v1/players/award-game-exp`
+### `POST /internal/v1/players/award-game-exp`
 
 battle サービスが試合終了時に呼ぶ唯一の経験値付与エンドポイント。
 
@@ -170,11 +171,11 @@ battle サービスが試合終了時に呼ぶ唯一の経験値付与エンド�
 
 経験値量 (`exp_win` / `exp_loss` / `exp_draw`) と係数 (`exp_formula_coefficient`) は Firestore `game_config`。未設定・0 以下は 500。
 
-### 6.2 `POST /api/v1/account/me/exp`
+### `POST /api/v1/account/me/exp`
 
 個別プレイヤーへの経験値加算。`AwardGameExp` の内部実装で呼ばれる共通処理と同じ `AddExp` を経由する。`exp_gain <= 0` なら no-op。
 
-### 6.3 レベル計算の契約
+### レベル計算の契約
 
 - `ComputeLevel(newExp, currentLevel, coeff)` は **現在レベル以上にしか進まない**
 - `nextLevelExp = coeff * (level+1)^2` のループで、`newExp >= nextLevelExp` の間レベルを +1
@@ -182,30 +183,30 @@ battle サービスが試合終了時に呼ぶ唯一の経験値付与エンド�
 
 ---
 
-## 7. プレミアムステータス
+## プレミアムステータス
 
 プレミアム状態の authoritative な SSoT は shop のサブスクリプション契約。account は射影を持つ。
 
-### 7.1 書き込み経路
+### 書き込み経路
 
 1. `premium-updated` Pub/Sub イベント（shop が publish）→ `players.is_premium` / `players.premium_expires_at` を UPDATE
 2. `PUT /api/v1/account/me/premium` REST（内部呼び出し用の直接更新。運用・テスト用途）
 
 本番運用では 1 のみが使われる想定。2 は back-door として残しているが、プレミアム状態の変更を account 直接更新で行ってはいけない（shop との不整合が起きる）。
 
-### 7.2 `premium-updated` subscriber の冪等性
+### `premium-updated` subscriber の冪等性
 
-[ARCHITECTURE.md §6.3](ARCHITECTURE.md) の `processed_events` 契約に従う。同一 `event_id` は重複適用しない。
+[ARCHITECTURE.md](ARCHITECTURE.md) の「`processed_events` による冪等性契約」に従う。同一 `event_id` は重複適用しない。
 
 ---
 
-## 8. ユーザー設定
+## ユーザー設定
 
-### 8.1 `GET /api/v1/account/me/settings`
+### `GET /api/v1/account/me/settings`
 
 `player_settings` を返す。Register と同一トランザクションで必ず INSERT される契約のため、行が存在しないのは Register 未実施または不整合の症状。デフォルト値で隠さず **404 (`port.ErrNotFound`)** を返す。
 
-### 8.2 `PUT /api/v1/account/me/settings`
+### `PUT /api/v1/account/me/settings`
 
 部分更新。body の各フィールドは **ポインタ型** で、省略（nil / JSON で存在しないキー）は「変更なし」を意味する:
 
@@ -216,17 +217,17 @@ battle サービスが試合終了時に呼ぶ唯一の経験値付与エンド�
 
 - 1 つもフィールドを指定していない空 body は 400
 - `player_settings` 行が存在しないプレイヤーは 404（通常 Register で INSERT 済み）
-- SQL は `COALESCE` ベース。詳細契約は [ARCHITECTURE.md §5](ARCHITECTURE.md)
+- SQL は `COALESCE` ベース。詳細契約は [ARCHITECTURE.md](ARCHITECTURE.md) の「プレイヤー設定の部分更新契約」
 
 音量範囲（0-100）のバリデーションは現在 DB CHECK / アプリ層で明示的に行っていない（BIGINT として受理）。将来の要件に応じて追加する。
 
 ---
 
-## 9. Pub/Sub subscribe
+## Pub/Sub subscribe
 
-publish 機能は持たない。subscribe するイベントは以下の 3 種。
+publish 機能は持たない。subscribe するイベントは以下の 5 種。
 
-### 9.1 `faction-acquired`
+### `faction-acquired`
 
 subscription: `faction-acquired-account-sub`
 
@@ -234,11 +235,11 @@ subscription: `faction-acquired-account-sub`
 |---|---|
 | shop | `player_factions` INSERT のみ (`is_initial=FALSE` 固定) |
 
-ADR-022 により、かつて `faction-selected` topic が担っていた 2 業務事実（scenario 初期選択 / shop 購入）は業務事実単位で分解された。scenario 初期選択は §9.3 `player-onboarded` に統合され、本 topic は shop 購入のみを扱う。さらに ADR-031 で shop 側の `faction-purchased` を `card-pack-purchased` (card 向け) と `faction-acquired` (本 topic) に分割。
+ADR-022 により、かつて `faction-selected` topic が担っていた 2 業務事実（scenario 初期選択 / shop 購入）は業務事実単位で分解された。scenario 初期選択は「`onboarding-faction-set`」に統合され、本 topic は shop 購入のみを扱う。さらに ADR-031 で shop 側の `faction-purchased` を `card-pack-purchased` (card 向け) と `faction-acquired` (本 topic) に分割。
 
-詳細契約: [ARCHITECTURE.md §6.1](ARCHITECTURE.md)
+詳細契約: [ARCHITECTURE.md](ARCHITECTURE.md) の「faction-acquired subscriber」
 
-### 9.2 `premium-updated`
+### `premium-updated`
 
 subscription: `premium-updated-account-sub`
 
@@ -246,28 +247,46 @@ subscription: `premium-updated-account-sub`
 - 副作用: `players.is_premium` / `players.premium_expires_at` を UPDATE
 - **shop が cancel 時に publish しない契約** のため、account 側で「解約即剥奪」を観測することはない
 
-詳細契約: [ARCHITECTURE.md §6.2](ARCHITECTURE.md)
+詳細契約: [ARCHITECTURE.md](ARCHITECTURE.md) の「premium-updated subscriber」
 
-### 9.3 `player-onboarded`
+### `onboarding-name-set`
+
+subscription: `onboarding-name-set-account-sub`
+
+- publisher: scenario のみ（オンボード内 name 入力ステップで、account の validate REST 成功後に publish）
+- 副作用: `players.name` UPDATE と `onboarding_status='name_set'` への前進を 1 tx で実行
+
+詳細契約: [ARCHITECTURE.md](ARCHITECTURE.md) の「onboarding-name-set subscriber」
+
+### `onboarding-faction-set`
+
+subscription: `onboarding-faction-set-account-sub`
+
+- publisher: scenario のみ（オンボード内 faction 選択ステップの検証成功後に publish）
+- 副作用: `player_factions` への initial faction 反映 (`is_initial=TRUE`) と `onboarding_status='faction_set'` への前進を 1 tx で実行
+
+詳細契約: [ARCHITECTURE.md](ARCHITECTURE.md) の「onboarding-faction-set subscriber」
+
+### `player-onboarded`
 
 subscription: `player-onboarded-account-sub`
 
 - publisher: scenario のみ（オンボーディングシナリオ読了時に transactional outbox 経由で publish、[ADR-021](../../overload-party-common/docs/adr/021-onboarding-scenario.md) §5.1、ADR-022 で 1 イベント設計に縮退）
 - 副作用: `players.onboarding_status='completed'` への遷移のみ
-- 表示名 (`players.name`) は本経路では扱わない (シナリオは入力時点で §3 `PUT /name` 経由で確定する設計)
-- initial faction の永続化は先行する `onboarding-faction-set` subscriber (§9.x、[ARCHITECTURE.md §6.4](ARCHITECTURE.md)) が完了している前提
+- 表示名 (`players.name`) は本経路では扱わない (入力時点で先行する `onboarding-name-set` subscriber が確定する設計)
+- initial faction の永続化は先行する `onboarding-faction-set` subscriber (「`onboarding-faction-set`」、[ARCHITECTURE.md](ARCHITECTURE.md) の「onboarding-faction-set subscriber」) が完了している前提
 
-詳細契約: [ARCHITECTURE.md §6.5](ARCHITECTURE.md)
+詳細契約: [ARCHITECTURE.md](ARCHITECTURE.md) の「player-onboarded subscriber」
 
-### 9.4 冪等性
+### 冪等性
 
-全 subscriber とも `processed_events (event_id, event_type)` による ON CONFLICT DO NOTHING ガードで at-least-once を吸収する ([ARCHITECTURE.md §6.4](ARCHITECTURE.md))。
+全 subscriber とも `processed_events (event_id, event_type)` による ON CONFLICT DO NOTHING ガードで at-least-once を吸収する ([ARCHITECTURE.md](ARCHITECTURE.md) の「`processed_events` による冪等性契約」)。
 
 ---
 
-## 10. エラーセマンティクス
+## エラーセマンティクス
 
-### 10.1 センチネルと HTTP ステータス
+### センチネルと HTTP ステータス
 
 handler 層が `errors.Is` でセンチネルを分類して HTTP に変換する ([internal/handler/rest/errors.go](../internal/handler/rest/errors.go))。
 
@@ -277,20 +296,21 @@ handler 層が `errors.Is` でセンチネルを分類して HTTP に変換す�
 | `usecase.ErrPlayerAlreadyRegistered` | 409 | Register は非冪等。gateway が Login にフォールバック |
 | `usecase.ErrFactionAlreadySelected` | 409 | 冪等な成功扱い。クライアントはエラー表示しない |
 | `usecase.ErrInvalidFaction` | 400 | 許可集合 (`gamedesign.SelectableFactions`) 外 |
+| `domain.ErrInvalidName` | 400 | 表示名の業務ルール (空・空白のみ・制御文字・`MaxNameRunes` 超) 違反 |
 | JSON bind 失敗 / 必須フィールド欠落 | 400 | ハンドラ手前で弾く |
 | その他 wrap されたエラー | 500 | DB 接続断・Firestore 読み取り失敗等 |
 
-### 10.2 握りつぶし禁止
+### 握りつぶし禁止
 
 DB エラー・Pub/Sub デシリアライズ失敗・Firestore 読み取り失敗をログだけで握りつぶさない（CLAUDE.md 設計思想）。subscriber の「未知 event_type を ACK」は握りつぶしではなく「責務外として意図的に skip」で、ログは残す。
 
-### 10.3 フォールバック禁止
+### フォールバック禁止
 
 Firestore の `game_config` キー未設定（値 0）はデフォルト値で継続せず、当該リクエストをエラーにする。運用者が値を入れるまでサービスが動かない方が、意図しない経験値付与より安全、という選択。
 
 ---
 
-## 11. イベント契約
+## イベント契約
 
 **account はイベントを publish しない**。状態遷移は REST レスポンスで通知するか、他サービス（shop / scenario）が publish するイベントを subscribe するのみ。
 
