@@ -24,74 +24,83 @@ func validValues() map[string]int64 {
 func TestValidateGameConfig(t *testing.T) {
 	ctx := context.Background()
 
-	wantErrContains := func(substr string) func(t *testing.T, err error) {
-		return func(t *testing.T, err error) {
-			require.Error(t, err)
-			assert.Contains(t, err.Error(), substr)
+	t.Run("ゲーム設定値のバリデーション", func(t *testing.T) {
+		validCases := []struct {
+			name   string
+			mutate func(map[string]int64)
+		}{
+			{
+				name:   "全キーが妥当値で投入されているとき、エラーにならない",
+				mutate: func(_ map[string]int64) {},
+			},
+			{
+				name:   "exp_win が 0 のとき、エラーにならない (値 0 = 経験値なしは仕様上有効)",
+				mutate: func(m map[string]int64) { m[gameConfigKeyExpWin] = 0 },
+			},
 		}
-	}
-	wantNoErr := func(t *testing.T, err error) {
-		require.NoError(t, err)
-	}
+		for _, tc := range validCases {
+			t.Run(tc.name, func(t *testing.T) {
+				values := validValues()
+				tc.mutate(values)
+				repo := newFakeGameConfigRepo(values)
+				require.NoError(t, ValidateGameConfig(ctx, repo))
+			})
+		}
 
-	tests := []struct {
-		name   string
-		mutate func(map[string]int64)
-		assert func(t *testing.T, err error)
-	}{
-		{
-			name:   "全キーが妥当値で投入されていれば nil",
-			mutate: func(_ map[string]int64) {},
-			assert: wantNoErr,
-		},
-		{
-			name:   "free_daily_battle_limit が未投入ならエラー",
-			mutate: func(m map[string]int64) { delete(m, configKeyFreeDailyBattleLimit) },
-			assert: wantErrContains(configKeyFreeDailyBattleLimit),
-		},
-		{
-			name:   "free_daily_battle_limit が 0 ならエラー (正の整数を要求)",
-			mutate: func(m map[string]int64) { m[configKeyFreeDailyBattleLimit] = 0 },
-			assert: wantErrContains(configKeyFreeDailyBattleLimit),
-		},
-		{
-			name:   "free_daily_battle_limit が負ならエラー",
-			mutate: func(m map[string]int64) { m[configKeyFreeDailyBattleLimit] = -1 },
-			assert: wantErrContains(configKeyFreeDailyBattleLimit),
-		},
-		{
-			name:   "exp_formula_coefficient が 0 ならエラー (レベル算出の前提を破る)",
-			mutate: func(m map[string]int64) { m[ConfigKeyExpFormulaCoefficient] = 0 },
-			assert: wantErrContains(ConfigKeyExpFormulaCoefficient),
-		},
-		{
-			name:   "exp_win が未投入ならエラー (値 0 自体は許すがドキュメント存在は必須)",
-			mutate: func(m map[string]int64) { delete(m, gameConfigKeyExpWin) },
-			assert: wantErrContains(gameConfigKeyExpWin),
-		},
-		{
-			name:   "exp_win が 0 でも通る (値 0 = 経験値なしは仕様上有効)",
-			mutate: func(m map[string]int64) { m[gameConfigKeyExpWin] = 0 },
-			assert: wantNoErr,
-		},
-		{
-			name:   "exp_loss が未投入ならエラー",
-			mutate: func(m map[string]int64) { delete(m, gameConfigKeyExpLoss) },
-			assert: wantErrContains(gameConfigKeyExpLoss),
-		},
-		{
-			name:   "exp_draw が未投入ならエラー",
-			mutate: func(m map[string]int64) { delete(m, gameConfigKeyExpDraw) },
-			assert: wantErrContains(gameConfigKeyExpDraw),
-		},
-	}
+		invalidCases := []struct {
+			name         string
+			mutate       func(map[string]int64)
+			wantContains []string
+		}{
+			{
+				name:         "free_daily_battle_limit が未投入のとき、エラーになる",
+				mutate:       func(m map[string]int64) { delete(m, configKeyFreeDailyBattleLimit) },
+				wantContains: []string{configKeyFreeDailyBattleLimit},
+			},
+			{
+				name:         "free_daily_battle_limit が 0 のとき、エラーになる (正の整数を要求)",
+				mutate:       func(m map[string]int64) { m[configKeyFreeDailyBattleLimit] = 0 },
+				wantContains: []string{configKeyFreeDailyBattleLimit},
+			},
+			{
+				name:         "free_daily_battle_limit が -1 のとき、エラーになる",
+				mutate:       func(m map[string]int64) { m[configKeyFreeDailyBattleLimit] = -1 },
+				wantContains: []string{configKeyFreeDailyBattleLimit},
+			},
+			{
+				name:         "exp_formula_coefficient が 0 のとき、エラーになる (レベル算出の前提を破る)",
+				mutate:       func(m map[string]int64) { m[ConfigKeyExpFormulaCoefficient] = 0 },
+				wantContains: []string{ConfigKeyExpFormulaCoefficient},
+			},
+			{
+				name:         "exp_win が未投入のとき、エラーになる (値 0 は許すが定義の存在は必須)",
+				mutate:       func(m map[string]int64) { delete(m, gameConfigKeyExpWin) },
+				wantContains: []string{gameConfigKeyExpWin},
+			},
+			{
+				name:         "exp_loss が未投入のとき、エラーになる",
+				mutate:       func(m map[string]int64) { delete(m, gameConfigKeyExpLoss) },
+				wantContains: []string{gameConfigKeyExpLoss},
+			},
+			{
+				name:         "exp_draw が未投入のとき、エラーになる",
+				mutate:       func(m map[string]int64) { delete(m, gameConfigKeyExpDraw) },
+				wantContains: []string{gameConfigKeyExpDraw},
+			},
+		}
+		for _, tc := range invalidCases {
+			t.Run(tc.name, func(t *testing.T) {
+				values := validValues()
+				tc.mutate(values)
+				repo := newFakeGameConfigRepo(values)
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			values := validValues()
-			tt.mutate(values)
-			repo := newFakeGameConfigRepo(values)
-			tt.assert(t, ValidateGameConfig(ctx, repo))
-		})
-	}
+				err := ValidateGameConfig(ctx, repo)
+
+				require.Error(t, err)
+				for _, substr := range tc.wantContains {
+					assert.Contains(t, err.Error(), substr)
+				}
+			})
+		}
+	})
 }
