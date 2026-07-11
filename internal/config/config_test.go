@@ -58,135 +58,127 @@ var validLocalEnv = map[string]string{
 	"LOG_MODE":                            "local",
 }
 
-func TestFromEnv_Success(t *testing.T) {
-	tests := []struct {
-		name   string
-		envs   map[string]string
-		assert func(t *testing.T, cfg *Config)
-	}{
-		{
-			name: "必須 env が Config に伝搬する",
-			envs: validLocalEnv,
-			assert: func(t *testing.T, cfg *Config) {
-				assert.Equal(t, 9005, cfg.Port)
-				assert.Equal(t, "host=localhost port=5432 dbname=account user=account password=account sslmode=disable", cfg.DatabaseConn)
-				assert.Equal(t, "account-local", cfg.GoogleCloudProjectID)
-				assert.Equal(t, "faction-acquired-account-sub", cfg.FactionAcquiredSubscription)
-				assert.Equal(t, "premium-updated-account-sub", cfg.PremiumUpdatedSubscription)
-				assert.Equal(t, "player-onboarded-account-sub", cfg.PlayerOnboardedSubscription)
-				assert.Equal(t, LogModeLocal, cfg.LogMode)
-			},
-		},
-		{
-			name: "production mode も受理される",
-			envs: mergeEnv(validLocalEnv, map[string]string{"LOG_MODE": "production"}),
-			assert: func(t *testing.T, cfg *Config) {
-				assert.Equal(t, LogModeProduction, cfg.LogMode)
-			},
-		},
-		{
-			name: "PORT が env から上書きされる",
-			envs: mergeEnv(validLocalEnv, map[string]string{"PORT": "8080"}),
-			assert: func(t *testing.T, cfg *Config) {
-				assert.Equal(t, 8080, cfg.Port)
-			},
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			setEnv(t, tt.envs)
-			cfg, err := FromEnv()
-			require.NoError(t, err)
-			tt.assert(t, cfg)
-		})
-	}
-}
+func TestFromEnv(t *testing.T) {
+	t.Run("環境変数からの Config 構築", func(t *testing.T) {
+		t.Run("必須 env が揃うとき、全フィールドが Config に伝搬する", func(t *testing.T) {
+			setEnv(t, validLocalEnv)
 
-// TestFromEnv_Errors は「必須 env が未設定・未定義値で起動を拒否する」仕様を固定する。
-// CLAUDE.md「デフォルト値へのフォールバックを行わない」方針の回帰防止。
-func TestFromEnv_Errors(t *testing.T) {
-	tests := []struct {
-		name    string
-		envs    map[string]string
-		wantErr string
-	}{
-		{
-			name:    "PORT が未設定ならエラー",
-			envs:    mergeEnv(validLocalEnv, map[string]string{"PORT": ""}),
-			wantErr: "PORT is required",
-		},
-		{
-			name:    "PORT が数値でないならエラー",
-			envs:    mergeEnv(validLocalEnv, map[string]string{"PORT": "not-a-number"}),
-			wantErr: "PORT",
-		},
-		{
-			name:    "PORT が 0 ならエラー",
-			envs:    mergeEnv(validLocalEnv, map[string]string{"PORT": "0"}),
-			wantErr: "PORT must be in 1-65535",
-		},
-		{
-			name:    "PORT が 65535 超ならエラー",
-			envs:    mergeEnv(validLocalEnv, map[string]string{"PORT": "70000"}),
-			wantErr: "PORT must be in 1-65535",
-		},
-		{
-			name:    "DATABASE_CONN が未設定ならエラー",
-			envs:    mergeEnv(validLocalEnv, map[string]string{"DATABASE_CONN": ""}),
-			wantErr: "DATABASE_CONN is required",
-		},
-		{
-			name:    "GOOGLE_CLOUD_PROJECT_ID が未設定ならエラー",
-			envs:    mergeEnv(validLocalEnv, map[string]string{"GOOGLE_CLOUD_PROJECT_ID": ""}),
-			wantErr: "GOOGLE_CLOUD_PROJECT_ID is required",
-		},
-		{
-			name:    "FACTION_ACQUIRED_SUBSCRIPTION が未設定ならエラー",
-			envs:    mergeEnv(validLocalEnv, map[string]string{"FACTION_ACQUIRED_SUBSCRIPTION": ""}),
-			wantErr: "FACTION_ACQUIRED_SUBSCRIPTION is required",
-		},
-		{
-			name:    "PREMIUM_UPDATED_SUBSCRIPTION が未設定ならエラー",
-			envs:    mergeEnv(validLocalEnv, map[string]string{"PREMIUM_UPDATED_SUBSCRIPTION": ""}),
-			wantErr: "PREMIUM_UPDATED_SUBSCRIPTION is required",
-		},
-		{
-			name:    "PLAYER_ONBOARDED_SUBSCRIPTION が未設定ならエラー",
-			envs:    mergeEnv(validLocalEnv, map[string]string{"PLAYER_ONBOARDED_SUBSCRIPTION": ""}),
-			wantErr: "PLAYER_ONBOARDED_SUBSCRIPTION is required",
-		},
-		{
-			name:    "ONBOARDING_NAME_SET_SUBSCRIPTION が未設定ならエラー",
-			envs:    mergeEnv(validLocalEnv, map[string]string{"ONBOARDING_NAME_SET_SUBSCRIPTION": ""}),
-			wantErr: "ONBOARDING_NAME_SET_SUBSCRIPTION is required",
-		},
-		{
-			name:    "ONBOARDING_FACTION_SET_SUBSCRIPTION が未設定ならエラー",
-			envs:    mergeEnv(validLocalEnv, map[string]string{"ONBOARDING_FACTION_SET_SUBSCRIPTION": ""}),
-			wantErr: "ONBOARDING_FACTION_SET_SUBSCRIPTION is required",
-		},
-		{
-			name:    "INTERNAL_AUTH_SECRET が未設定ならエラー",
-			envs:    mergeEnv(validLocalEnv, map[string]string{"INTERNAL_AUTH_SECRET": ""}),
-			wantErr: "INTERNAL_AUTH_SECRET is required",
-		},
-		{
-			name:    "LOG_MODE が未設定ならエラー",
-			envs:    mergeEnv(validLocalEnv, map[string]string{"LOG_MODE": ""}),
-			wantErr: "LOG_MODE must be",
-		},
-		{
-			name:    "LOG_MODE が未定義値ならエラー",
-			envs:    mergeEnv(validLocalEnv, map[string]string{"LOG_MODE": "verbose"}),
-			wantErr: "LOG_MODE must be",
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			setEnv(t, tt.envs)
-			_, err := FromEnv()
-			require.Error(t, err)
-			assert.Contains(t, err.Error(), tt.wantErr)
+			cfg, err := FromEnv()
+
+			require.NoError(t, err)
+			assert.Equal(t, 9005, cfg.Port)
+			assert.Equal(t, "host=localhost port=5432 dbname=account user=account password=account sslmode=disable", cfg.DatabaseConn)
+			assert.Equal(t, "account-local", cfg.GoogleCloudProjectID)
+			assert.Equal(t, "faction-acquired-account-sub", cfg.FactionAcquiredSubscription)
+			assert.Equal(t, "premium-updated-account-sub", cfg.PremiumUpdatedSubscription)
+			assert.Equal(t, "player-onboarded-account-sub", cfg.PlayerOnboardedSubscription)
+			assert.Equal(t, LogModeLocal, cfg.LogMode)
 		})
-	}
+
+		t.Run("LOG_MODE=production のとき、LogModeProduction として受理される", func(t *testing.T) {
+			setEnv(t, mergeEnv(validLocalEnv, map[string]string{"LOG_MODE": "production"}))
+
+			cfg, err := FromEnv()
+
+			require.NoError(t, err)
+			assert.Equal(t, LogModeProduction, cfg.LogMode)
+		})
+
+		t.Run("PORT が指定されるとき、その値が Config に反映される", func(t *testing.T) {
+			setEnv(t, mergeEnv(validLocalEnv, map[string]string{"PORT": "8080"}))
+
+			cfg, err := FromEnv()
+
+			require.NoError(t, err)
+			assert.Equal(t, 8080, cfg.Port)
+		})
+
+		// 必須 env が未設定・未定義値のときはデフォルトにフォールバックせず即エラーにする (回帰防止)。
+		invalidCases := []struct {
+			name    string
+			envs    map[string]string
+			wantErr string
+		}{
+			{
+				name:    "PORT が未設定のとき、エラーになる",
+				envs:    mergeEnv(validLocalEnv, map[string]string{"PORT": ""}),
+				wantErr: "PORT is required",
+			},
+			{
+				name:    "PORT が数値でないとき、エラーになる",
+				envs:    mergeEnv(validLocalEnv, map[string]string{"PORT": "not-a-number"}),
+				wantErr: "PORT",
+			},
+			{
+				name:    "PORT が 0 のとき、エラーになる",
+				envs:    mergeEnv(validLocalEnv, map[string]string{"PORT": "0"}),
+				wantErr: "PORT must be in 1-65535",
+			},
+			{
+				name:    "PORT が 65535 超のとき、エラーになる",
+				envs:    mergeEnv(validLocalEnv, map[string]string{"PORT": "70000"}),
+				wantErr: "PORT must be in 1-65535",
+			},
+			{
+				name:    "DATABASE_CONN が未設定のとき、エラーになる",
+				envs:    mergeEnv(validLocalEnv, map[string]string{"DATABASE_CONN": ""}),
+				wantErr: "DATABASE_CONN is required",
+			},
+			{
+				name:    "GOOGLE_CLOUD_PROJECT_ID が未設定のとき、エラーになる",
+				envs:    mergeEnv(validLocalEnv, map[string]string{"GOOGLE_CLOUD_PROJECT_ID": ""}),
+				wantErr: "GOOGLE_CLOUD_PROJECT_ID is required",
+			},
+			{
+				name:    "FACTION_ACQUIRED_SUBSCRIPTION が未設定のとき、エラーになる",
+				envs:    mergeEnv(validLocalEnv, map[string]string{"FACTION_ACQUIRED_SUBSCRIPTION": ""}),
+				wantErr: "FACTION_ACQUIRED_SUBSCRIPTION is required",
+			},
+			{
+				name:    "PREMIUM_UPDATED_SUBSCRIPTION が未設定のとき、エラーになる",
+				envs:    mergeEnv(validLocalEnv, map[string]string{"PREMIUM_UPDATED_SUBSCRIPTION": ""}),
+				wantErr: "PREMIUM_UPDATED_SUBSCRIPTION is required",
+			},
+			{
+				name:    "PLAYER_ONBOARDED_SUBSCRIPTION が未設定のとき、エラーになる",
+				envs:    mergeEnv(validLocalEnv, map[string]string{"PLAYER_ONBOARDED_SUBSCRIPTION": ""}),
+				wantErr: "PLAYER_ONBOARDED_SUBSCRIPTION is required",
+			},
+			{
+				name:    "ONBOARDING_NAME_SET_SUBSCRIPTION が未設定のとき、エラーになる",
+				envs:    mergeEnv(validLocalEnv, map[string]string{"ONBOARDING_NAME_SET_SUBSCRIPTION": ""}),
+				wantErr: "ONBOARDING_NAME_SET_SUBSCRIPTION is required",
+			},
+			{
+				name:    "ONBOARDING_FACTION_SET_SUBSCRIPTION が未設定のとき、エラーになる",
+				envs:    mergeEnv(validLocalEnv, map[string]string{"ONBOARDING_FACTION_SET_SUBSCRIPTION": ""}),
+				wantErr: "ONBOARDING_FACTION_SET_SUBSCRIPTION is required",
+			},
+			{
+				name:    "INTERNAL_AUTH_SECRET が未設定のとき、エラーになる",
+				envs:    mergeEnv(validLocalEnv, map[string]string{"INTERNAL_AUTH_SECRET": ""}),
+				wantErr: "INTERNAL_AUTH_SECRET is required",
+			},
+			{
+				name:    "LOG_MODE が未設定のとき、エラーになる",
+				envs:    mergeEnv(validLocalEnv, map[string]string{"LOG_MODE": ""}),
+				wantErr: "LOG_MODE must be",
+			},
+			{
+				name:    "LOG_MODE が未定義値のとき、エラーになる",
+				envs:    mergeEnv(validLocalEnv, map[string]string{"LOG_MODE": "verbose"}),
+				wantErr: "LOG_MODE must be",
+			},
+		}
+		for _, tc := range invalidCases {
+			t.Run(tc.name, func(t *testing.T) {
+				setEnv(t, tc.envs)
+
+				_, err := FromEnv()
+
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tc.wantErr)
+			})
+		}
+	})
 }

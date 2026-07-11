@@ -1,4 +1,4 @@
-.PHONY: build test test-integration vet fmt run tidy db-up db-down db-reset help
+.PHONY: build test test-integration vet fmt run tidy down help
 
 APP := overload-party-account
 
@@ -20,30 +20,12 @@ tidy: ## Tidy dependencies
 fmt: ## Format code
 	gofmt -s -w .
 
-db-up: ## Start local Postgres (docker compose)
-	docker compose up -d postgres
+down: ## Stop the local stack and remove volumes
+	HOST_GOMODCACHE=$$(go env GOMODCACHE) docker compose down -v
 
-db-down: ## Stop local Postgres
-	docker compose down
-
-db-reset: ## Drop volume and recreate DB
-	docker compose down -v
-	docker compose up -d postgres
-
-run: db-up ## Run account server locally against compose Postgres (local env 込み)
-	PORT=9005 \
-	DATABASE_CONN="postgres://account:account@localhost:5432/account?sslmode=disable" \
-	GOOGLE_CLOUD_PROJECT_ID=account-local \
-	FACTION_ACQUIRED_SUBSCRIPTION=faction-acquired-account-sub \
-	PREMIUM_UPDATED_SUBSCRIPTION=premium-updated-account-sub \
-	PLAYER_ONBOARDED_SUBSCRIPTION=player-onboarded-account-sub \
-	ONBOARDING_NAME_SET_SUBSCRIPTION=onboarding-name-set-account-sub \
-	ONBOARDING_FACTION_SET_SUBSCRIPTION=onboarding-faction-set-account-sub \
-	INTERNAL_AUTH_SECRET=dev-secret-not-for-prod \
-	LOG_MODE=local \
-	PUBSUB_EMULATOR_HOST=localhost:8085 \
-	FIRESTORE_EMULATOR_HOST=localhost:9041 \
-	go run ./cmd/server
+run: ## Run the full local stack (app + infra) in compose; edit source and restart `account` to reload
+	GOWORK=off GOPRIVATE=github.com/kenyamaneko/* go mod download
+	HOST_GOMODCACHE=$$(go env GOMODCACHE) docker compose up
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \

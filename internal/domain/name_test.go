@@ -7,34 +7,38 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// ValidateName の業務契約をテーブル駆動で固定する。
-// 上限値・空文字・空白のみ・制御文字の各カテゴリで境界値を 1 ケースずつ覆う。
 func TestValidateName(t *testing.T) {
-	noErr := func(t *testing.T, err error) { t.Helper(); require.NoError(t, err) }
-	errIs := func(target error) func(*testing.T, error) {
-		return func(t *testing.T, err error) { t.Helper(); require.ErrorIs(t, err, target) }
-	}
+	t.Run("表示名のバリデーション", func(t *testing.T) {
+		validCases := []struct {
+			name  string
+			input string
+		}{
+			{name: "ASCII の通常名のとき、エラーにならない", input: "Alice"},
+			{name: "多バイト文字の通常名のとき、エラーにならない", input: "あいう"},
+			{name: "ちょうど MaxNameRunes (20 文字) のとき、エラーにならない", input: strings.Repeat("a", MaxNameRunes)},
+			{name: "多バイト文字でちょうど MaxNameRunes のとき、エラーにならない", input: strings.Repeat("あ", MaxNameRunes)},
+		}
+		for _, tc := range validCases {
+			t.Run(tc.name, func(t *testing.T) {
+				require.NoError(t, ValidateName(tc.input))
+			})
+		}
 
-	tests := []struct {
-		name      string
-		input     string
-		assertErr func(*testing.T, error)
-	}{
-		{name: "ASCII の通常名は OK", input: "Alice", assertErr: noErr},
-		{name: "多バイト文字の通常名は OK", input: "あいう", assertErr: noErr},
-		{name: "境界: ちょうど MaxNameRunes (20) は OK", input: strings.Repeat("a", MaxNameRunes), assertErr: noErr},
-		{name: "境界: 多バイト文字でちょうど MaxNameRunes は OK", input: strings.Repeat("あ", MaxNameRunes), assertErr: noErr},
-		{name: "境界: MaxNameRunes + 1 (21) は不正", input: strings.Repeat("a", MaxNameRunes+1), assertErr: errIs(ErrInvalidName)},
-		{name: "空文字は不正", input: "", assertErr: errIs(ErrInvalidName)},
-		{name: "全角スペースを含む空白のみは不正", input: "  　 ", assertErr: errIs(ErrInvalidName)},
-		{name: "改行を含むのは不正 (制御文字)", input: "ab\ncd", assertErr: errIs(ErrInvalidName)},
-		{name: "タブを含むのは不正 (制御文字)", input: "ab\tcd", assertErr: errIs(ErrInvalidName)},
-		{name: "NULL バイトを含むのは不正 (制御文字)", input: "ab\x00cd", assertErr: errIs(ErrInvalidName)},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			tt.assertErr(t, ValidateName(tt.input))
-		})
-	}
+		invalidCases := []struct {
+			name  string
+			input string
+		}{
+			{name: "MaxNameRunes + 1 (21 文字) のとき、ErrInvalidName になる", input: strings.Repeat("a", MaxNameRunes+1)},
+			{name: "空文字のとき、ErrInvalidName になる", input: ""},
+			{name: "全角スペースを含む空白のみのとき、ErrInvalidName になる", input: "  　 "},
+			{name: "改行 (制御文字) を含むとき、ErrInvalidName になる", input: "ab\ncd"},
+			{name: "タブ (制御文字) を含むとき、ErrInvalidName になる", input: "ab\tcd"},
+			{name: "NULL バイト (制御文字) を含むとき、ErrInvalidName になる", input: "ab\x00cd"},
+		}
+		for _, tc := range invalidCases {
+			t.Run(tc.name, func(t *testing.T) {
+				require.ErrorIs(t, ValidateName(tc.input), ErrInvalidName)
+			})
+		}
+	})
 }

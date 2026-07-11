@@ -12,9 +12,11 @@ Gateway (唯一の入口)
        ├─ PostgreSQL (account スキーマ)
        ├─ Cloud Firestore (game_config 読み取り専用)
        └─ Pub/Sub subscriber
-            ├─ faction-acquired-account-sub  ← shop が publish
-            ├─ premium-updated-account-sub   ← shop が publish
-            └─ player-onboarded-account-sub  ← scenario が publish
+            ├─ faction-acquired-account-sub        ← shop が publish
+            ├─ premium-updated-account-sub         ← shop が publish
+            ├─ onboarding-name-set-account-sub     ← scenario が publish
+            ├─ onboarding-faction-set-account-sub  ← scenario が publish
+            └─ player-onboarded-account-sub        ← scenario が publish
 
 Gateway / shop / scenario → Account (player-scoped, JWT 必須)
   └─ /api/v1/account/me/...                X-Internal-Auth (HS256 JWT) を検証し sub で player_id 解決
@@ -28,14 +30,23 @@ account は他サービスを直接呼び出さない。状態の取り込みは
 
 ## ローカル開発
 
+`make run` はアプリ本体とインフラ (Postgres / Firestore / Pub/Sub emulator) を compose 内で起動する。
+インフラはホストへ publish せず内部ネットワークのサービス名 DNS で参照するため、他リポのローカル
+スタックやホスト上の他アプリとポートが衝突しない。ホストへ出るのは account の API ポート 9005 のみ。
+
 ```bash
-make db-up            # postgres:16-alpine を起動
-make run              # サーバー起動（db-up + env 一式を Makefile が注入）
+make run              # アプリ + インフラを compose で起動（ソース bind-mount）
+make down             # 停止して volume を削除
 make test             # Testcontainers でテスト実行（Docker 必須）
 make test-integration # integration タグ付きテスト（Pub/Sub emulator などを要するもの）
-make db-down          # 停止
-make db-reset         # volume ごと削除して再作成
 ```
+
+アプリはコンテナ内で `go run` する。ソースを編集して `docker compose restart account` すれば、
+イメージを作り直さずに反映される。private module は host の module cache を読み取り専用でマウント
+して解決するため、`make run` は先に host 側で `go mod download` を実行する。
+
+game_config の seed は common の SSoT yaml を ops の seed ツールで流し込むため、
+overload-party-ops / overload-party-common を兄弟ディレクトリに checkout しておく必要がある。
 
 ## 環境変数
 
@@ -61,7 +72,7 @@ ConfigMap:
 | `ONBOARDING_FACTION_SET_SUBSCRIPTION` | onboarding-faction-set の pull subscription 名 |
 | `LOG_MODE` | `production`（Cloud Logging 互換 JSON）/ `local`（TextHandler）|
 
-ローカルで Pub/Sub / Firestore emulator に接続する場合は `PUBSUB_EMULATOR_HOST` / `FIRESTORE_EMULATOR_HOST` を併せて設定する（`make run` が既定値を渡す）。
+ローカルで Pub/Sub / Firestore emulator に接続する場合は `PUBSUB_EMULATOR_HOST` / `FIRESTORE_EMULATOR_HOST` を併せて設定する（`make run` の compose 定義が emulator のサービス名を渡す）。
 
 ## 公開パッケージ
 
