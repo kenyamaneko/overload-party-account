@@ -191,115 +191,115 @@ func newTestRouter(verifier internalauth.Verifier) *gin.Engine {
 	)
 }
 
-// /health は auth middleware を通らず常に 200 を返す。
-func TestNew_HealthEndpoint(t *testing.T) {
-	// VerifyFn 未設定: /health が verifier に到達しないことの検出を兼ねる
-	r := newTestRouter(&internalauth.MockVerifier{})
-	w := httptest.NewRecorder()
-	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/health", nil))
-	assert.Equal(t, http.StatusOK, w.Code)
-}
-
-func TestNew_InternalRoutesAreAuthFree(t *testing.T) {
-	cases := []struct {
-		name     string
-		method   string
-		path     string
-		body     string
-		wantCode int
-	}{
-		{
-			name:     "auth/register は auth-free で登録が完了し 201",
-			method:   http.MethodPost,
-			path:     "/internal/v1/auth/register",
-			body:     `{"firebase_uid":"fb-uid-1"}`,
-			wantCode: http.StatusCreated,
-		},
-		{
-			name:     "auth/login は auth-free でログインが完了し 200",
-			method:   http.MethodPost,
-			path:     "/internal/v1/auth/login",
-			body:     `{"firebase_uid":"fb-uid-1"}`,
-			wantCode: http.StatusOK,
-		},
-		{
-			name:     "auth/by-firebase-uid は auth-free でプレイヤーを返し 200",
-			method:   http.MethodGet,
-			path:     "/internal/v1/auth/by-firebase-uid/fb-uid-1",
-			wantCode: http.StatusOK,
-		},
-		{
-			name:     "players/:playerID/factions は auth-free で一覧を返し 200",
-			method:   http.MethodGet,
-			path:     "/internal/v1/players/TST-PLAYER-1/factions",
-			wantCode: http.StatusOK,
-		},
-		{
-			name:     "players/award-game-exp は auth-free で付与が完了し 204",
-			method:   http.MethodPost,
-			path:     "/internal/v1/players/award-game-exp",
-			body:     `{"player1_id":"TST-PLAYER-1","player2_id":"TST-PLAYER-2","winner_num":0,"reason":"","match_type":""}`,
-			wantCode: http.StatusNoContent,
-		},
-	}
-
-	// VerifyFn 未設定: auth-free ルートが verifier に到達しないことの検出を兼ねる
-	r := newTestRouter(&internalauth.MockVerifier{})
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
+func TestNew(t *testing.T) {
+	t.Run("ルーターの認証配線", func(t *testing.T) {
+		t.Run("/health は auth middleware を通らず 200 を返す", func(t *testing.T) {
+			// VerifyFn 未設定: /health が verifier に到達しないことの検出を兼ねる
+			r := newTestRouter(&internalauth.MockVerifier{})
 			w := httptest.NewRecorder()
-			req := httptest.NewRequest(tc.method, tc.path, bytes.NewBufferString(tc.body))
-			req.Header.Set("Content-Type", "application/json")
-			r.ServeHTTP(w, req)
-			assert.Equal(t, tc.wantCode, w.Code)
+			r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/health", nil))
+			assert.Equal(t, http.StatusOK, w.Code)
 		})
-	}
-}
 
-// /api/v1/account 配下は auth middleware を通る。
-// header 欠落時は 401 を返し、handler に到達しないことを確認する。
-func TestNew_ApiRouteRequiresInternalAuth(t *testing.T) {
-	// VerifyFn 未設定: header 欠落時は middleware が verifier に到達しないことの検出を兼ねる
-	r := newTestRouter(&internalauth.MockVerifier{})
+		t.Run("internal ルートは auth-free で handler に到達し成功応答になる", func(t *testing.T) {
+			cases := []struct {
+				name     string
+				method   string
+				path     string
+				body     string
+				wantCode int
+			}{
+				{
+					name:     "auth/register は auth-free で登録が完了し 201",
+					method:   http.MethodPost,
+					path:     "/internal/v1/auth/register",
+					body:     `{"firebase_uid":"fb-uid-1"}`,
+					wantCode: http.StatusCreated,
+				},
+				{
+					name:     "auth/login は auth-free でログインが完了し 200",
+					method:   http.MethodPost,
+					path:     "/internal/v1/auth/login",
+					body:     `{"firebase_uid":"fb-uid-1"}`,
+					wantCode: http.StatusOK,
+				},
+				{
+					name:     "auth/by-firebase-uid は auth-free でプレイヤーを返し 200",
+					method:   http.MethodGet,
+					path:     "/internal/v1/auth/by-firebase-uid/fb-uid-1",
+					wantCode: http.StatusOK,
+				},
+				{
+					name:     "players/:playerID/factions は auth-free で一覧を返し 200",
+					method:   http.MethodGet,
+					path:     "/internal/v1/players/TST-PLAYER-1/factions",
+					wantCode: http.StatusOK,
+				},
+				{
+					name:     "players/award-game-exp は auth-free で付与が完了し 204",
+					method:   http.MethodPost,
+					path:     "/internal/v1/players/award-game-exp",
+					body:     `{"player1_id":"TST-PLAYER-1","player2_id":"TST-PLAYER-2","winner_num":0,"reason":"","match_type":""}`,
+					wantCode: http.StatusNoContent,
+				},
+			}
 
-	cases := []struct {
-		name   string
-		method string
-		path   string
-	}{
-		{name: "GET /me は auth header 欠落で 401", method: http.MethodGet, path: "/api/v1/account/me"},
-		{name: "GET /me/factions は auth header 欠落で 401", method: http.MethodGet, path: "/api/v1/account/me/factions"},
-		{name: "GET /me/settings は auth header 欠落で 401", method: http.MethodGet, path: "/api/v1/account/me/settings"},
-	}
+			// VerifyFn 未設定: auth-free ルートが verifier に到達しないことの検出を兼ねる
+			r := newTestRouter(&internalauth.MockVerifier{})
+			for _, tc := range cases {
+				t.Run(tc.name, func(t *testing.T) {
+					w := httptest.NewRecorder()
+					req := httptest.NewRequest(tc.method, tc.path, bytes.NewBufferString(tc.body))
+					req.Header.Set("Content-Type", "application/json")
+					r.ServeHTTP(w, req)
+					assert.Equal(t, tc.wantCode, w.Code)
+				})
+			}
+		})
 
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
+		t.Run("/api/v1/account 配下は auth header 欠落で 401 になる", func(t *testing.T) {
+			// VerifyFn 未設定: header 欠落時は middleware が verifier に到達しないことの検出を兼ねる
+			r := newTestRouter(&internalauth.MockVerifier{})
+
+			cases := []struct {
+				name   string
+				method string
+				path   string
+			}{
+				{name: "GET /api/v1/account/me は auth header 欠落で 401 になる", method: http.MethodGet, path: "/api/v1/account/me"},
+				{name: "GET /api/v1/account/me/factions は auth header 欠落で 401 になる", method: http.MethodGet, path: "/api/v1/account/me/factions"},
+				{name: "GET /api/v1/account/me/settings は auth header 欠落で 401 になる", method: http.MethodGet, path: "/api/v1/account/me/settings"},
+			}
+
+			for _, tc := range cases {
+				t.Run(tc.name, func(t *testing.T) {
+					w := httptest.NewRecorder()
+					r.ServeHTTP(w, httptest.NewRequest(tc.method, tc.path, nil))
+					assert.Equal(t, http.StatusUnauthorized, w.Code)
+				})
+			}
+		})
+
+		t.Run("verifier がエラーを返すとき、401 になる", func(t *testing.T) {
+			r := newTestRouter(&internalauth.MockVerifier{
+				VerifyFn: func(string) (string, error) { return "", errors.New("invalid token") },
+			})
 			w := httptest.NewRecorder()
-			r.ServeHTTP(w, httptest.NewRequest(tc.method, tc.path, nil))
+			req := httptest.NewRequest(http.MethodGet, "/api/v1/account/me", nil)
+			req.Header.Set(internalauth.HeaderName, "any.token")
+			r.ServeHTTP(w, req)
 			assert.Equal(t, http.StatusUnauthorized, w.Code)
 		})
-	}
-}
 
-// verifier が error を返すと 401 を返し handler に到達しない。
-func TestNew_ApiRouteRejectsVerifierError(t *testing.T) {
-	r := newTestRouter(&internalauth.MockVerifier{
-		VerifyFn: func(string) (string, error) { return "", errors.New("invalid token") },
+		t.Run("有効な token のとき、handler に到達し 200 になる", func(t *testing.T) {
+			r := newTestRouter(&internalauth.MockVerifier{
+				VerifyFn: func(string) (string, error) { return "TST-PLAYER-1", nil },
+			})
+			w := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodGet, "/api/v1/account/me", nil)
+			req.Header.Set(internalauth.HeaderName, "any.token")
+			r.ServeHTTP(w, req)
+			assert.Equal(t, http.StatusOK, w.Code)
+		})
 	})
-	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/account/me", nil)
-	req.Header.Set(internalauth.HeaderName, "any.token")
-	r.ServeHTTP(w, req)
-	assert.Equal(t, http.StatusUnauthorized, w.Code)
-}
-
-func TestNew_ApiRouteWithValidTokenReachesHandler(t *testing.T) {
-	r := newTestRouter(&internalauth.MockVerifier{
-		VerifyFn: func(string) (string, error) { return "TST-PLAYER-1", nil },
-	})
-	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/account/me", nil)
-	req.Header.Set(internalauth.HeaderName, "any.token")
-	r.ServeHTTP(w, req)
-	assert.Equal(t, http.StatusOK, w.Code)
 }

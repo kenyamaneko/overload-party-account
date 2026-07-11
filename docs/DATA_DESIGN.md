@@ -7,20 +7,20 @@
 
 account スキーマはプレイヤーの基本情報・デイリーバトル回数・ファクション所有・ユーザー設定・Pub/Sub 冪等性レコードを所有する。全サービスの中で最も多くの外部参照を受けるスキーマだが、他サービスからの直接 SELECT は許容せず account の内部 REST API 経由でのみ公開する（ADR-011 / ADR-014）。
 
-`is_premium` / `premium_expires_at` は shop が authoritative な状態を射影しているだけで、account 内では read-only 扱い（書き込みは `premium-updated` subscriber からのみ）。
+`is_premium` / `premium_expires_at` は shop が authoritative な状態を射影しているだけで、account 内では read-only 扱い（書き込みは `premium-updated` subscriber と、運用・テスト用の `PUT /api/v1/account/me/premium` のみ）。
 
 ---
 
 ## テーブル構成
 
-### 1. players
+### players
 
 プレイヤーマスター。Firebase Auth UID と 1:1 で対応する。
 
 - **PK:** `player_id` (UUID)
 - **UNIQUE INDEX:** `idx_players_firebase_uid` ON `firebase_uid`
 - **CHECK:** `onboarding_status IN ('not_started', 'name_set', 'faction_set', 'completed')`
-- **TRIGGER:** `trg_players_updated_at` — UPDATE 時に `updated_at` を自動更新
+- **TRIGGER:** `trg_players_updated_at`：UPDATE 時に `updated_at` を自動更新
 
 <!-- BEGIN GENERATED: players -->
 | カラム名 | 型 | Nullable | 説明 |
@@ -38,11 +38,11 @@ account スキーマはプレイヤーの基本情報・デイリーバトル回
 
 **設計判断:**
 - `is_premium` / `premium_expires_at` を players に射影で持つ理由は、ほぼ全ての REST レスポンスで課金ステータスを返す必要があり、毎回 shop を呼ぶと結合が強くなりすぎるため。shop が authoritative で、`premium-updated` Pub/Sub で最終的整合させる
-- 「オンボーディングで選択した faction」は `players` 側に列を置かず、`player_factions.is_initial=TRUE` の行が SSoT (#3 参照)
-- `name` は「表示名」。Register 時には NULL で挿入し、オンボーディング中の `PUT /players/:id/name` で確定する。account 側で `display_name` 列を別途設けない（同一セマンティクスの列を複数持つと SSoT が分散するため）
+- 「オンボーディングで選択した faction」は `players` 側に列を置かず、`player_factions.is_initial=TRUE` の行が SSoT (「player_factions」参照)
+- `name` は「表示名」。Register 時には NULL で挿入し、オンボーディング中の `onboarding-name-set` イベント (subscriber) で確定する。account 側で `display_name` 列を別途設けない（同一セマンティクスの列を複数持つと SSoT が分散するため）
 - `equipped_icon_no` は shop 側の `cosmetic_items(item_type='icon', item_no=N)` を参照するが、cross-schema FK は張らない（アプリ層整合性）
 
-### 2. player_daily_battle
+### player_daily_battle
 
 デイリーバトル回数の履歴台帳。1 行 = 1 プレイヤー × 1 ゲーム日。
 
@@ -58,11 +58,11 @@ account スキーマはプレイヤーの基本情報・デイリーバトル回
 
 **設計判断:**
 - players に埋め込まず別テーブルにしているのは、バトル回数チェック / increment が高頻度で走るのに対し、players 本体の更新 (name / is_premium 等) とは独立しているため。更新競合を分離する目的
-- リセット境界は JST 05:00。`game_date` は usecase 層が `gameDay()` で算出する civil.Date。詳細は [ARCHITECTURE.md §4.1](ARCHITECTURE.md)
+- リセット境界は JST 05:00。`game_date` は usecase 層が `gameDay()` で算出する civil.Date。詳細は [ARCHITECTURE.md](ARCHITECTURE.md) の「ゲーム日の境界 (JST 05:00)」
 - 1 行/日で履歴を残すのは、将来 BigQuery エクスポートでプレイヤーごとの日次バトル回数を分析できるようにするため。これがアプリ内で履歴が残る唯一の場所
 - 当日の行が無ければカウント 0 とみなす (新ゲーム日でまだバトルしていない状態)。Register 時には INSERT せず、初回バトルの UPSERT で行が発生する
 
-### 3. player_factions
+### player_factions
 
 プレイヤーが所持しているファクション (カードセット) と「オンボーディングで選択した faction」を兼ねるテーブル。
 
@@ -86,12 +86,12 @@ account スキーマはプレイヤーの基本情報・デイリーバトル回
 - 複合 PK `(player_id, faction)` が冪等性のキー
 - `factions` リファレンステーブルは存在しない。ファクションマスターの SSoT は `common/data/factions.yaml` から code-generate された定数で、DB 側では CHECK 制約で enum を表現する
 
-### 4. player_settings
+### player_settings
 
 プレイヤー設定。players と 1:1。
 
 - **PK:** `player_id` (→ `players.player_id`, ON DELETE CASCADE)
-- **TRIGGER:** `trg_player_settings_updated_at` — UPDATE 時に `updated_at` を自動更新
+- **TRIGGER:** `trg_player_settings_updated_at`：UPDATE 時に `updated_at` を自動更新
 
 <!-- BEGIN GENERATED: player_settings -->
 | カラム名 | 型 | Nullable | 説明 |
@@ -108,12 +108,12 @@ account スキーマはプレイヤーの基本情報・デイリーバトル回
 - デフォルト値は DB 側の DEFAULT ではなくアプリ層 (`internal/domain/defaults.go`) で制御する。理由は言語判定をクライアントの Accept-Language 等と揃える余地を残すため
 - 登録時（Register）に `player_settings` 行をアプリ層デフォルトで INSERT する
 
-### 5. player_progression
+### player_progression
 
 レベルと経験値。players と 1:1 の子テーブル。
 
 - **PK:** `player_id` (→ `players.player_id`, ON DELETE CASCADE)
-- **TRIGGER:** `trg_player_progression_updated_at` — UPDATE 時に `updated_at` を自動更新
+- **TRIGGER:** `trg_player_progression_updated_at`：UPDATE 時に `updated_at` を自動更新
 
 <!-- BEGIN GENERATED: player_progression -->
 | カラム名 | 型 | Nullable | 説明 |
@@ -125,11 +125,11 @@ account スキーマはプレイヤーの基本情報・デイリーバトル回
 <!-- END GENERATED: player_progression -->
 
 **設計判断:**
-- かつては `players.level` / `players.exp` として同居していたが、戦闘ごとの高頻度 UPDATE が `players.updated_at` を押し上げプロフィール変更の検知を汚染する・`players` 全体の SELECT FOR UPDATE で他 UPDATE と競合する・MVCC dead tuple が `players` に集中する、などの理由で分離した（[ARCHITECTURE.md §1.3](ARCHITECTURE.md)）
+- かつては `players.level` / `players.exp` として同居していたが、戦闘ごとの高頻度 UPDATE が `players.updated_at` を押し上げプロフィール変更の検知を汚染する・`players` 全体の SELECT FOR UPDATE で他 UPDATE と競合する・MVCC dead tuple が `players` に集中する、などの理由で分離した（[ARCHITECTURE.md](ARCHITECTURE.md) の「`player_progression` の物理分離」）
 - API レスポンスの `Player` には引き続き `level` / `exp` を含めるため、repository 層で JOIN して Player アグリゲートに詰めて返す
 - 書き込みホットパス（`AddExp`）は `player_progression` のみを触る。`players` は静かなまま
 
-### 6. processed_events
+### processed_events
 
 Pub/Sub subscriber の冪等性を保証するアプリ層ガードテーブル。
 
