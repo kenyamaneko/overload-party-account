@@ -26,322 +26,328 @@ func TestCreate(t *testing.T) {
 	viewRepo := postgres.NewPlayerViewRepository(sharedPg.Pool)
 	ctx := context.Background()
 
-	sharedPg.Truncate(t)
-	now := time.Now().UTC()
-	alice := "Alice"
-	p := &domain.Player{
-		PlayerID:         testPlayerID1,
-		FirebaseUID:      "uid-1",
-		Name:             &alice,
-		IsPremium:        false,
-		OnboardingStatus: domain.OnboardingStatusNotStarted,
-		CreatedAt:        now,
-		UpdatedAt:        now,
-	}
-	prog := &domain.PlayerProgression{
-		PlayerID:  p.PlayerID,
-		Level:     1,
-		Exp:       0,
-		UpdatedAt: now,
-	}
-	require.NoError(t, repo.Create(ctx, p, prog))
+	t.Run("プレイヤーの作成", func(t *testing.T) {
+		t.Run("player と progression が作成され、name と初期 level=1 / exp=0 が読み出せる", func(t *testing.T) {
+			sharedPg.Truncate(t)
+			now := time.Now().UTC()
+			alice := "Alice"
+			p := &domain.Player{
+				PlayerID:         testPlayerID1,
+				FirebaseUID:      "uid-1",
+				Name:             &alice,
+				IsPremium:        false,
+				OnboardingStatus: domain.OnboardingStatusNotStarted,
+				CreatedAt:        now,
+				UpdatedAt:        now,
+			}
+			prog := &domain.PlayerProgression{
+				PlayerID:  p.PlayerID,
+				Level:     1,
+				Exp:       0,
+				UpdatedAt: now,
+			}
+			require.NoError(t, repo.Create(ctx, p, prog))
 
-	got, err := repo.FindByID(ctx, testPlayerID1)
-	require.NoError(t, err)
-	require.NotNil(t, got.Name)
-	assert.Equal(t, "Alice", *got.Name)
+			got, err := repo.FindByID(ctx, testPlayerID1)
+			require.NoError(t, err)
+			require.NotNil(t, got.Name)
+			assert.Equal(t, "Alice", *got.Name)
 
-	view, err := viewRepo.FindByID(ctx, testPlayerID1)
-	require.NoError(t, err)
-	assert.Equal(t, int64(1), view.Level)
-	assert.Equal(t, int64(0), view.Exp)
+			view, err := viewRepo.FindByID(ctx, testPlayerID1)
+			require.NoError(t, err)
+			assert.Equal(t, int64(1), view.Level)
+			assert.Equal(t, int64(0), view.Exp)
+		})
+	})
 }
 
-// FindByID の契約: シード済み player_id なら Player を返し、未シードなら ErrNotFound。
 func TestFindByID(t *testing.T) {
 	repo := postgres.NewPlayerRepository(sharedPg.Pool)
 	ctx := context.Background()
 
-	tests := []struct {
-		name     string
-		lookupID string
-		wantName *string
-		wantErr  error
-	}{
-		{
-			name:     "シード済み player_id なら Player を返す",
-			lookupID: testPlayerID1,
-			wantName: ptr("Alice"),
-			wantErr:  nil,
-		},
-		{
-			name:     "未シード player_id なら ErrNotFound",
-			lookupID: testPlayerID2,
-			wantName: nil,
-			wantErr:  port.ErrNotFound,
-		},
-	}
+	t.Run("player_id によるプレイヤー取得", func(t *testing.T) {
+		tests := []struct {
+			name     string
+			lookupID string
+			wantName *string
+			wantErr  error
+		}{
+			{
+				name:     "シード済み player_id のとき、Player を返す",
+				lookupID: testPlayerID1,
+				wantName: ptr("Alice"),
+				wantErr:  nil,
+			},
+			{
+				name:     "未シード player_id のとき、ErrNotFound になる",
+				lookupID: testPlayerID2,
+				wantName: nil,
+				wantErr:  port.ErrNotFound,
+			},
+		}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			sharedPg.Truncate(t)
-			seedPlayer(t, testPlayerID1, "uid-1", "Alice", false)
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				sharedPg.Truncate(t)
+				seedPlayer(t, testPlayerID1, "uid-1", "Alice", false)
 
-			got, err := repo.FindByID(ctx, tt.lookupID)
-			require.ErrorIs(t, err, tt.wantErr)
-			assert.Equal(t, tt.wantName, playerNamePtr(got))
-		})
-	}
+				got, err := repo.FindByID(ctx, tt.lookupID)
+				require.ErrorIs(t, err, tt.wantErr)
+				assert.Equal(t, tt.wantName, playerNamePtr(got))
+			})
+		}
+	})
 }
 
-// FindByFirebaseUID の契約: 一致する firebase_uid があれば Player を返し、
-// 無ければ ErrNotFound。業務分岐 (Register の既登録検出など) は呼び出し側で errors.Is で行う。
 func TestFindByFirebaseUID(t *testing.T) {
 	repo := postgres.NewPlayerRepository(sharedPg.Pool)
 	ctx := context.Background()
 
-	tests := []struct {
-		name      string
-		lookupUID string
-		wantName  *string
-		wantErr   error
-	}{
-		{
-			name:      "シード済み firebase_uid なら Player を返す",
-			lookupUID: "uid-1",
-			wantName:  ptr("Alice"),
-			wantErr:   nil,
-		},
-		{
-			name:      "未シード firebase_uid なら ErrNotFound",
-			lookupUID: "uid-missing",
-			wantName:  nil,
-			wantErr:   port.ErrNotFound,
-		},
-	}
+	t.Run("firebase_uid によるプレイヤー取得", func(t *testing.T) {
+		// 既登録検出などの業務分岐は呼び出し側が errors.Is(ErrNotFound) で行う契約なので、
+		// repo は一致行の有無を Player / ErrNotFound で返すだけ。
+		tests := []struct {
+			name      string
+			lookupUID string
+			wantName  *string
+			wantErr   error
+		}{
+			{
+				name:      "シード済み firebase_uid のとき、Player を返す",
+				lookupUID: "uid-1",
+				wantName:  ptr("Alice"),
+				wantErr:   nil,
+			},
+			{
+				name:      "未シード firebase_uid のとき、ErrNotFound になる",
+				lookupUID: "uid-missing",
+				wantName:  nil,
+				wantErr:   port.ErrNotFound,
+			},
+		}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			sharedPg.Truncate(t)
-			seedPlayer(t, testPlayerID1, "uid-1", "Alice", false)
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				sharedPg.Truncate(t)
+				seedPlayer(t, testPlayerID1, "uid-1", "Alice", false)
 
-			got, err := repo.FindByFirebaseUID(ctx, tt.lookupUID)
-			require.ErrorIs(t, err, tt.wantErr)
-			assert.Equal(t, tt.wantName, playerNamePtr(got))
-		})
-	}
+				got, err := repo.FindByFirebaseUID(ctx, tt.lookupUID)
+				require.ErrorIs(t, err, tt.wantErr)
+				assert.Equal(t, tt.wantName, playerNamePtr(got))
+			})
+		}
+	})
 }
 
-// Exists は player_id 行の存在確認のみを行う純プリミティブ。
 func TestExists(t *testing.T) {
 	repo := postgres.NewPlayerRepository(sharedPg.Pool)
 	ctx := context.Background()
 
-	tests := []struct {
-		name     string
-		lookupID string
-		want     bool
-	}{
-		{
-			name:     "シード済みの player_id なら true",
-			lookupID: testPlayerID1,
-			want:     true,
-		},
-		{
-			name:     "未シードの player_id なら false (該当なしはエラーではない)",
-			lookupID: testPlayerID2,
-			want:     false,
-		},
-	}
+	t.Run("player_id 行の存在確認", func(t *testing.T) {
+		tests := []struct {
+			name     string
+			lookupID string
+			want     bool
+		}{
+			{
+				name:     "シード済みの player_id のとき、true を返す",
+				lookupID: testPlayerID1,
+				want:     true,
+			},
+			{
+				name:     "未シードの player_id のとき、false を返す (該当なしはエラーではない)",
+				lookupID: testPlayerID2,
+				want:     false,
+			},
+		}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			sharedPg.Truncate(t)
-			seedPlayer(t, testPlayerID1, "uid-1", "Alice", false)
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				sharedPg.Truncate(t)
+				seedPlayer(t, testPlayerID1, "uid-1", "Alice", false)
 
-			got, err := repo.Exists(ctx, tt.lookupID)
-			require.NoError(t, err)
-			assert.Equal(t, tt.want, got)
-		})
-	}
+				got, err := repo.Exists(ctx, tt.lookupID)
+				require.NoError(t, err)
+				assert.Equal(t, tt.want, got)
+			})
+		}
+	})
 }
 
-// GetDailyBattle の契約: (player_id, game_date) に行があれば永続層の値をそのまま返し、
-// 無ければ (nil, nil) (該当なしはエラーではなく、呼び出し側はカウント 0 として扱う)。
 func TestGetDailyBattle(t *testing.T) {
 	repo := postgres.NewPlayerRepository(sharedPg.Pool)
 	ctx := context.Background()
 	today := civil.DateOf(time.Now().UTC())
 
-	tests := []struct {
-		name      string
-		seedCount []int64 // 0 件 = 未シード、1 件 = その count をシード
-		want      *domain.PlayerDailyBattle
-	}{
-		{
-			name:      "該当行があれば永続層の値をそのまま返す",
-			seedCount: []int64{5},
-			want: &domain.PlayerDailyBattle{
-				PlayerID:         testPlayerID1,
-				GameDate:         today,
-				DailyBattleCount: 5,
+	t.Run("当日バトル記録の取得", func(t *testing.T) {
+		// 該当なしは (nil, nil)。呼び出し側はカウント 0 として扱うため、エラーにしない。
+		tests := []struct {
+			name      string
+			seedCount []int64 // 0 件 = 未シード、1 件 = その count をシード
+			want      *domain.PlayerDailyBattle
+		}{
+			{
+				name:      "該当行があるとき、永続層の値をそのまま返す",
+				seedCount: []int64{5},
+				want: &domain.PlayerDailyBattle{
+					PlayerID:         testPlayerID1,
+					GameDate:         today,
+					DailyBattleCount: 5,
+				},
 			},
-		},
-		{
-			name:      "該当行が無ければ (nil, nil) (エラーではない)",
-			seedCount: nil,
-			want:      nil,
-		},
-	}
+			{
+				name:      "該当行が無いとき、(nil, nil) を返す (エラーではない)",
+				seedCount: nil,
+				want:      nil,
+			},
+		}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			sharedPg.Truncate(t)
-			seedPlayer(t, testPlayerID1, "uid-1", "Alice", false)
-			for _, c := range tt.seedCount {
-				seedPlayerDailyBattle(t, testPlayerID1, today, c)
-			}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				sharedPg.Truncate(t)
+				seedPlayer(t, testPlayerID1, "uid-1", "Alice", false)
+				for _, c := range tt.seedCount {
+					seedPlayerDailyBattle(t, testPlayerID1, today, c)
+				}
 
-			got, err := repo.GetDailyBattle(ctx, testPlayerID1, today)
-			require.NoError(t, err)
-			assert.Equal(t, tt.want, got)
-		})
-	}
+				got, err := repo.GetDailyBattle(ctx, testPlayerID1, today)
+				require.NoError(t, err)
+				assert.Equal(t, tt.want, got)
+			})
+		}
+	})
 }
 
-// GetProgressionForUpdate の契約: RunInTx 配下で現在値を返す純プリミティブ。
-// シード済みなら現在値を返し、未シードなら ErrNotFound。FOR UPDATE による行ロック取得自体の
-// 検証はせず、行取得経路とエラー伝播のみを repo テストの責務とする
-// (加算・レベル計算は usecase 層の責務)。
 func TestGetProgressionForUpdate(t *testing.T) {
 	repo := postgres.NewPlayerRepository(sharedPg.Pool)
 	txMgr := postgres.NewTxManager(sharedPg.Pool)
 	ctx := context.Background()
 
-	tests := []struct {
-		name      string
-		lookupID  string
-		wantLevel int64
-		wantExp   int64
-		wantErr   error
-	}{
-		{
-			name:      "シード済みなら現在値を返す",
-			lookupID:  testPlayerID1,
-			wantLevel: 1,
-			wantExp:   0,
-			wantErr:   nil,
-		},
-		{
-			name:     "未シードなら ErrNotFound",
-			lookupID: testPlayerID2,
-			wantErr:  port.ErrNotFound,
-		},
-	}
+	t.Run("更新用の進捗取得", func(t *testing.T) {
+		// 行ロック取得自体は検証せず、行取得経路とエラー伝播のみを repo テストの責務とする
+		// (加算・レベル計算は usecase 層の責務)。
+		tests := []struct {
+			name      string
+			lookupID  string
+			wantLevel int64
+			wantExp   int64
+			wantErr   error
+		}{
+			{
+				name:      "シード済みのとき、現在値を返す",
+				lookupID:  testPlayerID1,
+				wantLevel: 1,
+				wantExp:   0,
+				wantErr:   nil,
+			},
+			{
+				name:     "未シードのとき、ErrNotFound になる",
+				lookupID: testPlayerID2,
+				wantErr:  port.ErrNotFound,
+			},
+		}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			sharedPg.Truncate(t)
-			seedPlayer(t, testPlayerID1, "uid-1", "Alice", false)
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				sharedPg.Truncate(t)
+				seedPlayer(t, testPlayerID1, "uid-1", "Alice", false)
 
-			err := txMgr.RunInTx(ctx, func(txCtx context.Context) error {
-				prog, err := repo.GetProgressionForUpdate(txCtx, tt.lookupID)
-				gotLevel, gotExp := progressionLevelExp(prog)
-				assert.Equal(t, tt.wantLevel, gotLevel)
-				assert.Equal(t, tt.wantExp, gotExp)
-				return err
+				err := txMgr.RunInTx(ctx, func(txCtx context.Context) error {
+					prog, err := repo.GetProgressionForUpdate(txCtx, tt.lookupID)
+					gotLevel, gotExp := progressionLevelExp(prog)
+					assert.Equal(t, tt.wantLevel, gotLevel)
+					assert.Equal(t, tt.wantExp, gotExp)
+					return err
+				})
+				require.ErrorIs(t, err, tt.wantErr)
 			})
-			require.ErrorIs(t, err, tt.wantErr)
-		})
-	}
+		}
+	})
 }
 
-// UpdateName の契約: シード済みなら name を上書きし、未シードなら ErrNotFound。
-// 永続化は FindByID 経由で確認する (シード済みケースのみ)。
 func TestUpdateName(t *testing.T) {
 	repo := postgres.NewPlayerRepository(sharedPg.Pool)
 	ctx := context.Background()
 
-	tests := []struct {
-		name     string
-		lookupID string
-		wantName *string
-		wantErr  error
-	}{
-		{
-			name:     "シード済みなら name を更新",
-			lookupID: testPlayerID1,
-			wantName: ptr("Bob"),
-			wantErr:  nil,
-		},
-		{
-			name:     "未シードなら ErrNotFound",
-			lookupID: testPlayerID2,
-			wantName: nil,
-			wantErr:  port.ErrNotFound,
-		},
-	}
+	t.Run("name の更新", func(t *testing.T) {
+		// 永続化はシード済みケースのみ FindByID 経由で確認する。
+		tests := []struct {
+			name     string
+			lookupID string
+			wantName *string
+			wantErr  error
+		}{
+			{
+				name:     "シード済みのとき、name を更新する",
+				lookupID: testPlayerID1,
+				wantName: ptr("Bob"),
+				wantErr:  nil,
+			},
+			{
+				name:     "未シードのとき、ErrNotFound になる",
+				lookupID: testPlayerID2,
+				wantName: nil,
+				wantErr:  port.ErrNotFound,
+			},
+		}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			sharedPg.Truncate(t)
-			seedPlayer(t, testPlayerID1, "uid-1", "Alice", false)
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				sharedPg.Truncate(t)
+				seedPlayer(t, testPlayerID1, "uid-1", "Alice", false)
 
-			err := repo.UpdateName(ctx, tt.lookupID, "Bob")
-			require.ErrorIs(t, err, tt.wantErr)
+				err := repo.UpdateName(ctx, tt.lookupID, "Bob")
+				require.ErrorIs(t, err, tt.wantErr)
 
-			got, _ := repo.FindByID(ctx, tt.lookupID)
-			assert.Equal(t, tt.wantName, playerNamePtr(got))
-		})
-	}
+				got, _ := repo.FindByID(ctx, tt.lookupID)
+				assert.Equal(t, tt.wantName, playerNamePtr(got))
+			})
+		}
+	})
 }
 
-// UpdatePremium の契約: シード済みなら is_premium / premium_expires_at を更新し、
-// 未シードなら ErrNotFound。永続化は FindByID 経由で確認する (シード済みケースのみ)。
 func TestUpdatePremium(t *testing.T) {
 	repo := postgres.NewPlayerRepository(sharedPg.Pool)
 	ctx := context.Background()
 	expiresAt := time.Now().UTC().Add(24 * time.Hour).Truncate(time.Second)
 
-	tests := []struct {
-		name        string
-		lookupID    string
-		wantPremium bool
-		wantErr     error
-	}{
-		{
-			name:        "シード済みなら is_premium を更新",
-			lookupID:    testPlayerID1,
-			wantPremium: true,
-			wantErr:     nil,
-		},
-		{
-			name:        "未シードなら ErrNotFound",
-			lookupID:    testPlayerID2,
-			wantPremium: false,
-			wantErr:     port.ErrNotFound,
-		},
-	}
+	t.Run("premium 状態の更新", func(t *testing.T) {
+		// 永続化はシード済みケースのみ FindByID 経由で確認する。
+		tests := []struct {
+			name        string
+			lookupID    string
+			wantPremium bool
+			wantErr     error
+		}{
+			{
+				name:        "シード済みのとき、is_premium を更新する",
+				lookupID:    testPlayerID1,
+				wantPremium: true,
+				wantErr:     nil,
+			},
+			{
+				name:        "未シードのとき、ErrNotFound になる",
+				lookupID:    testPlayerID2,
+				wantPremium: false,
+				wantErr:     port.ErrNotFound,
+			},
+		}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			sharedPg.Truncate(t)
-			seedPlayer(t, testPlayerID1, "uid-1", "Alice", false)
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				sharedPg.Truncate(t)
+				seedPlayer(t, testPlayerID1, "uid-1", "Alice", false)
 
-			err := repo.UpdatePremium(ctx, tt.lookupID, true, &expiresAt)
-			require.ErrorIs(t, err, tt.wantErr)
+				err := repo.UpdatePremium(ctx, tt.lookupID, true, &expiresAt)
+				require.ErrorIs(t, err, tt.wantErr)
 
-			got, _ := repo.FindByID(ctx, tt.lookupID)
-			assert.Equal(t, tt.wantPremium, playerIsPremium(got))
-		})
-	}
+				got, _ := repo.FindByID(ctx, tt.lookupID)
+				assert.Equal(t, tt.wantPremium, playerIsPremium(got))
+			})
+		}
+	})
 }
 
-// IncrementDailyBattleCount は (player_id, game_date) を UPSERT する純プリミティブ。
-// 「初回 INSERT で 1、2 回目以降 UPDATE で +1、別ゲーム日は別行として独立」を契約として
-// 検証する。連続呼び出しの履歴を 1 ケースの calls スライスで表現することで、
-// 「同じ日 → 加算」「別の日 → 1 から独立」「既存日に戻る → 履歴が独立して残る」の
-// 一連の不変条件をテーブル駆動で表す。
 func TestIncrementDailyBattleCount(t *testing.T) {
 	repo := postgres.NewPlayerRepository(sharedPg.Pool)
 	ctx := context.Background()
@@ -355,108 +361,113 @@ func TestIncrementDailyBattleCount(t *testing.T) {
 		want     int64
 	}
 
-	tests := []struct {
-		name  string
-		calls []call
-	}{
-		{
-			name: "初回 INSERT で 1 が返る",
-			calls: []call{
-				{playerID: testPlayerID1, gameDate: today, want: 1},
+	t.Run("当日バトル数のインクリメント", func(t *testing.T) {
+		// 連続呼び出しの履歴を calls スライスで表し、日単位 UPSERT の独立性 (別日は独立行、
+		// 別プレイヤーは独立カウント) を 1 ケース内で通しで確かめる。
+		tests := []struct {
+			name  string
+			calls []call
+		}{
+			{
+				name: "当日の行が無い初回のとき、1 が返る",
+				calls: []call{
+					{playerID: testPlayerID1, gameDate: today, want: 1},
+				},
 			},
-		},
-		{
-			name: "同一ゲーム日への 2 回目以降は +1 ずつ加算される",
-			calls: []call{
-				{playerID: testPlayerID1, gameDate: today, want: 1},
-				{playerID: testPlayerID1, gameDate: today, want: 2},
-				{playerID: testPlayerID1, gameDate: today, want: 3},
+			{
+				name: "同一ゲーム日を繰り返すとき、+1 ずつ加算される",
+				calls: []call{
+					{playerID: testPlayerID1, gameDate: today, want: 1},
+					{playerID: testPlayerID1, gameDate: today, want: 2},
+					{playerID: testPlayerID1, gameDate: today, want: 3},
+				},
 			},
-		},
-		{
-			name: "別ゲーム日は独立した行として 1 から始まる",
-			calls: []call{
-				{playerID: testPlayerID1, gameDate: today, want: 1},
-				{playerID: testPlayerID1, gameDate: yesterday, want: 1},
+			{
+				name: "別ゲーム日のとき、独立した行として 1 から始まる",
+				calls: []call{
+					{playerID: testPlayerID1, gameDate: today, want: 1},
+					{playerID: testPlayerID1, gameDate: yesterday, want: 1},
+				},
 			},
-		},
-		{
-			name: "既存日に戻っても履歴が独立して残り続けて加算される",
-			calls: []call{
-				{playerID: testPlayerID1, gameDate: today, want: 1},
-				{playerID: testPlayerID1, gameDate: today, want: 2},
-				{playerID: testPlayerID1, gameDate: yesterday, want: 1},
-				{playerID: testPlayerID1, gameDate: today, want: 3},
+			{
+				name: "既存日に戻るとき、履歴が独立して残り加算が続く",
+				calls: []call{
+					{playerID: testPlayerID1, gameDate: today, want: 1},
+					{playerID: testPlayerID1, gameDate: today, want: 2},
+					{playerID: testPlayerID1, gameDate: yesterday, want: 1},
+					{playerID: testPlayerID1, gameDate: today, want: 3},
+				},
 			},
-		},
-		{
-			name: "別プレイヤーのインクリメントは互いに独立しカウントを共有しない",
-			calls: []call{
-				{playerID: testPlayerID1, gameDate: today, want: 1},
-				{playerID: testPlayerID2, gameDate: today, want: 1},
-				{playerID: testPlayerID1, gameDate: today, want: 2},
-				{playerID: testPlayerID2, gameDate: today, want: 2},
+			{
+				name: "別プレイヤーのとき、カウントを共有せず独立する",
+				calls: []call{
+					{playerID: testPlayerID1, gameDate: today, want: 1},
+					{playerID: testPlayerID2, gameDate: today, want: 1},
+					{playerID: testPlayerID1, gameDate: today, want: 2},
+					{playerID: testPlayerID2, gameDate: today, want: 2},
+				},
 			},
-		},
-	}
+		}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			sharedPg.Truncate(t)
-			seedPlayer(t, testPlayerID1, "uid-1", "Alice", false)
-			seedPlayer(t, testPlayerID2, "uid-2", "Bob", false)
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				sharedPg.Truncate(t)
+				seedPlayer(t, testPlayerID1, "uid-1", "Alice", false)
+				seedPlayer(t, testPlayerID2, "uid-2", "Bob", false)
 
-			for _, c := range tt.calls {
-				got, err := repo.IncrementDailyBattleCount(ctx, c.playerID, c.gameDate)
-				require.NoError(t, err)
-				assert.Equal(t, c.want, got)
-			}
-		})
-	}
+				for _, c := range tt.calls {
+					got, err := repo.IncrementDailyBattleCount(ctx, c.playerID, c.gameDate)
+					require.NoError(t, err)
+					assert.Equal(t, c.want, got)
+				}
+			})
+		}
+	})
 }
 
-// UpdateProgression の契約: シード済みなら受け取った exp / level をそのまま書き込み、
-// 未シードなら ErrNotFound。永続化は GetProgression 経由で反映されることまで確認する。
 func TestUpdateProgression(t *testing.T) {
 	repo := postgres.NewPlayerRepository(sharedPg.Pool)
 	ctx := context.Background()
 
-	tests := []struct {
-		name      string
-		lookupID  string
-		wantLevel int64
-		wantExp   int64
-		wantErr   error
-	}{
-		{
-			name:      "シード済みなら exp / level をそのまま書き込む",
-			lookupID:  testPlayerID1,
-			wantLevel: 2,
-			wantExp:   150,
-			wantErr:   nil,
-		},
-		{
-			name:     "未シードなら ErrNotFound",
-			lookupID: testPlayerID2,
-			wantErr:  port.ErrNotFound,
-		},
-	}
+	t.Run("進捗の更新", func(t *testing.T) {
+		// 永続化は GetProgression 経由で反映されることまで確認する。
+		tests := []struct {
+			name      string
+			lookupID  string
+			wantLevel int64
+			wantExp   int64
+			wantErr   error
+		}{
+			{
+				name:      "シード済みのとき、exp / level をそのまま書き込む",
+				lookupID:  testPlayerID1,
+				wantLevel: 2,
+				wantExp:   150,
+				wantErr:   nil,
+			},
+			{
+				name:     "未シードのとき、ErrNotFound になる",
+				lookupID: testPlayerID2,
+				wantErr:  port.ErrNotFound,
+			},
+		}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			sharedPg.Truncate(t)
-			seedPlayer(t, testPlayerID1, "uid-1", "Alice", false)
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				sharedPg.Truncate(t)
+				seedPlayer(t, testPlayerID1, "uid-1", "Alice", false)
 
-			prog, err := repo.UpdateProgression(ctx, tt.lookupID, 150, 2)
-			require.ErrorIs(t, err, tt.wantErr)
-			gotLevel, gotExp := progressionLevelExp(prog)
-			assert.Equal(t, tt.wantLevel, gotLevel)
-			assert.Equal(t, tt.wantExp, gotExp)
+				prog, err := repo.UpdateProgression(ctx, tt.lookupID, 150, 2)
+				require.ErrorIs(t, err, tt.wantErr)
+				gotLevel, gotExp := progressionLevelExp(prog)
+				assert.Equal(t, tt.wantLevel, gotLevel)
+				assert.Equal(t, tt.wantExp, gotExp)
 
-			persisted, _ := repo.GetProgression(ctx, tt.lookupID)
-			persistedLevel, persistedExp := progressionLevelExp(persisted)
-			assert.Equal(t, tt.wantLevel, persistedLevel)
-			assert.Equal(t, tt.wantExp, persistedExp)
-		})
-	}
+				persisted, _ := repo.GetProgression(ctx, tt.lookupID)
+				persistedLevel, persistedExp := progressionLevelExp(persisted)
+				assert.Equal(t, tt.wantLevel, persistedLevel)
+				assert.Equal(t, tt.wantExp, persistedExp)
+			})
+		}
+	})
 }
