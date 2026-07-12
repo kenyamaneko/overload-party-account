@@ -13,12 +13,32 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// StatusMapping 群は、SDK の固有責務である「OpenAPI spec で宣言された 4xx/5xx status を
-// sentinel error に変換する」契約を endpoint ごとに検証する。account は endpoint が多いため
-// 各 endpoint で代表 status を取り上げ、newStatusError の共通 switch を交差カバーする。
+// 各 TestClient_<Endpoint> は、fake サーバ (httptest) を経由した実 HTTP round trip で
+// 2 つの契約を検証する。(1) 成功 status のとき、fake が返した body が typed 戻り値へ
+// 正しく decode されること。(2) OpenAPI spec が宣言する error status (400/401/404/409/500)
+// のとき、SDK 固有責務である newStatusError の変換を経て対応する sentinel が
+// errors.Is で判別できること。400 系の意味は HTTP の普遍的な取り決めであり、
+// endpoint ごとに実通信を通して確かめても production の対応表をテスト側で
+// 手写しする二重管理にはならない。
 
-func TestClient_RegisterPlayer_StatusMapping(t *testing.T) {
-	t.Run("RegisterPlayer のステータスマッピング", func(t *testing.T) {
+func TestClient_RegisterPlayer(t *testing.T) {
+	t.Run("RegisterPlayer", func(t *testing.T) {
+		t.Run("201 を受けたとき、fake が返した body が PlayerResponse へ round trip する", func(t *testing.T) {
+			srv := apiaccountserverfake.NewServer()
+			defer srv.Close()
+			srv.RegisterFn = func(_ apiaccount.RegisterRequest) (int, any) {
+				return http.StatusCreated, apiaccount.PlayerResponse{PlayerID: "p-reg-1", FirebaseUID: "uid-reg-1"}
+			}
+
+			c := newTestClient(t, srv.URL())
+			got, err := c.RegisterPlayer(context.Background(), apiaccount.RegisterRequest{FirebaseUID: "uid-reg-1"})
+
+			require.NoError(t, err)
+			assert.Equal(t, "p-reg-1", got.PlayerID)
+			assert.Equal(t, "uid-reg-1", got.FirebaseUID)
+			assert.Nil(t, got.Name)
+		})
+
 		cases := []struct {
 			name       string
 			status     int
@@ -54,8 +74,25 @@ func TestClient_RegisterPlayer_StatusMapping(t *testing.T) {
 	})
 }
 
-func TestClient_LoginPlayer_StatusMapping(t *testing.T) {
-	t.Run("LoginPlayer のステータスマッピング", func(t *testing.T) {
+func TestClient_LoginPlayer(t *testing.T) {
+	t.Run("LoginPlayer", func(t *testing.T) {
+		t.Run("200 を受けたとき、fake が返した body が PlayerResponse へ round trip する", func(t *testing.T) {
+			srv := apiaccountserverfake.NewServer()
+			defer srv.Close()
+			name := "Alice"
+			srv.LoginFn = func(_ apiaccount.LoginRequest) (int, any) {
+				return http.StatusOK, apiaccount.PlayerResponse{PlayerID: "p-login-1", FirebaseUID: "uid-login-1", Name: &name}
+			}
+
+			c := newTestClient(t, srv.URL())
+			got, err := c.LoginPlayer(context.Background(), apiaccount.LoginRequest{FirebaseUID: "uid-login-1"})
+
+			require.NoError(t, err)
+			assert.Equal(t, "p-login-1", got.PlayerID)
+			require.NotNil(t, got.Name)
+			assert.Equal(t, "Alice", *got.Name)
+		})
+
 		cases := []struct {
 			name       string
 			status     int
@@ -86,8 +123,23 @@ func TestClient_LoginPlayer_StatusMapping(t *testing.T) {
 	})
 }
 
-func TestClient_GetPlayerByFirebaseUID_StatusMapping(t *testing.T) {
-	t.Run("GetPlayerByFirebaseUID のステータスマッピング", func(t *testing.T) {
+func TestClient_GetPlayerByFirebaseUID(t *testing.T) {
+	t.Run("GetPlayerByFirebaseUID", func(t *testing.T) {
+		t.Run("200 を受けたとき、fake が返した body が PlayerResponse へ round trip する", func(t *testing.T) {
+			srv := apiaccountserverfake.NewServer()
+			defer srv.Close()
+			srv.FindByFirebaseUIDFn = func(firebaseUID string) (int, any) {
+				return http.StatusOK, apiaccount.PlayerResponse{PlayerID: "p-lookup-1", FirebaseUID: firebaseUID}
+			}
+
+			c := newTestClient(t, srv.URL())
+			got, err := c.GetPlayerByFirebaseUID(context.Background(), "uid-lookup-1")
+
+			require.NoError(t, err)
+			assert.Equal(t, "p-lookup-1", got.PlayerID)
+			assert.Equal(t, "uid-lookup-1", got.FirebaseUID)
+		})
+
 		t.Run("404 を受けたとき、ErrNotFound になる", func(t *testing.T) {
 			srv := apiaccountserverfake.NewServer()
 			defer srv.Close()
@@ -100,8 +152,18 @@ func TestClient_GetPlayerByFirebaseUID_StatusMapping(t *testing.T) {
 	})
 }
 
-func TestClient_AwardGameExp_StatusMapping(t *testing.T) {
-	t.Run("AwardGameExp のステータスマッピング", func(t *testing.T) {
+func TestClient_AwardGameExp(t *testing.T) {
+	t.Run("AwardGameExp", func(t *testing.T) {
+		t.Run("204 を受けたとき、error にならない", func(t *testing.T) {
+			srv := apiaccountserverfake.NewServer()
+			defer srv.Close()
+			srv.AwardGameExpFn = func(_ apiaccount.AwardGameExpRequest) (int, any) { return http.StatusNoContent, nil }
+
+			c := newTestClient(t, srv.URL())
+			err := c.AwardGameExp(context.Background(), apiaccount.AwardGameExpRequest{})
+			require.NoError(t, err)
+		})
+
 		t.Run("400 を受けたとき、ErrBadRequest になる", func(t *testing.T) {
 			srv := apiaccountserverfake.NewServer()
 			defer srv.Close()
@@ -114,8 +176,24 @@ func TestClient_AwardGameExp_StatusMapping(t *testing.T) {
 	})
 }
 
-func TestClient_GetPlayer_StatusMapping(t *testing.T) {
-	t.Run("GetPlayer のステータスマッピング", func(t *testing.T) {
+func TestClient_GetPlayer(t *testing.T) {
+	t.Run("GetPlayer", func(t *testing.T) {
+		t.Run("200 を受けたとき、fake が返した body が PlayerResponse へ round trip する", func(t *testing.T) {
+			srv := apiaccountserverfake.NewServer()
+			defer srv.Close()
+			srv.GetPlayerFn = func() (int, any) {
+				return http.StatusOK, apiaccount.PlayerResponse{PlayerID: "p-me-1", Level: 3, Exp: 120}
+			}
+
+			c := newTestClient(t, srv.URL())
+			got, err := c.GetPlayer(context.Background())
+
+			require.NoError(t, err)
+			assert.Equal(t, "p-me-1", got.PlayerID)
+			assert.Equal(t, int64(3), got.Level)
+			assert.Equal(t, int64(120), got.Exp)
+		})
+
 		t.Run("401 を受けたとき、ErrUnauthorized になる", func(t *testing.T) {
 			srv := apiaccountserverfake.NewServer()
 			defer srv.Close()
@@ -128,8 +206,25 @@ func TestClient_GetPlayer_StatusMapping(t *testing.T) {
 	})
 }
 
-func TestClient_UpdateName_StatusMapping(t *testing.T) {
-	t.Run("UpdateName のステータスマッピング", func(t *testing.T) {
+func TestClient_UpdateName(t *testing.T) {
+	t.Run("UpdateName", func(t *testing.T) {
+		t.Run("200 を受けたとき、fake が返した body が PlayerResponse へ round trip する", func(t *testing.T) {
+			srv := apiaccountserverfake.NewServer()
+			defer srv.Close()
+			name := "bob"
+			srv.UpdateNameFn = func(_ apiaccount.UpdateNameRequest) (int, any) {
+				return http.StatusOK, apiaccount.PlayerResponse{PlayerID: "p-me-1", Name: &name}
+			}
+
+			c := newTestClient(t, srv.URL())
+			got, err := c.UpdateName(context.Background(), apiaccount.UpdateNameRequest{Name: "bob"})
+
+			require.NoError(t, err)
+			assert.Equal(t, "p-me-1", got.PlayerID)
+			require.NotNil(t, got.Name)
+			assert.Equal(t, "bob", *got.Name)
+		})
+
 		cases := []struct {
 			name       string
 			status     int
@@ -160,8 +255,20 @@ func TestClient_UpdateName_StatusMapping(t *testing.T) {
 	})
 }
 
-func TestClient_ValidateNameForOnboarding_StatusMapping(t *testing.T) {
-	t.Run("ValidateNameForOnboarding のステータスマッピング", func(t *testing.T) {
+func TestClient_ValidateNameForOnboarding(t *testing.T) {
+	t.Run("ValidateNameForOnboarding", func(t *testing.T) {
+		t.Run("204 を受けたとき、error にならない", func(t *testing.T) {
+			srv := apiaccountserverfake.NewServer()
+			defer srv.Close()
+			srv.ValidateNameForOnboardingFn = func(_ apiaccount.ValidateNameForOnboardingRequest) (int, any) {
+				return http.StatusNoContent, nil
+			}
+
+			c := newTestClient(t, srv.URL())
+			err := c.ValidateNameForOnboarding(context.Background(), apiaccount.ValidateNameForOnboardingRequest{})
+			require.NoError(t, err)
+		})
+
 		t.Run("400 を受けたとき、ErrBadRequest になる", func(t *testing.T) {
 			srv := apiaccountserverfake.NewServer()
 			defer srv.Close()
@@ -174,8 +281,24 @@ func TestClient_ValidateNameForOnboarding_StatusMapping(t *testing.T) {
 	})
 }
 
-func TestClient_GetBattleLimit_StatusMapping(t *testing.T) {
-	t.Run("GetBattleLimit のステータスマッピング", func(t *testing.T) {
+func TestClient_GetBattleLimit(t *testing.T) {
+	t.Run("GetBattleLimit", func(t *testing.T) {
+		t.Run("200 を受けたとき、fake が返した body が BattleLimitResponse へ round trip する", func(t *testing.T) {
+			srv := apiaccountserverfake.NewServer()
+			defer srv.Close()
+			srv.GetBattleLimitFn = func() (int, any) {
+				return http.StatusOK, apiaccount.BattleLimitResponse{CanBattle: true, DailyBattleCount: 2, DailyBattleLimit: 5}
+			}
+
+			c := newTestClient(t, srv.URL())
+			got, err := c.GetBattleLimit(context.Background())
+
+			require.NoError(t, err)
+			assert.True(t, got.CanBattle)
+			assert.Equal(t, int64(2), got.DailyBattleCount)
+			assert.Equal(t, int64(5), got.DailyBattleLimit)
+		})
+
 		t.Run("401 を受けたとき、ErrUnauthorized になる", func(t *testing.T) {
 			srv := apiaccountserverfake.NewServer()
 			defer srv.Close()
@@ -188,8 +311,18 @@ func TestClient_GetBattleLimit_StatusMapping(t *testing.T) {
 	})
 }
 
-func TestClient_IncrementBattleCount_StatusMapping(t *testing.T) {
-	t.Run("IncrementBattleCount のステータスマッピング", func(t *testing.T) {
+func TestClient_IncrementBattleCount(t *testing.T) {
+	t.Run("IncrementBattleCount", func(t *testing.T) {
+		t.Run("204 を受けたとき、error にならない", func(t *testing.T) {
+			srv := apiaccountserverfake.NewServer()
+			defer srv.Close()
+			srv.IncrementBattleCountFn = func() (int, any) { return http.StatusNoContent, nil }
+
+			c := newTestClient(t, srv.URL())
+			err := c.IncrementBattleCount(context.Background())
+			require.NoError(t, err)
+		})
+
 		t.Run("401 を受けたとき、ErrUnauthorized になる", func(t *testing.T) {
 			srv := apiaccountserverfake.NewServer()
 			defer srv.Close()
@@ -202,8 +335,18 @@ func TestClient_IncrementBattleCount_StatusMapping(t *testing.T) {
 	})
 }
 
-func TestClient_UpdatePremium_StatusMapping(t *testing.T) {
-	t.Run("UpdatePremium のステータスマッピング", func(t *testing.T) {
+func TestClient_UpdatePremium(t *testing.T) {
+	t.Run("UpdatePremium", func(t *testing.T) {
+		t.Run("204 を受けたとき、error にならない", func(t *testing.T) {
+			srv := apiaccountserverfake.NewServer()
+			defer srv.Close()
+			srv.UpdatePremiumFn = func(_ apiaccount.UpdatePremiumRequest) (int, any) { return http.StatusNoContent, nil }
+
+			c := newTestClient(t, srv.URL())
+			err := c.UpdatePremium(context.Background(), apiaccount.UpdatePremiumRequest{})
+			require.NoError(t, err)
+		})
+
 		t.Run("400 を受けたとき、ErrBadRequest になる", func(t *testing.T) {
 			srv := apiaccountserverfake.NewServer()
 			defer srv.Close()
@@ -216,8 +359,18 @@ func TestClient_UpdatePremium_StatusMapping(t *testing.T) {
 	})
 }
 
-func TestClient_AddExp_StatusMapping(t *testing.T) {
-	t.Run("AddExp のステータスマッピング", func(t *testing.T) {
+func TestClient_AddExp(t *testing.T) {
+	t.Run("AddExp", func(t *testing.T) {
+		t.Run("204 を受けたとき、error にならない", func(t *testing.T) {
+			srv := apiaccountserverfake.NewServer()
+			defer srv.Close()
+			srv.AddExpFn = func(_ apiaccount.AddExpRequest) (int, any) { return http.StatusNoContent, nil }
+
+			c := newTestClient(t, srv.URL())
+			err := c.AddExp(context.Background(), apiaccount.AddExpRequest{})
+			require.NoError(t, err)
+		})
+
 		t.Run("400 を受けたとき、ErrBadRequest になる", func(t *testing.T) {
 			srv := apiaccountserverfake.NewServer()
 			defer srv.Close()
@@ -230,8 +383,22 @@ func TestClient_AddExp_StatusMapping(t *testing.T) {
 	})
 }
 
-func TestClient_ListFactions_StatusMapping(t *testing.T) {
-	t.Run("ListFactions のステータスマッピング", func(t *testing.T) {
+func TestClient_ListFactions(t *testing.T) {
+	t.Run("ListFactions", func(t *testing.T) {
+		t.Run("200 を受けたとき、fake が返した body が FactionListing へ round trip する", func(t *testing.T) {
+			srv := apiaccountserverfake.NewServer()
+			defer srv.Close()
+			srv.ListFactionsFn = func() (int, any) {
+				return http.StatusOK, apiaccount.FactionListing{Factions: []string{"SHE", "ORD"}}
+			}
+
+			c := newTestClient(t, srv.URL())
+			got, err := c.ListFactions(context.Background())
+
+			require.NoError(t, err)
+			assert.Equal(t, []string{"SHE", "ORD"}, got.Factions)
+		})
+
 		t.Run("401 を受けたとき、ErrUnauthorized になる", func(t *testing.T) {
 			srv := apiaccountserverfake.NewServer()
 			defer srv.Close()
@@ -244,8 +411,18 @@ func TestClient_ListFactions_StatusMapping(t *testing.T) {
 	})
 }
 
-func TestClient_GrantFaction_StatusMapping(t *testing.T) {
-	t.Run("GrantFaction のステータスマッピング", func(t *testing.T) {
+func TestClient_GrantFaction(t *testing.T) {
+	t.Run("GrantFaction", func(t *testing.T) {
+		t.Run("204 を受けたとき、error にならない", func(t *testing.T) {
+			srv := apiaccountserverfake.NewServer()
+			defer srv.Close()
+			srv.GrantFactionFn = func(_ apiaccount.FactionGrantRequest) (int, any) { return http.StatusNoContent, nil }
+
+			c := newTestClient(t, srv.URL())
+			err := c.GrantFaction(context.Background(), apiaccount.FactionGrantRequest{})
+			require.NoError(t, err)
+		})
+
 		t.Run("400 を受けたとき、ErrBadRequest になる", func(t *testing.T) {
 			srv := apiaccountserverfake.NewServer()
 			defer srv.Close()
@@ -258,8 +435,19 @@ func TestClient_GrantFaction_StatusMapping(t *testing.T) {
 	})
 }
 
-func TestClient_SelectInitialFaction_StatusMapping(t *testing.T) {
-	t.Run("SelectInitialFaction のステータスマッピング", func(t *testing.T) {
+func TestClient_SelectInitialFaction(t *testing.T) {
+	t.Run("SelectInitialFaction", func(t *testing.T) {
+		t.Run("200 を受けたとき、error にならない", func(t *testing.T) {
+			// spec は 200 を返すが SDK は body を decode しない (production の戻り値が void)。
+			srv := apiaccountserverfake.NewServer()
+			defer srv.Close()
+			srv.SelectInitialFactionFn = func(_ apiaccount.SelectInitialFactionRequest) (int, any) { return http.StatusOK, nil }
+
+			c := newTestClient(t, srv.URL())
+			err := c.SelectInitialFaction(context.Background(), apiaccount.SelectInitialFactionRequest{})
+			require.NoError(t, err)
+		})
+
 		t.Run("400 を受けたとき、ErrBadRequest になる", func(t *testing.T) {
 			srv := apiaccountserverfake.NewServer()
 			defer srv.Close()
@@ -272,8 +460,28 @@ func TestClient_SelectInitialFaction_StatusMapping(t *testing.T) {
 	})
 }
 
-func TestClient_GetPlayerSettings_StatusMapping(t *testing.T) {
-	t.Run("GetPlayerSettings のステータスマッピング", func(t *testing.T) {
+func TestClient_GetPlayerSettings(t *testing.T) {
+	t.Run("GetPlayerSettings", func(t *testing.T) {
+		t.Run("200 を受けたとき、fake が返した body が PlayerSettingsResponse へ round trip する", func(t *testing.T) {
+			srv := apiaccountserverfake.NewServer()
+			defer srv.Close()
+			srv.GetSettingsFn = func() (int, any) {
+				return http.StatusOK, apiaccount.PlayerSettingsResponse{
+					PlayerID: "p-me-1", Language: "ja", BgmVolume: 50, SeVolume: 80, PushEnabled: true,
+				}
+			}
+
+			c := newTestClient(t, srv.URL())
+			got, err := c.GetPlayerSettings(context.Background())
+
+			require.NoError(t, err)
+			assert.Equal(t, "p-me-1", got.PlayerID)
+			assert.Equal(t, "ja", got.Language)
+			assert.Equal(t, int64(50), got.BgmVolume)
+			assert.Equal(t, int64(80), got.SeVolume)
+			assert.True(t, got.PushEnabled)
+		})
+
 		t.Run("401 を受けたとき、ErrUnauthorized になる", func(t *testing.T) {
 			srv := apiaccountserverfake.NewServer()
 			defer srv.Close()
@@ -286,8 +494,28 @@ func TestClient_GetPlayerSettings_StatusMapping(t *testing.T) {
 	})
 }
 
-func TestClient_UpdatePlayerSettings_StatusMapping(t *testing.T) {
-	t.Run("UpdatePlayerSettings のステータスマッピング", func(t *testing.T) {
+func TestClient_UpdatePlayerSettings(t *testing.T) {
+	t.Run("UpdatePlayerSettings", func(t *testing.T) {
+		t.Run("200 を受けたとき、fake が返した body が PlayerSettingsResponse へ round trip する", func(t *testing.T) {
+			srv := apiaccountserverfake.NewServer()
+			defer srv.Close()
+			srv.UpdateSettingsFn = func(_ apiaccount.UpdateSettingsRequest) (int, any) {
+				return http.StatusOK, apiaccount.PlayerSettingsResponse{
+					PlayerID: "p-me-1", Language: "en", BgmVolume: 30, SeVolume: 40, PushEnabled: false,
+				}
+			}
+
+			c := newTestClient(t, srv.URL())
+			got, err := c.UpdatePlayerSettings(context.Background(), apiaccount.UpdateSettingsRequest{})
+
+			require.NoError(t, err)
+			assert.Equal(t, "p-me-1", got.PlayerID)
+			assert.Equal(t, "en", got.Language)
+			assert.Equal(t, int64(30), got.BgmVolume)
+			assert.Equal(t, int64(40), got.SeVolume)
+			assert.False(t, got.PushEnabled)
+		})
+
 		t.Run("400 を受けたとき、ErrBadRequest になる", func(t *testing.T) {
 			srv := apiaccountserverfake.NewServer()
 			defer srv.Close()
