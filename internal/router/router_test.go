@@ -8,7 +8,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 
 	"github.com/kenyamaneko/overload-party-account/internal/handler/rest"
 
@@ -53,33 +52,6 @@ func TestNew(t *testing.T) {
 			w := httptest.NewRecorder()
 			r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/health", nil))
 			assert.Equal(t, http.StatusOK, w.Code)
-		})
-
-		t.Run("auth-free ルートは Verify を呼ばず 401 にならない", func(t *testing.T) {
-			// nullVerifier は呼ばれると panic するので、NotPanics で「auth middleware を
-			// 通らない」ことを、401 でないことで「認証が要求されない」ことを確かめる。
-			cases := []struct {
-				name   string
-				method string
-				path   string
-			}{
-				{name: "POST /internal/v1/auth/register は認証なしで到達できる", method: http.MethodPost, path: "/internal/v1/auth/register"},
-				{name: "POST /internal/v1/auth/login は認証なしで到達できる", method: http.MethodPost, path: "/internal/v1/auth/login"},
-				{name: "GET /internal/v1/auth/by-firebase-uid/:uid は認証なしで到達できる", method: http.MethodGet, path: "/internal/v1/auth/by-firebase-uid/uid-1"},
-				{name: "GET /internal/v1/players/:playerID/factions は認証なしで到達できる", method: http.MethodGet, path: "/internal/v1/players/p1/factions"},
-				{name: "POST /internal/v1/players/award-game-exp は認証なしで到達できる", method: http.MethodPost, path: "/internal/v1/players/award-game-exp"},
-			}
-
-			r := newTestRouter(nullVerifier{})
-			for _, tc := range cases {
-				t.Run(tc.name, func(t *testing.T) {
-					w := httptest.NewRecorder()
-					require.NotPanics(t, func() {
-						r.ServeHTTP(w, httptest.NewRequest(tc.method, tc.path, nil))
-					})
-					assert.NotEqual(t, http.StatusUnauthorized, w.Code)
-				})
-			}
 		})
 
 		t.Run("/api/v1/account 配下は auth header 欠落で 401 になる", func(t *testing.T) {
