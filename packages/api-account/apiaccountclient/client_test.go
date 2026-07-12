@@ -13,17 +13,13 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// 各 TestClient_<Endpoint> は、fake サーバ (httptest) を経由した実 HTTP round trip で
-// 2 つの契約を検証する。(1) 成功 status のとき、fake が返した body が typed 戻り値へ
-// 正しく decode されること。(2) OpenAPI spec が宣言する error status (400/401/404/409/500)
-// のとき、SDK 固有責務である newStatusError の変換を経て対応する sentinel が
-// errors.Is で判別できること。400 系の意味は HTTP の普遍的な取り決めであり、
-// endpoint ごとに実通信を通して確かめても production の対応表をテスト側で
-// 手写しする二重管理にはならない。
+// 各 TestClient_<Endpoint> は、fake サーバ (httptest) を経由した実際の通信を介して
+// (1) 成功 status のとき fake が返した body が typed 戻り値へ正しく decode されること、
+// (2) error status のとき対応する sentinel が errors.Is で判別できることを検証する。
 
 func TestClient_RegisterPlayer(t *testing.T) {
 	t.Run("RegisterPlayer", func(t *testing.T) {
-		t.Run("201 を受けたとき、fake が返した body が PlayerResponse へ round trip する", func(t *testing.T) {
+		t.Run("201 を受けたとき、fake が返した body が PlayerResponse へ 復元される", func(t *testing.T) {
 			srv := apiaccountserverfake.NewServer()
 			defer srv.Close()
 			srv.RegisterFn = func(_ apiaccount.RegisterRequest) (int, any) {
@@ -31,7 +27,7 @@ func TestClient_RegisterPlayer(t *testing.T) {
 			}
 
 			c := newTestClient(t, srv.URL())
-			got, err := c.RegisterPlayer(context.Background(), apiaccount.RegisterRequest{FirebaseUID: "uid-reg-1"})
+			got, err := c.RegisterPlayer(context.Background(), apiaccount.RegisterRequest{})
 
 			require.NoError(t, err)
 			assert.Equal(t, "p-reg-1", got.PlayerID)
@@ -76,7 +72,7 @@ func TestClient_RegisterPlayer(t *testing.T) {
 
 func TestClient_LoginPlayer(t *testing.T) {
 	t.Run("LoginPlayer", func(t *testing.T) {
-		t.Run("200 を受けたとき、fake が返した body が PlayerResponse へ round trip する", func(t *testing.T) {
+		t.Run("200 を受けたとき、fake が返した body が PlayerResponse へ 復元される", func(t *testing.T) {
 			srv := apiaccountserverfake.NewServer()
 			defer srv.Close()
 			name := "Alice"
@@ -85,7 +81,7 @@ func TestClient_LoginPlayer(t *testing.T) {
 			}
 
 			c := newTestClient(t, srv.URL())
-			got, err := c.LoginPlayer(context.Background(), apiaccount.LoginRequest{FirebaseUID: "uid-login-1"})
+			got, err := c.LoginPlayer(context.Background(), apiaccount.LoginRequest{})
 
 			require.NoError(t, err)
 			assert.Equal(t, "p-login-1", got.PlayerID)
@@ -125,7 +121,7 @@ func TestClient_LoginPlayer(t *testing.T) {
 
 func TestClient_GetPlayerByFirebaseUID(t *testing.T) {
 	t.Run("GetPlayerByFirebaseUID", func(t *testing.T) {
-		t.Run("200 を受けたとき、fake が返した body が PlayerResponse へ round trip する", func(t *testing.T) {
+		t.Run("200 を受けたとき、fake が返した body が PlayerResponse へ 復元される", func(t *testing.T) {
 			srv := apiaccountserverfake.NewServer()
 			defer srv.Close()
 			srv.FindByFirebaseUIDFn = func(firebaseUID string) (int, any) {
@@ -178,7 +174,7 @@ func TestClient_AwardGameExp(t *testing.T) {
 
 func TestClient_GetPlayer(t *testing.T) {
 	t.Run("GetPlayer", func(t *testing.T) {
-		t.Run("200 を受けたとき、fake が返した body が PlayerResponse へ round trip する", func(t *testing.T) {
+		t.Run("200 を受けたとき、fake が返した body が PlayerResponse へ 復元される", func(t *testing.T) {
 			srv := apiaccountserverfake.NewServer()
 			defer srv.Close()
 			srv.GetPlayerFn = func() (int, any) {
@@ -208,7 +204,7 @@ func TestClient_GetPlayer(t *testing.T) {
 
 func TestClient_UpdateName(t *testing.T) {
 	t.Run("UpdateName", func(t *testing.T) {
-		t.Run("200 を受けたとき、fake が返した body が PlayerResponse へ round trip する", func(t *testing.T) {
+		t.Run("200 を受けたとき、fake が返した body が PlayerResponse へ 復元される", func(t *testing.T) {
 			srv := apiaccountserverfake.NewServer()
 			defer srv.Close()
 			name := "bob"
@@ -217,7 +213,7 @@ func TestClient_UpdateName(t *testing.T) {
 			}
 
 			c := newTestClient(t, srv.URL())
-			got, err := c.UpdateName(context.Background(), apiaccount.UpdateNameRequest{Name: "bob"})
+			got, err := c.UpdateName(context.Background(), apiaccount.UpdateNameRequest{})
 
 			require.NoError(t, err)
 			assert.Equal(t, "p-me-1", got.PlayerID)
@@ -283,7 +279,7 @@ func TestClient_ValidateNameForOnboarding(t *testing.T) {
 
 func TestClient_GetBattleLimit(t *testing.T) {
 	t.Run("GetBattleLimit", func(t *testing.T) {
-		t.Run("200 を受けたとき、fake が返した body が BattleLimitResponse へ round trip する", func(t *testing.T) {
+		t.Run("200 を受けたとき、fake が返した body が BattleLimitResponse へ 復元される", func(t *testing.T) {
 			srv := apiaccountserverfake.NewServer()
 			defer srv.Close()
 			srv.GetBattleLimitFn = func() (int, any) {
@@ -385,7 +381,7 @@ func TestClient_AddExp(t *testing.T) {
 
 func TestClient_ListFactions(t *testing.T) {
 	t.Run("ListFactions", func(t *testing.T) {
-		t.Run("200 を受けたとき、fake が返した body が FactionListing へ round trip する", func(t *testing.T) {
+		t.Run("200 を受けたとき、fake が返した body が FactionListing へ 復元される", func(t *testing.T) {
 			srv := apiaccountserverfake.NewServer()
 			defer srv.Close()
 			srv.ListFactionsFn = func() (int, any) {
@@ -462,7 +458,7 @@ func TestClient_SelectInitialFaction(t *testing.T) {
 
 func TestClient_GetPlayerSettings(t *testing.T) {
 	t.Run("GetPlayerSettings", func(t *testing.T) {
-		t.Run("200 を受けたとき、fake が返した body が PlayerSettingsResponse へ round trip する", func(t *testing.T) {
+		t.Run("200 を受けたとき、fake が返した body が PlayerSettingsResponse へ 復元される", func(t *testing.T) {
 			srv := apiaccountserverfake.NewServer()
 			defer srv.Close()
 			srv.GetSettingsFn = func() (int, any) {
@@ -496,7 +492,7 @@ func TestClient_GetPlayerSettings(t *testing.T) {
 
 func TestClient_UpdatePlayerSettings(t *testing.T) {
 	t.Run("UpdatePlayerSettings", func(t *testing.T) {
-		t.Run("200 を受けたとき、fake が返した body が PlayerSettingsResponse へ round trip する", func(t *testing.T) {
+		t.Run("200 を受けたとき、fake が返した body が PlayerSettingsResponse へ 復元される", func(t *testing.T) {
 			srv := apiaccountserverfake.NewServer()
 			defer srv.Close()
 			srv.UpdateSettingsFn = func(_ apiaccount.UpdateSettingsRequest) (int, any) {

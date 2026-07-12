@@ -19,10 +19,8 @@ import (
 	apiaccount "github.com/kenyamaneko/overload-party-account/packages/api-account"
 )
 
-// newIntegrationRouter は実 PostgreSQL repository + 実 interactor を結線した router を返す。
-// nil interactor では auth-free ルートの到達確認が「未マウント (404)」「認証配下への
-// 誤配線 (401)」「nil 参照 panic が gin.Recovery で丸められた 500」のいずれとも
-// 区別できないため、実処理を完走させ genuine な成功ステータスで判別する。
+// newIntegrationRouter は、配線の到達を実処理の成功ステータスで判別するため実
+// interactor で結線した router を返す。
 func newIntegrationRouter() *gin.Engine {
 	playerRepo := postgres.NewPlayerRepository(sharedPg.Pool)
 	viewRepo := postgres.NewPlayerViewRepository(sharedPg.Pool)
