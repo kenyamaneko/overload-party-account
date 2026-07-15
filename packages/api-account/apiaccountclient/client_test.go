@@ -19,7 +19,7 @@ import (
 
 func TestClient_RegisterPlayer(t *testing.T) {
 	t.Run("RegisterPlayer", func(t *testing.T) {
-		t.Run("201 を受けたとき、フェイクが返した body が PlayerResponse へ復元される", func(t *testing.T) {
+		t.Run("201 を受けたとき、body が PlayerResponse へ復元される", func(t *testing.T) {
 			srv := apiaccountserverfake.NewServer()
 			defer srv.Close()
 			srv.RegisterFn = func(_ apiaccount.RegisterRequest) (int, any) {
@@ -72,7 +72,7 @@ func TestClient_RegisterPlayer(t *testing.T) {
 
 func TestClient_LoginPlayer(t *testing.T) {
 	t.Run("LoginPlayer", func(t *testing.T) {
-		t.Run("200 を受けたとき、フェイクが返した body が PlayerResponse へ復元される", func(t *testing.T) {
+		t.Run("200 を受けたとき、body が PlayerResponse へ復元される", func(t *testing.T) {
 			srv := apiaccountserverfake.NewServer()
 			defer srv.Close()
 			name := "Alice"
@@ -121,7 +121,7 @@ func TestClient_LoginPlayer(t *testing.T) {
 
 func TestClient_GetPlayerByFirebaseUID(t *testing.T) {
 	t.Run("GetPlayerByFirebaseUID", func(t *testing.T) {
-		t.Run("200 を受けたとき、フェイクが返した body が PlayerResponse へ復元される", func(t *testing.T) {
+		t.Run("200 を受けたとき、body が PlayerResponse へ復元される", func(t *testing.T) {
 			srv := apiaccountserverfake.NewServer()
 			defer srv.Close()
 			srv.FindByFirebaseUIDFn = func(firebaseUID string) (int, any) {
@@ -174,7 +174,7 @@ func TestClient_AwardGameExp(t *testing.T) {
 
 func TestClient_GetPlayer(t *testing.T) {
 	t.Run("GetPlayer", func(t *testing.T) {
-		t.Run("200 を受けたとき、フェイクが返した body が PlayerResponse へ復元される", func(t *testing.T) {
+		t.Run("200 を受けたとき、body が PlayerResponse へ復元される", func(t *testing.T) {
 			srv := apiaccountserverfake.NewServer()
 			defer srv.Close()
 			srv.GetPlayerFn = func() (int, any) {
@@ -204,7 +204,7 @@ func TestClient_GetPlayer(t *testing.T) {
 
 func TestClient_UpdateName(t *testing.T) {
 	t.Run("UpdateName", func(t *testing.T) {
-		t.Run("200 を受けたとき、フェイクが返した body が PlayerResponse へ復元される", func(t *testing.T) {
+		t.Run("200 を受けたとき、body が PlayerResponse へ復元される", func(t *testing.T) {
 			srv := apiaccountserverfake.NewServer()
 			defer srv.Close()
 			name := "bob"
@@ -279,7 +279,7 @@ func TestClient_ValidateNameForOnboarding(t *testing.T) {
 
 func TestClient_GetBattleLimit(t *testing.T) {
 	t.Run("GetBattleLimit", func(t *testing.T) {
-		t.Run("200 を受けたとき、フェイクが返した body が BattleLimitResponse へ復元される", func(t *testing.T) {
+		t.Run("200 を受けたとき、body が BattleLimitResponse へ復元される", func(t *testing.T) {
 			srv := apiaccountserverfake.NewServer()
 			defer srv.Close()
 			srv.GetBattleLimitFn = func() (int, any) {
@@ -381,7 +381,7 @@ func TestClient_AddExp(t *testing.T) {
 
 func TestClient_ListFactions(t *testing.T) {
 	t.Run("ListFactions", func(t *testing.T) {
-		t.Run("200 を受けたとき、フェイクが返した body が FactionListing へ復元される", func(t *testing.T) {
+		t.Run("200 を受けたとき、body が FactionListing へ復元される", func(t *testing.T) {
 			srv := apiaccountserverfake.NewServer()
 			defer srv.Close()
 			srv.ListFactionsFn = func() (int, any) {
@@ -458,7 +458,7 @@ func TestClient_SelectInitialFaction(t *testing.T) {
 
 func TestClient_GetPlayerSettings(t *testing.T) {
 	t.Run("GetPlayerSettings", func(t *testing.T) {
-		t.Run("200 を受けたとき、フェイクが返した body が PlayerSettingsResponse へ復元される", func(t *testing.T) {
+		t.Run("200 を受けたとき、body が PlayerSettingsResponse へ復元される", func(t *testing.T) {
 			srv := apiaccountserverfake.NewServer()
 			defer srv.Close()
 			srv.GetSettingsFn = func() (int, any) {
@@ -492,7 +492,7 @@ func TestClient_GetPlayerSettings(t *testing.T) {
 
 func TestClient_UpdatePlayerSettings(t *testing.T) {
 	t.Run("UpdatePlayerSettings", func(t *testing.T) {
-		t.Run("200 を受けたとき、フェイクが返した body が PlayerSettingsResponse へ復元される", func(t *testing.T) {
+		t.Run("200 を受けたとき、body が PlayerSettingsResponse へ復元される", func(t *testing.T) {
 			srv := apiaccountserverfake.NewServer()
 			defer srv.Close()
 			srv.UpdateSettingsFn = func(_ apiaccount.UpdateSettingsRequest) (int, any) {
