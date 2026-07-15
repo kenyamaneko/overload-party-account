@@ -70,7 +70,7 @@ const (
 func TestNewAuthFreeRoutesReachRealHandler(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	t.Run("auth-free ルートの実ハンドラ到達", func(t *testing.T) {
+	t.Run("認証不要ルートの実ハンドラ到達", func(t *testing.T) {
 		t.Run("POST /internal/v1/auth/register は実処理を通り 201 で新規プレイヤーを返す", func(t *testing.T) {
 			sharedPg.Truncate(t)
 			r := newIntegrationRouter()
