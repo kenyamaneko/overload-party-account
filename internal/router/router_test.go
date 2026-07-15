@@ -46,15 +46,15 @@ func newTestRouter(verifier internalauth.Verifier) *gin.Engine {
 }
 
 func TestNew(t *testing.T) {
-	t.Run("ルーターの認証配線", func(t *testing.T) {
-		t.Run("/health は auth middleware を通らず 200 を返す", func(t *testing.T) {
+	t.Run("ルートごとの認証要否", func(t *testing.T) {
+		t.Run("/health は認証なしで 200 を返す", func(t *testing.T) {
 			r := newTestRouter(nullVerifier{})
 			w := httptest.NewRecorder()
 			r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/health", nil))
 			assert.Equal(t, http.StatusOK, w.Code)
 		})
 
-		t.Run("/api/v1/account 配下は auth header 欠落で 401 になる", func(t *testing.T) {
+		t.Run("認証必須ルートは認証ヘッダが無いと 401 になる", func(t *testing.T) {
 			r := newTestRouter(fakeRouterVerifier{playerID: "irrelevant"})
 
 			cases := []struct {
@@ -62,9 +62,9 @@ func TestNew(t *testing.T) {
 				method string
 				path   string
 			}{
-				{name: "GET /api/v1/account/me は auth header 欠落で 401 になる", method: http.MethodGet, path: "/api/v1/account/me"},
-				{name: "GET /api/v1/account/me/factions は auth header 欠落で 401 になる", method: http.MethodGet, path: "/api/v1/account/me/factions"},
-				{name: "GET /api/v1/account/me/settings は auth header 欠落で 401 になる", method: http.MethodGet, path: "/api/v1/account/me/settings"},
+				{name: "GET /api/v1/account/me は 401 になる", method: http.MethodGet, path: "/api/v1/account/me"},
+				{name: "GET /api/v1/account/me/factions は 401 になる", method: http.MethodGet, path: "/api/v1/account/me/factions"},
+				{name: "GET /api/v1/account/me/settings は 401 になる", method: http.MethodGet, path: "/api/v1/account/me/settings"},
 			}
 
 			for _, tc := range cases {
@@ -76,7 +76,7 @@ func TestNew(t *testing.T) {
 			}
 		})
 
-		t.Run("verifier がエラーを返すとき、401 になる", func(t *testing.T) {
+		t.Run("認証に失敗すると、401 になる", func(t *testing.T) {
 			r := newTestRouter(fakeRouterVerifier{err: errors.New("invalid token")})
 			w := httptest.NewRecorder()
 			req := httptest.NewRequest(http.MethodGet, "/api/v1/account/me", nil)

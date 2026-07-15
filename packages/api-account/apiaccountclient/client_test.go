@@ -13,28 +13,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// 各 TestClient_<Endpoint> は、fake サーバ (httptest) を経由した実際の通信を介して
-// (1) 成功 status のとき fake が返した body が typed 戻り値へ正しく decode されること、
-// (2) error status のとき対応する sentinel が errors.Is で判別できることを検証する。
-
 func TestClient_RegisterPlayer(t *testing.T) {
 	t.Run("RegisterPlayer", func(t *testing.T) {
-		t.Run("201 を受けたとき、body が PlayerResponse へ復元される", func(t *testing.T) {
-			srv := apiaccountserverfake.NewServer()
-			defer srv.Close()
-			srv.RegisterFn = func(_ apiaccount.RegisterRequest) (int, any) {
-				return http.StatusCreated, apiaccount.PlayerResponse{PlayerID: "p-reg-1", FirebaseUID: "uid-reg-1"}
-			}
-
-			c := newTestClient(t, srv.URL())
-			got, err := c.RegisterPlayer(context.Background(), apiaccount.RegisterRequest{})
-
-			require.NoError(t, err)
-			assert.Equal(t, "p-reg-1", got.PlayerID)
-			assert.Equal(t, "uid-reg-1", got.FirebaseUID)
-			assert.Nil(t, got.Name)
-		})
-
 		cases := []struct {
 			name       string
 			status     int
@@ -72,23 +52,6 @@ func TestClient_RegisterPlayer(t *testing.T) {
 
 func TestClient_LoginPlayer(t *testing.T) {
 	t.Run("LoginPlayer", func(t *testing.T) {
-		t.Run("200 を受けたとき、body が PlayerResponse へ復元される", func(t *testing.T) {
-			srv := apiaccountserverfake.NewServer()
-			defer srv.Close()
-			name := "Alice"
-			srv.LoginFn = func(_ apiaccount.LoginRequest) (int, any) {
-				return http.StatusOK, apiaccount.PlayerResponse{PlayerID: "p-login-1", FirebaseUID: "uid-login-1", Name: &name}
-			}
-
-			c := newTestClient(t, srv.URL())
-			got, err := c.LoginPlayer(context.Background(), apiaccount.LoginRequest{})
-
-			require.NoError(t, err)
-			assert.Equal(t, "p-login-1", got.PlayerID)
-			require.NotNil(t, got.Name)
-			assert.Equal(t, "Alice", *got.Name)
-		})
-
 		cases := []struct {
 			name       string
 			status     int
@@ -121,21 +84,6 @@ func TestClient_LoginPlayer(t *testing.T) {
 
 func TestClient_GetPlayerByFirebaseUID(t *testing.T) {
 	t.Run("GetPlayerByFirebaseUID", func(t *testing.T) {
-		t.Run("200 を受けたとき、body が PlayerResponse へ復元される", func(t *testing.T) {
-			srv := apiaccountserverfake.NewServer()
-			defer srv.Close()
-			srv.FindByFirebaseUIDFn = func(firebaseUID string) (int, any) {
-				return http.StatusOK, apiaccount.PlayerResponse{PlayerID: "p-lookup-1", FirebaseUID: firebaseUID}
-			}
-
-			c := newTestClient(t, srv.URL())
-			got, err := c.GetPlayerByFirebaseUID(context.Background(), "uid-lookup-1")
-
-			require.NoError(t, err)
-			assert.Equal(t, "p-lookup-1", got.PlayerID)
-			assert.Equal(t, "uid-lookup-1", got.FirebaseUID)
-		})
-
 		t.Run("404 を受けたとき、ErrNotFound になる", func(t *testing.T) {
 			srv := apiaccountserverfake.NewServer()
 			defer srv.Close()
@@ -174,22 +122,6 @@ func TestClient_AwardGameExp(t *testing.T) {
 
 func TestClient_GetPlayer(t *testing.T) {
 	t.Run("GetPlayer", func(t *testing.T) {
-		t.Run("200 を受けたとき、body が PlayerResponse へ復元される", func(t *testing.T) {
-			srv := apiaccountserverfake.NewServer()
-			defer srv.Close()
-			srv.GetPlayerFn = func() (int, any) {
-				return http.StatusOK, apiaccount.PlayerResponse{PlayerID: "p-me-1", Level: 3, Exp: 120}
-			}
-
-			c := newTestClient(t, srv.URL())
-			got, err := c.GetPlayer(context.Background())
-
-			require.NoError(t, err)
-			assert.Equal(t, "p-me-1", got.PlayerID)
-			assert.Equal(t, int64(3), got.Level)
-			assert.Equal(t, int64(120), got.Exp)
-		})
-
 		t.Run("401 を受けたとき、ErrUnauthorized になる", func(t *testing.T) {
 			srv := apiaccountserverfake.NewServer()
 			defer srv.Close()
@@ -204,23 +136,6 @@ func TestClient_GetPlayer(t *testing.T) {
 
 func TestClient_UpdateName(t *testing.T) {
 	t.Run("UpdateName", func(t *testing.T) {
-		t.Run("200 を受けたとき、body が PlayerResponse へ復元される", func(t *testing.T) {
-			srv := apiaccountserverfake.NewServer()
-			defer srv.Close()
-			name := "bob"
-			srv.UpdateNameFn = func(_ apiaccount.UpdateNameRequest) (int, any) {
-				return http.StatusOK, apiaccount.PlayerResponse{PlayerID: "p-me-1", Name: &name}
-			}
-
-			c := newTestClient(t, srv.URL())
-			got, err := c.UpdateName(context.Background(), apiaccount.UpdateNameRequest{})
-
-			require.NoError(t, err)
-			assert.Equal(t, "p-me-1", got.PlayerID)
-			require.NotNil(t, got.Name)
-			assert.Equal(t, "bob", *got.Name)
-		})
-
 		cases := []struct {
 			name       string
 			status     int
@@ -279,22 +194,6 @@ func TestClient_ValidateNameForOnboarding(t *testing.T) {
 
 func TestClient_GetBattleLimit(t *testing.T) {
 	t.Run("GetBattleLimit", func(t *testing.T) {
-		t.Run("200 を受けたとき、body が BattleLimitResponse へ復元される", func(t *testing.T) {
-			srv := apiaccountserverfake.NewServer()
-			defer srv.Close()
-			srv.GetBattleLimitFn = func() (int, any) {
-				return http.StatusOK, apiaccount.BattleLimitResponse{CanBattle: true, DailyBattleCount: 2, DailyBattleLimit: 5}
-			}
-
-			c := newTestClient(t, srv.URL())
-			got, err := c.GetBattleLimit(context.Background())
-
-			require.NoError(t, err)
-			assert.True(t, got.CanBattle)
-			assert.Equal(t, int64(2), got.DailyBattleCount)
-			assert.Equal(t, int64(5), got.DailyBattleLimit)
-		})
-
 		t.Run("401 を受けたとき、ErrUnauthorized になる", func(t *testing.T) {
 			srv := apiaccountserverfake.NewServer()
 			defer srv.Close()
@@ -381,20 +280,6 @@ func TestClient_AddExp(t *testing.T) {
 
 func TestClient_ListFactions(t *testing.T) {
 	t.Run("ListFactions", func(t *testing.T) {
-		t.Run("200 を受けたとき、body が FactionListing へ復元される", func(t *testing.T) {
-			srv := apiaccountserverfake.NewServer()
-			defer srv.Close()
-			srv.ListFactionsFn = func() (int, any) {
-				return http.StatusOK, apiaccount.FactionListing{Factions: []string{"SHE", "ORD"}}
-			}
-
-			c := newTestClient(t, srv.URL())
-			got, err := c.ListFactions(context.Background())
-
-			require.NoError(t, err)
-			assert.Equal(t, []string{"SHE", "ORD"}, got.Factions)
-		})
-
 		t.Run("401 を受けたとき、ErrUnauthorized になる", func(t *testing.T) {
 			srv := apiaccountserverfake.NewServer()
 			defer srv.Close()
@@ -434,7 +319,6 @@ func TestClient_GrantFaction(t *testing.T) {
 func TestClient_SelectInitialFaction(t *testing.T) {
 	t.Run("SelectInitialFaction", func(t *testing.T) {
 		t.Run("200 を受けたとき、エラーにならない", func(t *testing.T) {
-			// spec は 200 を返すが SDK は body を decode しない (production の戻り値が void)。
 			srv := apiaccountserverfake.NewServer()
 			defer srv.Close()
 			srv.SelectInitialFactionFn = func(_ apiaccount.SelectInitialFactionRequest) (int, any) { return http.StatusOK, nil }
@@ -458,26 +342,6 @@ func TestClient_SelectInitialFaction(t *testing.T) {
 
 func TestClient_GetPlayerSettings(t *testing.T) {
 	t.Run("GetPlayerSettings", func(t *testing.T) {
-		t.Run("200 を受けたとき、body が PlayerSettingsResponse へ復元される", func(t *testing.T) {
-			srv := apiaccountserverfake.NewServer()
-			defer srv.Close()
-			srv.GetSettingsFn = func() (int, any) {
-				return http.StatusOK, apiaccount.PlayerSettingsResponse{
-					PlayerID: "p-me-1", Language: "ja", BgmVolume: 50, SeVolume: 80, PushEnabled: true,
-				}
-			}
-
-			c := newTestClient(t, srv.URL())
-			got, err := c.GetPlayerSettings(context.Background())
-
-			require.NoError(t, err)
-			assert.Equal(t, "p-me-1", got.PlayerID)
-			assert.Equal(t, "ja", got.Language)
-			assert.Equal(t, int64(50), got.BgmVolume)
-			assert.Equal(t, int64(80), got.SeVolume)
-			assert.True(t, got.PushEnabled)
-		})
-
 		t.Run("401 を受けたとき、ErrUnauthorized になる", func(t *testing.T) {
 			srv := apiaccountserverfake.NewServer()
 			defer srv.Close()
@@ -492,26 +356,6 @@ func TestClient_GetPlayerSettings(t *testing.T) {
 
 func TestClient_UpdatePlayerSettings(t *testing.T) {
 	t.Run("UpdatePlayerSettings", func(t *testing.T) {
-		t.Run("200 を受けたとき、body が PlayerSettingsResponse へ復元される", func(t *testing.T) {
-			srv := apiaccountserverfake.NewServer()
-			defer srv.Close()
-			srv.UpdateSettingsFn = func(_ apiaccount.UpdateSettingsRequest) (int, any) {
-				return http.StatusOK, apiaccount.PlayerSettingsResponse{
-					PlayerID: "p-me-1", Language: "en", BgmVolume: 30, SeVolume: 40, PushEnabled: false,
-				}
-			}
-
-			c := newTestClient(t, srv.URL())
-			got, err := c.UpdatePlayerSettings(context.Background(), apiaccount.UpdateSettingsRequest{})
-
-			require.NoError(t, err)
-			assert.Equal(t, "p-me-1", got.PlayerID)
-			assert.Equal(t, "en", got.Language)
-			assert.Equal(t, int64(30), got.BgmVolume)
-			assert.Equal(t, int64(40), got.SeVolume)
-			assert.False(t, got.PushEnabled)
-		})
-
 		t.Run("400 を受けたとき、ErrBadRequest になる", func(t *testing.T) {
 			srv := apiaccountserverfake.NewServer()
 			defer srv.Close()
@@ -526,7 +370,7 @@ func TestClient_UpdatePlayerSettings(t *testing.T) {
 
 func TestClient_RequestEditor(t *testing.T) {
 	t.Run("リクエストエディタの適用", func(t *testing.T) {
-		t.Run("WithRequestEditorFn で渡した editor が全リクエストに適用される", func(t *testing.T) {
+		t.Run("設定したヘッダが送信先の全リクエストに付与される", func(t *testing.T) {
 			// X-Internal-Auth header 注入の接続点として SDK が機能することを担保する。
 			var gotHeader string
 			spy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

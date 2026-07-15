@@ -4,6 +4,7 @@ package router
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -19,8 +20,7 @@ import (
 	apiaccount "github.com/kenyamaneko/overload-party-account/packages/api-account"
 )
 
-// newIntegrationRouter は、配線の到達を実処理の成功ステータスで判別するため実
-// interactor で結線した router を返す。
+// newIntegrationRouter は実 interactor・実リポジトリで結線した router を返す。
 func newIntegrationRouter() *gin.Engine {
 	playerRepo := postgres.NewPlayerRepository(sharedPg.Pool)
 	viewRepo := postgres.NewPlayerViewRepository(sharedPg.Pool)
@@ -70,8 +70,8 @@ const (
 func TestNewAuthFreeRoutesReachRealHandler(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	t.Run("認証不要ルートの実ハンドラ到達", func(t *testing.T) {
-		t.Run("POST /internal/v1/auth/register は実処理を通り 201 で新規プレイヤーを返す", func(t *testing.T) {
+	t.Run("認証不要の内部ルート", func(t *testing.T) {
+		t.Run("新規 Firebase UID で登録すると、採番されたプレイヤーID と登録した UID が返る", func(t *testing.T) {
 			sharedPg.Truncate(t)
 			r := newIntegrationRouter()
 
@@ -84,7 +84,7 @@ func TestNewAuthFreeRoutesReachRealHandler(t *testing.T) {
 			assert.Equal(t, "uid-register", got.FirebaseUID)
 		})
 
-		t.Run("POST /internal/v1/auth/login は既存プレイヤーを実処理で検索し 200 を返す", func(t *testing.T) {
+		t.Run("登録済みの Firebase UID でログインすると、そのプレイヤーが返る", func(t *testing.T) {
 			sharedPg.Truncate(t)
 			r := newIntegrationRouter()
 			seedPlayer(t, routerTestPlayerLogin, "uid-login")
@@ -97,7 +97,7 @@ func TestNewAuthFreeRoutesReachRealHandler(t *testing.T) {
 			assert.Equal(t, routerTestPlayerLogin, got.PlayerID)
 		})
 
-		t.Run("GET /internal/v1/auth/by-firebase-uid/:uid は実処理で検索し 200 を返す", func(t *testing.T) {
+		t.Run("登録済みの Firebase UID を照会すると、そのプレイヤーが返る", func(t *testing.T) {
 			sharedPg.Truncate(t)
 			r := newIntegrationRouter()
 			seedPlayer(t, routerTestPlayerLookup, "uid-lookup")
@@ -111,7 +111,7 @@ func TestNewAuthFreeRoutesReachRealHandler(t *testing.T) {
 			assert.Equal(t, routerTestPlayerLookup, got.PlayerID)
 		})
 
-		t.Run("GET /internal/v1/players/:playerID/factions は実処理を通り 200 で所持ファクション一覧を返す", func(t *testing.T) {
+		t.Run("所持ファクションが無いプレイヤーを照会すると、空のファクション一覧が返る", func(t *testing.T) {
 			sharedPg.Truncate(t)
 			r := newIntegrationRouter()
 
@@ -124,7 +124,7 @@ func TestNewAuthFreeRoutesReachRealHandler(t *testing.T) {
 			assert.Empty(t, got.Factions)
 		})
 
-		t.Run("POST /internal/v1/players/award-game-exp は実処理で経験値を付与し 204 を返す", func(t *testing.T) {
+		t.Run("対戦結果を送ると、勝者の経験値が増える", func(t *testing.T) {
 			sharedPg.Truncate(t)
 			r := newIntegrationRouter()
 			seedPlayer(t, routerTestPlayerExp1, "uid-exp-1")
@@ -135,6 +135,10 @@ func TestNewAuthFreeRoutesReachRealHandler(t *testing.T) {
 			})
 
 			require.Equal(t, http.StatusNoContent, w.Code)
+			var winnerExp int64
+			require.NoError(t, sharedPg.Pool.QueryRow(context.Background(),
+				`SELECT exp FROM account.player_progression WHERE player_id = $1`, routerTestPlayerExp1).Scan(&winnerExp))
+			assert.Positive(t, winnerExp)
 		})
 	})
 }
