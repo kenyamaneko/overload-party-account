@@ -163,11 +163,11 @@ func TestHandlerErrorStatusContract(t *testing.T) {
 				wantBodyContains: domain.ErrInvalidName.Error(),
 			},
 			{
-				name:       "どの種別にも分類されないエラーのとき、500 になる",
-				seed:       func(t *testing.T) { seedPlayer(t, contractPlayerID, "uid-1") },
-				playerID:   contractPlayerID,
-				method:     http.MethodGet,
-				path:       "/me",
+				name:     "どの種別にも分類されないエラーのとき、500 になる",
+				seed:     func(t *testing.T) { seedPlayer(t, contractPlayerID, "uid-1") },
+				playerID: contractPlayerID,
+				method:   http.MethodGet,
+				path:     "/me",
 				configErrKeys: map[string]error{
 					usecase.ConfigKeyExpFormulaCoefficient: errors.New("game config read failure"),
 				},
