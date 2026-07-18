@@ -180,7 +180,7 @@ func TestLogin(t *testing.T) {
 func TestFindByFirebaseUID(t *testing.T) {
 	ctx := context.Background()
 
-	t.Run("Firebase UID によるプレイヤー参照", func(t *testing.T) {
+	t.Run("firebase_uid によるプレイヤー参照", func(t *testing.T) {
 		t.Run("登録済みの firebase_uid で参照すると、そのプレイヤーが返る", func(t *testing.T) {
 			sharedPg.Truncate(t)
 			svc := newAuthTestInteractor()

@@ -23,19 +23,19 @@ func TestPlayerViewFindByID(t *testing.T) {
 			wantInitialFaction *string
 		}{
 			{
-				name: "初期ファクション確定済みのプレイヤーを取得すると、初期ファクション SHE が入る",
+				name: "初期陣営確定済みのプレイヤーを取得すると、初期陣営 SHE が入る",
 				seedFaction: func(t *testing.T) {
 					seedPlayerFaction(t, testPlayerID1, "SHE", true)
 				},
 				wantInitialFaction: ptr("SHE"),
 			},
 			{
-				name:               "ファクション未選択のプレイヤーを取得すると、初期ファクションは nil になる",
+				name:               "陣営未選択のプレイヤーを取得すると、初期陣営は nil になる",
 				seedFaction:        func(t *testing.T) {},
 				wantInitialFaction: nil,
 			},
 			{
-				name: "初期でないファクションだけ所持しているとき、初期ファクションは nil になる",
+				name: "初期でない陣営だけ所持しているとき、初期陣営は nil になる",
 				seedFaction: func(t *testing.T) {
 					seedPlayerFaction(t, testPlayerID1, "SHE", false)
 				},
@@ -62,7 +62,7 @@ func TestPlayerViewFindByFirebaseUID(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("firebase_uid によるプレイヤービュー取得", func(t *testing.T) {
-		t.Run("初期ファクション確定済みのプレイヤーを取得すると、初期ファクション SHE が入る", func(t *testing.T) {
+		t.Run("初期陣営確定済みのプレイヤーを取得すると、初期陣営 SHE が入る", func(t *testing.T) {
 			sharedPg.Truncate(t)
 			seedPlayer(t, testPlayerID1, "uid-1", "Alice", false)
 			seedPlayerFaction(t, testPlayerID1, "SHE", true)

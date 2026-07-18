@@ -132,7 +132,7 @@ func TestClient_GetPlayer(t *testing.T) {
 			assertSentinel(t, err, apiaccountclient.ErrUnauthorized)
 		})
 
-		t.Run("宣言されていない 403 を受けたとき、エラーになりどの sentinel にも分類されない", func(t *testing.T) {
+		t.Run("宣言されていない 403 を受けたとき、エラーになり定義済みのどの分類にも一致しない", func(t *testing.T) {
 			srv := apiaccountserverfake.NewServer()
 			defer srv.Close()
 			srv.GetPlayerFn = func() (int, any) { return http.StatusForbidden, nil }

@@ -143,7 +143,7 @@ func TestHandlerErrorStatusContract(t *testing.T) {
 				wantBodyContains: usecase.ErrFactionAlreadySelected.Error(),
 			},
 			{
-				name:             "選択不可の Neutral を初期ファクションに選ぶと、400 になる",
+				name:             "選択不可の Neutral を初期陣営に選ぶと、400 になる",
 				seed:             func(t *testing.T) {},
 				playerID:         contractPlayerID,
 				method:           http.MethodPost,
@@ -222,7 +222,7 @@ func TestHandlerErrorStatusContract(t *testing.T) {
 		assert.Contains(t, getW.Body.String(), `"daily_battle_count":1`)
 	})
 
-	t.Run("bgm_volume だけを指定して更新すると、200 でその値が反映され他の設定は維持される", func(t *testing.T) {
+	t.Run("bgm_volume だけを指定して更新すると、応答ボディの bgm_volume が更新され他の設定は維持される", func(t *testing.T) {
 		sharedPg.Truncate(t)
 		seedPlayer(t, contractPlayerID, "uid-1")
 		seedPlayerSettings(t, contractPlayerID, "en", 20, 40, false)
@@ -266,14 +266,14 @@ func TestHandlerInputGuards(t *testing.T) {
 				wantBodyContains: "firebase_uid is required",
 			},
 			{
-				name:             "faction_id が空文字の初期ファクション選択は、400 になる",
+				name:             "faction_id が空文字の初期陣営選択は、400 になる",
 				method:           http.MethodPost,
 				path:             "/me/factions/select",
 				body:             `{"faction_id":""}`,
 				wantBodyContains: "faction_id is required",
 			},
 			{
-				name:             "faction が空文字のファクション付与は、400 になる",
+				name:             "faction が空文字の陣営付与は、400 になる",
 				method:           http.MethodPost,
 				path:             "/me/factions",
 				body:             `{"faction":""}`,
@@ -307,8 +307,8 @@ func TestHandlerInputGuards(t *testing.T) {
 			{name: "プレミアム更新ルートのとき", method: http.MethodPut, path: "/me/premium"},
 			{name: "経験値加算ルートのとき", method: http.MethodPost, path: "/me/exp"},
 			{name: "対戦結果送信ルートのとき", method: http.MethodPost, path: "/internal/v1/players/award-game-exp"},
-			{name: "初期ファクション選択ルートのとき", method: http.MethodPost, path: "/me/factions/select"},
-			{name: "ファクション付与ルートのとき", method: http.MethodPost, path: "/me/factions"},
+			{name: "初期陣営選択ルートのとき", method: http.MethodPost, path: "/me/factions/select"},
+			{name: "陣営付与ルートのとき", method: http.MethodPost, path: "/me/factions"},
 			{name: "設定更新ルートのとき", method: http.MethodPut, path: "/me/settings"},
 		}
 

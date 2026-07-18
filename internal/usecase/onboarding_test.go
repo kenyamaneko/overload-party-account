@@ -81,7 +81,7 @@ func TestApplyFactionSet(t *testing.T) {
 			assert.Equal(t, domain.OnboardingStatusFactionSet, status)
 		})
 
-		t.Run("同一 event_id を再配信すると、処理済みにならず初期ファクションと状態は変わらない", func(t *testing.T) {
+		t.Run("同一 event_id を再配信すると、処理済みにならず初期陣営と状態は変わらない", func(t *testing.T) {
 			ctx := context.Background()
 			sharedPg.Truncate(t)
 			seedPlayer(t, testPlayerID1, "uid-1", "Alice", false)
@@ -160,7 +160,7 @@ func TestApplyFactionSet(t *testing.T) {
 			assert.Equal(t, "SHE", *initial)
 		})
 
-		t.Run("選択不可の Neutral のとき、エラーになり何も保存されない", func(t *testing.T) {
+		t.Run("選択不可の Neutral のとき、エラーになり初期陣営は未設定のまま保存されない", func(t *testing.T) {
 			ctx := context.Background()
 			sharedPg.Truncate(t)
 			seedPlayer(t, testPlayerID1, "uid-1", "Alice", false)
