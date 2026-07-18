@@ -131,6 +131,22 @@ func TestClient_GetPlayer(t *testing.T) {
 			_, err := c.GetPlayer(context.Background())
 			assertSentinel(t, err, apiaccountclient.ErrUnauthorized)
 		})
+
+		t.Run("宣言されていない 403 を受けたとき、エラーになりどの sentinel にも分類されない", func(t *testing.T) {
+			srv := apiaccountserverfake.NewServer()
+			defer srv.Close()
+			srv.GetPlayerFn = func() (int, any) { return http.StatusForbidden, nil }
+
+			c := newTestClient(t, srv.URL())
+			_, err := c.GetPlayer(context.Background())
+
+			require.Error(t, err)
+			assert.NotErrorIs(t, err, apiaccountclient.ErrUnauthorized)
+			assert.NotErrorIs(t, err, apiaccountclient.ErrNotFound)
+			assert.NotErrorIs(t, err, apiaccountclient.ErrBadRequest)
+			assert.NotErrorIs(t, err, apiaccountclient.ErrConflict)
+			assert.NotErrorIs(t, err, apiaccountclient.ErrInternalServer)
+		})
 	})
 }
 

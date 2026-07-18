@@ -4,13 +4,26 @@ package usecase
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/kenyamaneko/overload-party-account/internal/domain"
+	"github.com/kenyamaneko/overload-party-account/internal/port"
 )
+
+// insertFailingSettingsRepo は Insert だけを強制失敗させる port.PlayerSettingsRepo フェイク。
+// Register の Tx ロールバックを検証するため既定設定作成の失敗を注入する。他メソッドは
+// このテスト経路で呼ばれない前提で埋め込み interface に委譲する。
+type insertFailingSettingsRepo struct {
+	port.PlayerSettingsRepo
+}
+
+func (insertFailingSettingsRepo) Insert(context.Context, *domain.PlayerSettings) error {
+	return errors.New("forced insert failure")
+}
 
 // newAuthTestInteractor は実 PostgreSQL repository + TxManager を束ねて
 // AuthInteractor を返す。DB の truncate は呼び出し側（各 Test が sharedPg.Truncate）で行う。
@@ -100,6 +113,25 @@ func TestRegister(t *testing.T) {
 			_, err = svc.Register(ctx, "firebase-uid-dup")
 			require.ErrorIs(t, err, ErrPlayerAlreadyRegistered)
 		})
+
+		t.Run("既定設定の作成に失敗すると、エラーになりプレイヤー行も進捗行も残らない", func(t *testing.T) {
+			sharedPg.Truncate(t)
+			playerRepo, playerViewRepo, _, _, tx := newRealRepos()
+			svc := NewAuthInteractor(playerRepo, playerViewRepo, insertFailingSettingsRepo{}, newFakeGameConfigRepo(nil), tx)
+
+			_, err := svc.Register(ctx, "firebase-uid-rollback")
+			require.Error(t, err)
+
+			var playerCount, progressionCount int
+			require.NoError(t, sharedPg.Pool.QueryRow(ctx,
+				`SELECT COUNT(*) FROM account.players WHERE firebase_uid = $1`, "firebase-uid-rollback",
+			).Scan(&playerCount))
+			require.NoError(t, sharedPg.Pool.QueryRow(ctx,
+				`SELECT COUNT(*) FROM account.player_progression`,
+			).Scan(&progressionCount))
+			assert.Equal(t, 0, playerCount)
+			assert.Equal(t, 0, progressionCount)
+		})
 	})
 }
 
@@ -126,6 +158,46 @@ func TestLogin(t *testing.T) {
 
 			_, err := svc.Login(context.Background(), "nonexistent-uid")
 			require.ErrorIs(t, err, ErrPlayerNotFound)
+		})
+
+		t.Run("ログイン応答の組み立て時に係数が読めないとき、エラーになる", func(t *testing.T) {
+			ctx := context.Background()
+			sharedPg.Truncate(t)
+			playerRepo, playerViewRepo, _, playerSettingsRepo, tx := newRealRepos()
+			registerSvc := NewAuthInteractor(playerRepo, playerViewRepo, playerSettingsRepo, newFakeGameConfigRepo(map[string]int64{
+				ConfigKeyExpFormulaCoefficient: 60,
+			}), tx)
+			_, err := registerSvc.Register(ctx, "firebase-uid-no-coeff")
+			require.NoError(t, err)
+
+			svc := NewAuthInteractor(playerRepo, playerViewRepo, playerSettingsRepo, newFakeGameConfigRepo(nil), tx)
+			_, err = svc.Login(ctx, "firebase-uid-no-coeff")
+			require.ErrorIs(t, err, port.ErrNotFound)
+		})
+	})
+}
+
+func TestFindByFirebaseUID(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("Firebase UID によるプレイヤー参照", func(t *testing.T) {
+		t.Run("登録済みの firebase_uid で参照すると、そのプレイヤーが返る", func(t *testing.T) {
+			sharedPg.Truncate(t)
+			svc := newAuthTestInteractor()
+			registered, err := svc.Register(ctx, "firebase-uid-find")
+			require.NoError(t, err)
+
+			found, err := svc.FindByFirebaseUID(ctx, "firebase-uid-find")
+			require.NoError(t, err)
+			assert.Equal(t, registered.PlayerID, found.PlayerID)
+		})
+
+		t.Run("未登録の firebase_uid で参照すると、port.ErrNotFound になる", func(t *testing.T) {
+			sharedPg.Truncate(t)
+			svc := newAuthTestInteractor()
+
+			_, err := svc.FindByFirebaseUID(ctx, "firebase-uid-missing")
+			require.ErrorIs(t, err, port.ErrNotFound)
 		})
 	})
 }
