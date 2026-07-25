@@ -49,7 +49,7 @@ func doPush(t *testing.T, r *gin.Engine, body string) *httptest.ResponseRecorder
 
 func TestEventHandlerHandle(t *testing.T) {
 	t.Run("push envelope の decode と応答コードへの変換", func(t *testing.T) {
-		t.Run("正しい envelope を受けたとき、message.data を base64 復号して handle に渡し 200 になる", func(t *testing.T) {
+		t.Run("正しい envelope を受けたとき、message.data を base64 復号してイベント処理に渡し 200 になる", func(t *testing.T) {
 			rec := &recordingHandler{}
 			r := newTestEngine(NewEventHandler(rec.handle))
 
@@ -61,7 +61,7 @@ func TestEventHandlerHandle(t *testing.T) {
 			assert.Equal(t, `{"event_type":"faction_acquired"}`, string(rec.gotData))
 		})
 
-		t.Run("JSON として壊れた本文を受けたとき、handle を呼ばず 400 になる", func(t *testing.T) {
+		t.Run("JSON として壊れた本文を受けたとき、イベント処理を呼ばず 400 になり、応答本文に \"malformed push envelope\" が含まれる", func(t *testing.T) {
 			rec := &recordingHandler{}
 			r := newTestEngine(NewEventHandler(rec.handle))
 
@@ -69,10 +69,10 @@ func TestEventHandlerHandle(t *testing.T) {
 
 			assert.Equal(t, http.StatusBadRequest, w.Code)
 			assert.Contains(t, w.Body.String(), "malformed push envelope")
-			assert.Zero(t, rec.calls, "envelope が壊れているときは handle に到達しない")
+			assert.Zero(t, rec.calls, "envelope が壊れているときはイベント処理に到達しない")
 		})
 
-		t.Run("message.data が base64 として復号できない本文を受けたとき、handle を呼ばず 400 になる", func(t *testing.T) {
+		t.Run("message.data が base64 として復号できない本文を受けたとき、イベント処理を呼ばず 400 になり、応答本文に \"undecodable message data\" が含まれる", func(t *testing.T) {
 			rec := &recordingHandler{}
 			r := newTestEngine(NewEventHandler(rec.handle))
 
@@ -80,10 +80,32 @@ func TestEventHandlerHandle(t *testing.T) {
 
 			assert.Equal(t, http.StatusBadRequest, w.Code)
 			assert.Contains(t, w.Body.String(), "undecodable message data")
-			assert.Zero(t, rec.calls, "data を復号できないときは handle に到達しない")
+			assert.Zero(t, rec.calls, "data を復号できないときはイベント処理に到達しない")
 		})
 
-		t.Run("handle がエラーを返すとき、500 になる", func(t *testing.T) {
+		t.Run("message フィールドが無い本文を受けたとき、イベント処理を呼ばず 400 になり、応答本文に \"malformed push envelope\" が含まれる", func(t *testing.T) {
+			rec := &recordingHandler{}
+			r := newTestEngine(NewEventHandler(rec.handle))
+
+			w := doPush(t, r, `{"subscription":"sub-1"}`)
+
+			assert.Equal(t, http.StatusBadRequest, w.Code)
+			assert.Contains(t, w.Body.String(), "malformed push envelope")
+			assert.Zero(t, rec.calls, "message フィールドが無いときはイベント処理に到達しない")
+		})
+
+		t.Run("message.data が空文字の本文を受けたとき、イベント処理を呼ばず 400 になり、応答本文に \"malformed push envelope\" が含まれる", func(t *testing.T) {
+			rec := &recordingHandler{}
+			r := newTestEngine(NewEventHandler(rec.handle))
+
+			w := doPush(t, r, `{"message":{"data":"","messageId":"m-4"}}`)
+
+			assert.Equal(t, http.StatusBadRequest, w.Code)
+			assert.Contains(t, w.Body.String(), "malformed push envelope")
+			assert.Zero(t, rec.calls, "message.data が空文字のときはイベント処理に到達しない")
+		})
+
+		t.Run("イベント処理がエラーを返すとき、500 になる", func(t *testing.T) {
 			rec := &recordingHandler{err: errors.New("db unavailable")}
 			r := newTestEngine(NewEventHandler(rec.handle))
 
@@ -91,7 +113,7 @@ func TestEventHandlerHandle(t *testing.T) {
 			w := doPush(t, r, `{"message":{"data":"`+payload+`","messageId":"m-3"}}`)
 
 			assert.Equal(t, http.StatusInternalServerError, w.Code)
-			assert.Equal(t, 1, rec.calls, "handle には到達しているが失敗する")
+			assert.Equal(t, 1, rec.calls, "イベント処理には到達しているが失敗する")
 		})
 	})
 }

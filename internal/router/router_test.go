@@ -3,6 +3,7 @@ package router
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -103,7 +104,7 @@ func TestNew(t *testing.T) {
 			assert.Equal(t, http.StatusUnauthorized, w.Code)
 		})
 
-		t.Run("Pub/Sub push の受け口は認証なしで実際の受け口に到達する", func(t *testing.T) {
+		t.Run("Pub/Sub push の受け口は JWT 認証を経ずに実際の受け口に到達する", func(t *testing.T) {
 			r := newTestRouter(nullVerifier{})
 
 			paths := []string{
@@ -116,7 +117,8 @@ func TestNew(t *testing.T) {
 
 			for _, path := range paths {
 				t.Run("POST "+path+" は 200 を返す", func(t *testing.T) {
-					body := bytes.NewReader([]byte(`{"message":{"data":"","messageId":"m-1"},"subscription":"test-sub"}`))
+					data := base64.StdEncoding.EncodeToString([]byte(`{"event_type":"noop"}`))
+					body := bytes.NewReader([]byte(`{"message":{"data":"` + data + `","messageId":"m-1"},"subscription":"test-sub"}`))
 					req := httptest.NewRequest(http.MethodPost, path, body)
 					req.Header.Set("Content-Type", "application/json")
 					w := httptest.NewRecorder()

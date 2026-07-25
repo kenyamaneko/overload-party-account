@@ -31,14 +31,18 @@ func NewEventHandler(handle port.MessageHandler) *EventHandler {
 	return &EventHandler{handle: handle}
 }
 
-// Handle は push envelope を decode して handle に渡し、結果を応答コードへ変換する。
-// envelope 自体が壊れている場合は handle を呼ばず 400 を返す。handle が返すエラーは
-// 2xx / 5xx をそのまま呼び出し元 (Pub/Sub) への ack / 再配信の判断材料にする。
+// Handle は push envelope を受け取り、結果に応じた HTTP 応答を返す。
 func (h *EventHandler) Handle(c *gin.Context) {
 	var req pushEnvelope
 	if err := c.ShouldBindJSON(&req); err != nil {
 		slog.ErrorContext(c.Request.Context(), "pubsub push: malformed envelope",
 			"path", c.FullPath(), "error", err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "malformed push envelope"})
+		return
+	}
+	if req.Message.Data == "" {
+		slog.ErrorContext(c.Request.Context(), "pubsub push: malformed envelope",
+			"path", c.FullPath(), "error", "missing message.data")
 		c.JSON(http.StatusBadRequest, gin.H{"error": "malformed push envelope"})
 		return
 	}

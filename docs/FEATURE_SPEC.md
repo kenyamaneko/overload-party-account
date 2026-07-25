@@ -229,7 +229,7 @@ publish 機能は持たない。subscribe するイベントは以下の 5 種�
 
 ### `faction-acquired`
 
-subscription: `faction-acquired-account-sub`
+受け口: `POST /internal/v1/pubsub/faction-acquired`
 
 | publisher | account の副作用 |
 |---|---|
@@ -241,7 +241,7 @@ ADR-022 により、かつて `faction-selected` topic が担っていた 2 業�
 
 ### `premium-updated`
 
-subscription: `premium-updated-account-sub`
+受け口: `POST /internal/v1/pubsub/premium-updated`
 
 - publisher: shop のみ
 - 副作用: `players.is_premium` / `players.premium_expires_at` を UPDATE
@@ -251,7 +251,7 @@ subscription: `premium-updated-account-sub`
 
 ### `onboarding-name-set`
 
-subscription: `onboarding-name-set-account-sub`
+受け口: `POST /internal/v1/pubsub/onboarding-name-set`
 
 - publisher: scenario のみ（オンボード内 name 入力ステップで、account の validate REST 成功後に publish）
 - 副作用: `players.name` UPDATE と `onboarding_status='name_set'` への前進を 1 tx で実行
@@ -260,7 +260,7 @@ subscription: `onboarding-name-set-account-sub`
 
 ### `onboarding-faction-set`
 
-subscription: `onboarding-faction-set-account-sub`
+受け口: `POST /internal/v1/pubsub/onboarding-faction-set`
 
 - publisher: scenario のみ（オンボード内 faction 選択ステップの検証成功後に publish）
 - 副作用: `player_factions` への initial faction 反映 (`is_initial=TRUE`) と `onboarding_status='faction_set'` への前進を 1 tx で実行
@@ -269,7 +269,7 @@ subscription: `onboarding-faction-set-account-sub`
 
 ### `player-onboarded`
 
-subscription: `player-onboarded-account-sub`
+受け口: `POST /internal/v1/pubsub/player-onboarded`
 
 - publisher: scenario のみ（オンボーディングシナリオ読了時に transactional outbox 経由で publish、[ADR-021](../../overload-party-common/docs/adr/021-onboarding-scenario.md)、ADR-022 で 1 イベント設計に縮退）
 - 副作用: `players.onboarding_status='completed'` への遷移のみ
