@@ -26,19 +26,9 @@ type Config struct {
 	DatabaseConn string
 
 	// GoogleCloudProjectID は account が利用する Google Cloud 系サービス
-	// (Pub/Sub 購読 / Firestore game_config 読み取り) の project ID。
-	// ローカル/CI では PUBSUB_EMULATOR_HOST / FIRESTORE_EMULATOR_HOST 経由でエミュレーターに接続する。
+	// (Firestore game_config 読み取り) の project ID。
+	// ローカル/CI では FIRESTORE_EMULATOR_HOST 経由でエミュレーターに接続する。
 	GoogleCloudProjectID string
-	// FactionAcquiredSubscription は faction-acquired の pull subscription 名。
-	FactionAcquiredSubscription string
-	// PremiumUpdatedSubscription は premium-updated の pull subscription 名。
-	PremiumUpdatedSubscription string
-	// PlayerOnboardedSubscription は player-onboarded の pull subscription 名。
-	PlayerOnboardedSubscription string
-	// OnboardingNameSetSubscription は onboarding-name-set の pull subscription 名。
-	OnboardingNameSetSubscription string
-	// OnboardingFactionSetSubscription は onboarding-faction-set の pull subscription 名。
-	OnboardingFactionSetSubscription string
 
 	// InternalAuthSecret は gateway / 各サービス間で共有する HMAC 鍵。
 	// X-Internal-Auth (HS256 JWT) の検証に使う。ADR-037 参照。
@@ -51,15 +41,10 @@ type Config struct {
 // FromEnv は環境変数から Config を構築する。
 func FromEnv() (*Config, error) {
 	cfg := &Config{
-		DatabaseConn:                     os.Getenv("DATABASE_CONN"),
-		GoogleCloudProjectID:             os.Getenv("GOOGLE_CLOUD_PROJECT_ID"),
-		FactionAcquiredSubscription:      os.Getenv("FACTION_ACQUIRED_SUBSCRIPTION"),
-		PremiumUpdatedSubscription:       os.Getenv("PREMIUM_UPDATED_SUBSCRIPTION"),
-		PlayerOnboardedSubscription:      os.Getenv("PLAYER_ONBOARDED_SUBSCRIPTION"),
-		OnboardingNameSetSubscription:    os.Getenv("ONBOARDING_NAME_SET_SUBSCRIPTION"),
-		OnboardingFactionSetSubscription: os.Getenv("ONBOARDING_FACTION_SET_SUBSCRIPTION"),
-		InternalAuthSecret:               os.Getenv("INTERNAL_AUTH_SECRET"),
-		LogMode:                          LogMode(os.Getenv("LOG_MODE")),
+		DatabaseConn:         os.Getenv("DATABASE_CONN"),
+		GoogleCloudProjectID: os.Getenv("GOOGLE_CLOUD_PROJECT_ID"),
+		InternalAuthSecret:   os.Getenv("INTERNAL_AUTH_SECRET"),
+		LogMode:              LogMode(os.Getenv("LOG_MODE")),
 	}
 
 	rawPort := os.Getenv("PORT")
@@ -79,22 +64,7 @@ func FromEnv() (*Config, error) {
 		return nil, fmt.Errorf("config: DATABASE_CONN is required")
 	}
 	if cfg.GoogleCloudProjectID == "" {
-		return nil, fmt.Errorf("config: GOOGLE_CLOUD_PROJECT_ID is required (account は Pub/Sub 購読 + Firestore (game_config) で必要)")
-	}
-	if cfg.FactionAcquiredSubscription == "" {
-		return nil, fmt.Errorf("config: FACTION_ACQUIRED_SUBSCRIPTION is required")
-	}
-	if cfg.PremiumUpdatedSubscription == "" {
-		return nil, fmt.Errorf("config: PREMIUM_UPDATED_SUBSCRIPTION is required")
-	}
-	if cfg.PlayerOnboardedSubscription == "" {
-		return nil, fmt.Errorf("config: PLAYER_ONBOARDED_SUBSCRIPTION is required")
-	}
-	if cfg.OnboardingNameSetSubscription == "" {
-		return nil, fmt.Errorf("config: ONBOARDING_NAME_SET_SUBSCRIPTION is required")
-	}
-	if cfg.OnboardingFactionSetSubscription == "" {
-		return nil, fmt.Errorf("config: ONBOARDING_FACTION_SET_SUBSCRIPTION is required")
+		return nil, fmt.Errorf("config: GOOGLE_CLOUD_PROJECT_ID is required (Firestore (game_config) で必要)")
 	}
 	if cfg.InternalAuthSecret == "" {
 		return nil, fmt.Errorf("config: INTERNAL_AUTH_SECRET is required (HS256 JWT shared secret, see ADR-037)")

@@ -11,10 +11,9 @@ import (
 	"github.com/kenyamaneko/overload-party-account/internal/port"
 )
 
-// FactionAcquiredSubscriber は faction-acquired subscription を消費し、
+// FactionAcquiredSubscriber は faction-acquired イベントを消費し、
 // player_factions に is_initial=FALSE 行を追加する。initial への昇格はここでは行わない。
 type FactionAcquiredSubscriber struct {
-	stream      port.MessageStream
 	factionRepo port.FactionRepo
 	txRunner    port.TxRunner
 	eventRepo   port.ProcessedEventRepo
@@ -22,26 +21,20 @@ type FactionAcquiredSubscriber struct {
 
 // NewFactionAcquiredSubscriber は FactionAcquiredSubscriber を生成する。
 func NewFactionAcquiredSubscriber(
-	stream port.MessageStream,
 	factionRepo port.FactionRepo,
 	txRunner port.TxRunner,
 	eventRepo port.ProcessedEventRepo,
 ) *FactionAcquiredSubscriber {
 	return &FactionAcquiredSubscriber{
-		stream:      stream,
 		factionRepo: factionRepo,
 		txRunner:    txRunner,
 		eventRepo:   eventRepo,
 	}
 }
 
-// Start は ctx がキャンセルされるか stream がエラーを返すまでブロックする。
-func (s *FactionAcquiredSubscriber) Start(ctx context.Context) error {
-	slog.Info("faction-acquired subscriber: consuming")
-	return s.stream.Consume(ctx, s.processEvent)
-}
-
-func (s *FactionAcquiredSubscriber) processEvent(ctx context.Context, data []byte) error {
+// HandleMessage は 1 件の faction-acquired イベントを処理する。port.MessageHandler を満たし、
+// push 受け口 (internal/handler/pubsubpush) から呼ばれる。
+func (s *FactionAcquiredSubscriber) HandleMessage(ctx context.Context, data []byte) error {
 	var event apishop.FactionAcquiredEvent
 	if err := json.Unmarshal(data, &event); err != nil {
 		slog.Error("faction-acquired subscriber: bad payload (nack)", "error", err)
