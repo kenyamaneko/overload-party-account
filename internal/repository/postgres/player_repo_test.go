@@ -425,6 +425,73 @@ func TestIncrementDailyBattleCount(t *testing.T) {
 	})
 }
 
+func TestDecrementDailyBattleCount(t *testing.T) {
+	repo := postgres.NewPlayerRepository(sharedPg.Pool)
+	ctx := context.Background()
+	today := civil.DateOf(time.Now().UTC())
+
+	t.Run("当日バトル数の減算", func(t *testing.T) {
+		t.Run("カウントが 2 のとき、1 に減算されて true が返る", func(t *testing.T) {
+			sharedPg.Truncate(t)
+			seedPlayer(t, testPlayerID1, "uid-1", "Alice", false)
+			seedPlayerDailyBattle(t, testPlayerID1, today, 2)
+
+			reverted, err := repo.DecrementDailyBattleCount(ctx, testPlayerID1, today)
+			require.NoError(t, err)
+			assert.True(t, reverted)
+
+			got, err := repo.GetDailyBattle(ctx, testPlayerID1, today)
+			require.NoError(t, err)
+			require.NotNil(t, got)
+			assert.Equal(t, int64(1), got.DailyBattleCount)
+		})
+
+		t.Run("カウントが 0 のとき、0 のまま true が返る (負の値にならない)", func(t *testing.T) {
+			sharedPg.Truncate(t)
+			seedPlayer(t, testPlayerID1, "uid-1", "Alice", false)
+			seedPlayerDailyBattle(t, testPlayerID1, today, 0)
+
+			reverted, err := repo.DecrementDailyBattleCount(ctx, testPlayerID1, today)
+			require.NoError(t, err)
+			assert.True(t, reverted)
+
+			got, err := repo.GetDailyBattle(ctx, testPlayerID1, today)
+			require.NoError(t, err)
+			require.NotNil(t, got)
+			assert.Equal(t, int64(0), got.DailyBattleCount)
+		})
+
+		t.Run("対象日の行が無いとき、何も作らず false が返る", func(t *testing.T) {
+			sharedPg.Truncate(t)
+			seedPlayer(t, testPlayerID1, "uid-1", "Alice", false)
+
+			reverted, err := repo.DecrementDailyBattleCount(ctx, testPlayerID1, today)
+			require.NoError(t, err)
+			assert.False(t, reverted)
+
+			got, err := repo.GetDailyBattle(ctx, testPlayerID1, today)
+			require.NoError(t, err)
+			assert.Nil(t, got)
+		})
+
+		t.Run("別ゲーム日の行があるとき、対象日には影響しない", func(t *testing.T) {
+			sharedPg.Truncate(t)
+			seedPlayer(t, testPlayerID1, "uid-1", "Alice", false)
+			yesterday := today.AddDays(-1)
+			seedPlayerDailyBattle(t, testPlayerID1, yesterday, 3)
+
+			reverted, err := repo.DecrementDailyBattleCount(ctx, testPlayerID1, today)
+			require.NoError(t, err)
+			assert.False(t, reverted)
+
+			gotYesterday, err := repo.GetDailyBattle(ctx, testPlayerID1, yesterday)
+			require.NoError(t, err)
+			require.NotNil(t, gotYesterday)
+			assert.Equal(t, int64(3), gotYesterday.DailyBattleCount)
+		})
+	})
+}
+
 func TestUpdateProgression(t *testing.T) {
 	repo := postgres.NewPlayerRepository(sharedPg.Pool)
 	ctx := context.Background()

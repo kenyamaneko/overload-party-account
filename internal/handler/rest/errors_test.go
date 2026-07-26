@@ -55,10 +55,11 @@ func newContractEngineWithGameConfig(playerID string, gameConfig *fakeGameConfig
 	viewRepo := postgres.NewPlayerViewRepository(sharedPg.Pool)
 	settingsRepo := postgres.NewPlayerSettingsRepository(sharedPg.Pool)
 	factionRepo := postgres.NewFactionRepository(sharedPg.Pool)
+	battleCountReversalRepo := postgres.NewBattleCountReversalRepository(sharedPg.Pool)
 	tx := postgres.NewTxManager(sharedPg.Pool)
 
 	authInteractor := usecase.NewAuthInteractor(playerRepo, viewRepo, settingsRepo, gameConfig, tx)
-	playerInteractor := usecase.NewPlayerInteractor(playerRepo, playerRepo, playerRepo, playerRepo, viewRepo, gameConfig, tx)
+	playerInteractor := usecase.NewPlayerInteractor(playerRepo, playerRepo, playerRepo, playerRepo, battleCountReversalRepo, viewRepo, gameConfig, tx)
 	settingsInteractor := usecase.NewPlayerSettingsInteractor(settingsRepo)
 	factionInteractor := usecase.NewFactionInteractor(playerRepo, factionRepo, tx)
 	authH := NewAuthHandler(authInteractor)
@@ -78,6 +79,7 @@ func newContractEngineWithGameConfig(playerID string, gameConfig *fakeGameConfig
 	r.PUT("/me/premium", playerH.UpdatePremium)
 	r.POST("/me/exp", playerH.AddExp)
 	r.POST("/internal/v1/players/award-game-exp", playerH.AwardGameExp)
+	r.POST("/internal/v1/players/revert-battle-count", playerH.RevertBattleCount)
 	r.PUT("/me/settings", settingsH.UpdateSettings)
 	r.POST("/me/factions/select", factionH.SelectInitialFaction)
 	r.POST("/me/factions", factionH.GrantFaction)
@@ -279,6 +281,34 @@ func TestHandlerInputGuards(t *testing.T) {
 				body:             `{"faction":""}`,
 				wantBodyContains: "faction is required",
 			},
+			{
+				name:             "game_id が空文字の消費バトル回数返却は、400 になる",
+				method:           http.MethodPost,
+				path:             "/internal/v1/players/revert-battle-count",
+				body:             `{"game_id":"","player1_id":"p1","player2_id":"p2","consumed_at_millis":1700000000000}`,
+				wantBodyContains: "game_id is required",
+			},
+			{
+				name:             "player1_id が空文字の消費バトル回数返却は、400 になる",
+				method:           http.MethodPost,
+				path:             "/internal/v1/players/revert-battle-count",
+				body:             `{"game_id":"g1","player1_id":"","player2_id":"p2","consumed_at_millis":1700000000000}`,
+				wantBodyContains: "player1_id is required",
+			},
+			{
+				name:             "player2_id が空文字の消費バトル回数返却は、400 になる",
+				method:           http.MethodPost,
+				path:             "/internal/v1/players/revert-battle-count",
+				body:             `{"game_id":"g1","player1_id":"p1","player2_id":"","consumed_at_millis":1700000000000}`,
+				wantBodyContains: "player2_id is required",
+			},
+			{
+				name:             "consumed_at_millis が 0 の消費バトル回数返却は、400 になる",
+				method:           http.MethodPost,
+				path:             "/internal/v1/players/revert-battle-count",
+				body:             `{"game_id":"g1","player1_id":"p1","player2_id":"p2","consumed_at_millis":0}`,
+				wantBodyContains: "consumed_at_millis must be positive",
+			},
 		}
 
 		for _, tt := range tests {
@@ -307,6 +337,7 @@ func TestHandlerInputGuards(t *testing.T) {
 			{name: "プレミアム更新ルートのとき", method: http.MethodPut, path: "/me/premium"},
 			{name: "経験値加算ルートのとき", method: http.MethodPost, path: "/me/exp"},
 			{name: "対戦結果送信ルートのとき", method: http.MethodPost, path: "/internal/v1/players/award-game-exp"},
+			{name: "消費バトル回数返却ルートのとき", method: http.MethodPost, path: "/internal/v1/players/revert-battle-count"},
 			{name: "初期陣営選択ルートのとき", method: http.MethodPost, path: "/me/factions/select"},
 			{name: "陣営付与ルートのとき", method: http.MethodPost, path: "/me/factions"},
 			{name: "設定更新ルートのとき", method: http.MethodPut, path: "/me/settings"},

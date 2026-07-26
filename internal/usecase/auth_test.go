@@ -217,7 +217,7 @@ func TestRegisterThenUpdateName(t *testing.T) {
 
 			// オンボーディングシナリオ完了相当の表示名確定。
 			playerRepo, playerViewRepo, _, _, tx := newRealRepos()
-			playerSvc := NewPlayerInteractor(playerRepo, playerRepo, playerRepo, playerRepo, playerViewRepo, newFakeGameConfigRepo(map[string]int64{
+			playerSvc := NewPlayerInteractor(playerRepo, playerRepo, playerRepo, playerRepo, newBattleCountReversalRepo(), playerViewRepo, newFakeGameConfigRepo(map[string]int64{
 				ConfigKeyExpFormulaCoefficient: 60,
 			}), tx)
 

@@ -120,6 +120,30 @@ func TestClient_AwardGameExp(t *testing.T) {
 	})
 }
 
+func TestClient_RevertBattleCount(t *testing.T) {
+	t.Run("RevertBattleCount", func(t *testing.T) {
+		t.Run("204 を受けたとき、エラーにならない", func(t *testing.T) {
+			srv := apiaccountserverfake.NewServer()
+			defer srv.Close()
+			srv.RevertBattleCountFn = func(_ apiaccount.RevertBattleCountRequest) (int, any) { return http.StatusNoContent, nil }
+
+			c := newTestClient(t, srv.URL())
+			err := c.RevertBattleCount(context.Background(), apiaccount.RevertBattleCountRequest{})
+			require.NoError(t, err)
+		})
+
+		t.Run("400 を受けたとき、ErrBadRequest になる", func(t *testing.T) {
+			srv := apiaccountserverfake.NewServer()
+			defer srv.Close()
+			srv.RevertBattleCountFn = func(_ apiaccount.RevertBattleCountRequest) (int, any) { return http.StatusBadRequest, nil }
+
+			c := newTestClient(t, srv.URL())
+			err := c.RevertBattleCount(context.Background(), apiaccount.RevertBattleCountRequest{})
+			assertSentinel(t, err, apiaccountclient.ErrBadRequest)
+		})
+	})
+}
+
 func TestClient_GetPlayer(t *testing.T) {
 	t.Run("GetPlayer", func(t *testing.T) {
 		t.Run("401 を受けたとき、ErrUnauthorized になる", func(t *testing.T) {

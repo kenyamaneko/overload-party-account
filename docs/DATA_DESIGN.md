@@ -5,7 +5,7 @@
 
 ## 設計概要
 
-account スキーマはプレイヤーの基本情報・デイリーバトル回数・ファクション所有・ユーザー設定・Pub/Sub 冪等性レコードを所有する。全サービスの中で最も多くの外部参照を受けるスキーマだが、他サービスからの直接 SELECT は許容せず account の内部 REST API 経由でのみ公開する（ADR-011 / ADR-014）。
+account スキーマはプレイヤーの基本情報・デイリーバトル回数・ファクション所有・ユーザー設定・冪等性レコード (Pub/Sub subscriber 用と REST 呼び出し用) を所有する。全サービスの中で最も多くの外部参照を受けるスキーマだが、他サービスからの直接 SELECT は許容せず account の内部 REST API 経由でのみ公開する（ADR-011 / ADR-014）。
 
 `is_premium` / `premium_expires_at` は shop が authoritative な状態を射影しているだけで、account 内では read-only 扱い（書き込みは `premium-updated` subscriber と、運用・テスト用の `PUT /api/v1/account/me/premium` のみ）。
 
@@ -58,9 +58,29 @@ account スキーマはプレイヤーの基本情報・デイリーバトル回
 
 **設計判断:**
 - players に埋め込まず別テーブルにしているのは、バトル回数チェック / increment が高頻度で走るのに対し、players 本体の更新 (name / is_premium 等) とは独立しているため。更新競合を分離する目的
-- リセット境界は JST 05:00。`game_date` は usecase 層が `gameDay()` で算出する civil.Date。詳細は [ARCHITECTURE.md](ARCHITECTURE.md) の「ゲーム日の境界 (JST 05:00)」
+- リセット境界は JST 05:00。`game_date` は usecase 層の `gameDayFor(t)` が算出する civil.Date。詳細は [ARCHITECTURE.md](ARCHITECTURE.md) の「ゲーム日の境界 (JST 05:00)」
 - 1 行/日で履歴を残すのは、将来 BigQuery エクスポートでプレイヤーごとの日次バトル回数を分析できるようにするため。これがアプリ内で履歴が残る唯一の場所
 - 当日の行が無ければカウント 0 とみなす (新ゲーム日でまだバトルしていない状態)。Register 時には INSERT せず、初回バトルの UPSERT で行が発生する
+
+### battle_count_reversals
+
+停止で無効になった対戦の消費バトル回数返却が、対戦単位で一度しか適用されないことを保証するアプリ層ガードテーブル。
+
+- **PK:** `game_id` (TEXT)
+- **FK なし**（`game_id` は battle が発行する対戦識別子で、account の管理下にない）
+
+<!-- BEGIN GENERATED: battle_count_reversals -->
+| カラム名 | 型 | Nullable | 説明 |
+|---|---|---|---|
+| `game_id` | TEXT | No | 対戦識別子 (battle が発行する game_id) |
+| `reverted_at` | TIMESTAMPTZ | No | 返却処理日時 |
+<!-- END GENERATED: battle_count_reversals -->
+
+**設計判断:**
+- `processed_events` は Pub/Sub subscriber の冪等性専用ガードのため流用せず、REST 呼び出しの冪等性は別テーブルに持つ
+- `INSERT ... ON CONFLICT DO NOTHING RETURNING game_id` で重複呼び出しを検知する。`processed_events` と同じパターンだが対象イベントの性質が異なるためテーブルを分ける
+- 返却対象の `game_date` は保持しない。呼び出し側が渡す消費時刻から都度算出するため、本テーブルは「同じ対戦を二度処理しない」ことだけを保証する
+- `game_id` は UUID 型にせず TEXT にしている。account は battle が発行する識別子の具体的なフォーマットを持たないため、フォーマットの前提を account 側の DDL に持ち込まない
 
 ### player_factions
 
@@ -162,6 +182,7 @@ players (PK: player_id)
   └── 1:1 ── player_settings     (FK: player_id, CASCADE)
 
 processed_events (独立、FK なし)
+battle_count_reversals (独立、FK なし)
 
 [shop.subscriptions] ─ ─ ─ (cross-schema, app-level via premium-updated)
         └─→ players.is_premium / premium_expires_at  (射影)

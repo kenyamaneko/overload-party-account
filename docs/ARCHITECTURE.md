@@ -103,7 +103,7 @@ Register は冪等ではない。重複登録は UNIQUE INDEX `idx_players_fireb
 | JST 2024-01-02 04:59 (UTC 2024-01-01 19:59) | 2024-01-01 |
 | JST 2024-01-02 05:00 (UTC 2024-01-01 20:00) | 2024-01-02 |
 
-実装: `usecase.gameDay()` が `time.Now().UTC().Add(4h)` の日付部分を返す。`gameDayOffset` 定数で一箇所に閉じている ([internal/usecase/player.go](../internal/usecase/player.go))。リセットはアプリ側のロジックではなく、PK `(player_id, game_date)` が日ごとに別行を区別することで自動的に行われる。
+実装: `usecase.gameDayFor(t)` が `t.UTC().Add(4h)` の日付部分を返す純粋関数で、`gameDayOffset` 定数に一箇所で閉じている ([internal/usecase/player.go](../internal/usecase/player.go))。現在時刻に対するゲーム日が欲しい呼び出し元 (`GetBattleLimit` / `IncrementBattleCount`) は `computeCurrentGameDay()` で `gameDayFor(time.Now())` を呼ぶ。リセットはアプリ側のロジックではなく、PK `(player_id, game_date)` が日ごとに別行を区別することで自動的に行われる。
 
 ### 履歴台帳としての設計
 
@@ -116,6 +116,14 @@ Register は冪等ではない。重複登録は UNIQUE INDEX `idx_players_fireb
 account が `player_daily_battle` の authoritative owner なので、上限不変条件は account 側で守る。battle サービス側が事前に `GetBattleLimit` を呼ぶのは UX のためのプリチェック (「戦う前に残り回数を表示」) であり、最終的な強制は account の書き込みパスで行う二段構え。
 
 TOCTOU は、free プレイヤーの上限超過判定で `GetDailyBattle` → UPSERT の隙間が原理的には残る (短時間に上限ぎりぎりの並行バトルがあれば +1 通る可能性) が、同一アカウントの並行バトルは極めて稀なエッジケースとして許容する。行ロック (`SELECT FOR UPDATE`) は採用しない。インクリメント自体は単発の UPSERT で原子的なので、カウントが飛んだり重複したりはしない。
+
+### 消費バトル回数の返却 (`RevertBattleCount`)
+
+gateway が `IncrementBattleCount` を呼ぶのは対戦の識別子 (`game_id`) が発行される前 (マッチメイキング開始時) のため、返却対象のゲーム日を `game_id` から逆引きする経路は account 側に存在しない。呼び出し元が消費した時刻 (`consumed_at_millis`) を渡し、`gameDayFor` で「ゲーム日の境界 (JST 05:00)」と同じ変換を適用してゲーム日を決める設計にしている。
+
+二重返却の防止は `account.battle_count_reversals (game_id TEXT PRIMARY KEY)` への `INSERT ... ON CONFLICT DO NOTHING RETURNING game_id` で行う。`processed_events` を流用しない理由は、あちらが Pub/Sub subscriber の冪等性専用ガードとして設計されているため。`game_id` を UUID にしないのは、account が battle 発行の識別子フォーマットを把握していないため。マーク処理と両プレイヤーの減算は `TxRunner.RunInTx` で 1 トランザクションに束ね、`processed_events` と同じく部分適用を構造的に防ぐ。
+
+カウントの減算は `GREATEST(daily_battle_count - 1, 0)` で下限を 0 に固定する。対象のゲーム日に行が無い場合も UPDATE の対象 0 件として扱い、エラーにはしない (`GetDailyBattle` が「行が無ければカウント 0」を既に採用しているのと同じ扱い)。ただしこれは想定した消費日と実際に加算された日がずれている不整合の兆候でもあるため、`RowsAffected() == 0` は Warn ログに残し運用で気づけるようにする。
 
 ## プレイヤー設定の部分更新契約
 

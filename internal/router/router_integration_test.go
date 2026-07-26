@@ -9,7 +9,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
+	"cloud.google.com/go/civil"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -26,6 +28,7 @@ func newIntegrationRouter() *gin.Engine {
 	viewRepo := postgres.NewPlayerViewRepository(sharedPg.Pool)
 	settingsRepo := postgres.NewPlayerSettingsRepository(sharedPg.Pool)
 	factionRepo := postgres.NewFactionRepository(sharedPg.Pool)
+	battleCountReversalRepo := postgres.NewBattleCountReversalRepository(sharedPg.Pool)
 	tx := postgres.NewTxManager(sharedPg.Pool)
 	gameConfig := &fakeGameConfigRepo{values: map[string]int64{
 		usecase.ConfigKeyExpFormulaCoefficient: 60,
@@ -35,7 +38,7 @@ func newIntegrationRouter() *gin.Engine {
 	}}
 
 	authInteractor := usecase.NewAuthInteractor(playerRepo, viewRepo, settingsRepo, gameConfig, tx)
-	playerInteractor := usecase.NewPlayerInteractor(playerRepo, playerRepo, playerRepo, playerRepo, viewRepo, gameConfig, tx)
+	playerInteractor := usecase.NewPlayerInteractor(playerRepo, playerRepo, playerRepo, playerRepo, battleCountReversalRepo, viewRepo, gameConfig, tx)
 	factionInteractor := usecase.NewFactionInteractor(playerRepo, factionRepo, tx)
 	settingsInteractor := usecase.NewPlayerSettingsInteractor(settingsRepo)
 
@@ -60,11 +63,13 @@ func doJSON(t *testing.T, r *gin.Engine, method, path string, body any) *httptes
 }
 
 const (
-	routerTestPlayerLogin  = "11111111-1111-1111-1111-111111111111"
-	routerTestPlayerLookup = "22222222-2222-2222-2222-222222222222"
-	routerTestPlayerExp1   = "33333333-3333-3333-3333-333333333333"
-	routerTestPlayerExp2   = "44444444-4444-4444-4444-444444444444"
-	routerTestPlayerNoSuch = "99999999-9999-9999-9999-999999999999"
+	routerTestPlayerLogin   = "11111111-1111-1111-1111-111111111111"
+	routerTestPlayerLookup  = "22222222-2222-2222-2222-222222222222"
+	routerTestPlayerExp1    = "33333333-3333-3333-3333-333333333333"
+	routerTestPlayerExp2    = "44444444-4444-4444-4444-444444444444"
+	routerTestPlayerNoSuch  = "99999999-9999-9999-9999-999999999999"
+	routerTestPlayerRevert1 = "55555555-5555-5555-5555-555555555555"
+	routerTestPlayerRevert2 = "66666666-6666-6666-6666-666666666666"
 )
 
 func TestNewAuthFreeRoutesReachRealHandler(t *testing.T) {
@@ -139,6 +144,37 @@ func TestNewAuthFreeRoutesReachRealHandler(t *testing.T) {
 			require.NoError(t, sharedPg.Pool.QueryRow(context.Background(),
 				`SELECT exp FROM account.player_progression WHERE player_id = $1`, routerTestPlayerExp1).Scan(&winnerExp))
 			assert.Positive(t, winnerExp)
+		})
+
+		t.Run("停止で無効になった対戦の消費バトル回数を戻すと、両プレイヤーの当日カウントが 1 減る", func(t *testing.T) {
+			sharedPg.Truncate(t)
+			r := newIntegrationRouter()
+			seedPlayer(t, routerTestPlayerRevert1, "uid-revert-1")
+			seedPlayer(t, routerTestPlayerRevert2, "uid-revert-2")
+			today := civil.DateOf(time.Now().UTC().Add(4 * time.Hour))
+			ctx := context.Background()
+			for _, playerID := range []string{routerTestPlayerRevert1, routerTestPlayerRevert2} {
+				_, err := sharedPg.Pool.Exec(ctx,
+					`INSERT INTO account.player_daily_battle (player_id, game_date, daily_battle_count) VALUES ($1, $2, 1)`,
+					playerID, time.Date(today.Year, today.Month, today.Day, 0, 0, 0, 0, time.UTC))
+				require.NoError(t, err)
+			}
+
+			w := doJSON(t, r, http.MethodPost, "/internal/v1/players/revert-battle-count", apiaccount.RevertBattleCountRequest{
+				GameID:           "77777777-7777-7777-7777-777777777777",
+				Player1ID:        routerTestPlayerRevert1,
+				Player2ID:        routerTestPlayerRevert2,
+				ConsumedAtMillis: time.Now().UnixMilli(),
+			})
+
+			require.Equal(t, http.StatusNoContent, w.Code)
+			for _, playerID := range []string{routerTestPlayerRevert1, routerTestPlayerRevert2} {
+				var count int64
+				require.NoError(t, sharedPg.Pool.QueryRow(ctx,
+					`SELECT daily_battle_count FROM account.player_daily_battle WHERE player_id = $1 AND game_date = $2`,
+					playerID, time.Date(today.Year, today.Month, today.Day, 0, 0, 0, 0, time.UTC)).Scan(&count))
+				assert.Equal(t, int64(0), count)
+			}
 		})
 	})
 }

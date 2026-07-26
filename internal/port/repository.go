@@ -68,6 +68,15 @@ type PlayerBattleRepo interface {
 	GetDailyBattle(ctx context.Context, playerID string, gameDate civil.Date) (*domain.PlayerDailyBattle, error)
 	// IncrementDailyBattleCount は (player_id, gameDate) のカウントを 1 加算した結果を返す。
 	IncrementDailyBattleCount(ctx context.Context, playerID string, gameDate civil.Date) (int64, error)
+	// DecrementDailyBattleCount は (player_id, gameDate) のカウントを 1 減算し 0 を下限にする。
+	// 対象行が無ければ何もせず false を返す (呼び出し側が不整合検知のログに使う)。
+	DecrementDailyBattleCount(ctx context.Context, playerID string, gameDate civil.Date) (bool, error)
+}
+
+// BattleCountReversalRepo は消費バトル回数の返却が対戦単位で一度しか適用されないことを保証する。
+type BattleCountReversalRepo interface {
+	// MarkReverted は gameID を新規に記録できれば true を返す。既に記録済みなら false (二重返却防止)。
+	MarkReverted(ctx context.Context, gameID string) (bool, error)
 }
 
 // PlayerViewRepo は API レスポンス組み立て用の Read Model (players + player_progression

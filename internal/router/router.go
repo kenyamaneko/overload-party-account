@@ -17,6 +17,9 @@ import (
 //     のため JWT を要求しない
 //   - /internal/v1/players/award-game-exp: battle が直接呼ぶサーバー間バッチ。body に
 //     2 プレイヤー分の player_id を含み JWT sub では表現できないため /internal に残す
+//   - /internal/v1/players/revert-battle-count: gateway の停止時処理が直接呼ぶサーバー間
+//     バッチ。body に 2 プレイヤー分の player_id を含み JWT sub では表現できないため
+//     /internal に残す
 //   - /api/v1/account/me/*: gateway / shop / scenario が JWT を付けて呼ぶ player-scoped
 //     API。VerifyInternalAuth が sub クレーム (= player_id) を context に注入し、
 //     handler は path / body から player_id を読まない
@@ -42,6 +45,7 @@ func New(
 
 		internal.GET("/players/:playerID/factions", factionH.ListPlayerFactions)
 		internal.POST("/players/award-game-exp", playerH.AwardGameExp)
+		internal.POST("/players/revert-battle-count", playerH.RevertBattleCount)
 	}
 
 	api := r.Group("/api/v1/account")

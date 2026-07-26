@@ -266,6 +266,21 @@ func (r *PlayerRepository) IncrementDailyBattleCount(ctx context.Context, player
 	return newCount, nil
 }
 
+// DecrementDailyBattleCount は (player_id, gameDate) のカウントを 1 減算し、0 を下限とする。
+// 対象行が無ければ何もせず false を返す。
+func (r *PlayerRepository) DecrementDailyBattleCount(ctx context.Context, playerID string, gameDate civil.Date) (bool, error) {
+	ct, err := connFrom(ctx, r.pool).Exec(ctx,
+		`UPDATE account.player_daily_battle
+		 SET daily_battle_count = GREATEST(daily_battle_count - 1, 0)
+		 WHERE player_id = $1 AND game_date = $2`,
+		playerID, civilDateToTime(gameDate),
+	)
+	if err != nil {
+		return false, fmt.Errorf("decrement daily battle: %w", err)
+	}
+	return ct.RowsAffected() > 0, nil
+}
+
 // UpdateProgression は exp / level をそのまま書き込む。行が無ければ port.ErrNotFound。
 func (r *PlayerRepository) UpdateProgression(ctx context.Context, playerID string, exp, level int64) (*domain.PlayerProgression, error) {
 	row := connFrom(ctx, r.pool).QueryRow(ctx,

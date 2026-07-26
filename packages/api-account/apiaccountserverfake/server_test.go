@@ -114,5 +114,33 @@ func TestServer(t *testing.T) {
 			assert.Equal(t, "p-b", gotReq.Player2ID)
 			assert.Equal(t, int64(1), gotReq.WinnerNum)
 		})
+
+		t.Run("RevertBattleCountFn は playerID を持たず body のみで player 2 名と対戦識別子を受け取る", func(t *testing.T) {
+			// revert-battle-count は gateway の停止時処理が直接呼ぶサーバー間バッチのため
+			// /internal 配下に置き、player 2 名を body で渡す。
+			srv := apiaccountserverfake.NewServer()
+			defer srv.Close()
+
+			var gotReq apiaccount.RevertBattleCountRequest
+			srv.RevertBattleCountFn = func(req apiaccount.RevertBattleCountRequest) (int, any) {
+				gotReq = req
+				return http.StatusNoContent, nil
+			}
+
+			reqBody, _ := json.Marshal(apiaccount.RevertBattleCountRequest{
+				GameID: "game-1", Player1ID: "p-a", Player2ID: "p-b", ConsumedAtMillis: 1700000000000,
+			})
+			req, _ := http.NewRequest(http.MethodPost, srv.URL()+"/internal/v1/players/revert-battle-count", bytes.NewReader(reqBody))
+			req.Header.Set("Content-Type", "application/json")
+			resp, err := http.DefaultClient.Do(req)
+			require.NoError(t, err)
+			defer resp.Body.Close()
+
+			assert.Equal(t, http.StatusNoContent, resp.StatusCode)
+			assert.Equal(t, "game-1", gotReq.GameID)
+			assert.Equal(t, "p-a", gotReq.Player1ID)
+			assert.Equal(t, "p-b", gotReq.Player2ID)
+			assert.Equal(t, int64(1700000000000), gotReq.ConsumedAtMillis)
+		})
 	})
 }

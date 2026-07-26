@@ -131,6 +131,16 @@ type RegisterRequest struct {
 	FirebaseUID string `json:"firebase_uid"`
 }
 
+// RevertBattleCountRequest consumed_at_millis はバトル回数を消費した (gateway が increment を呼んだ) 時刻の
+// UNIX ミリ秒。停止発生時刻ではなく、消費時点の時刻を渡す。ゲーム日境界 (JST 05:00)
+// の判定はこの時刻を基準に account 側で行う。0 以下は 400 になる。
+type RevertBattleCountRequest struct {
+	ConsumedAtMillis int64  `json:"consumed_at_millis"`
+	GameID           string `json:"game_id"`
+	Player1ID        string `json:"player1_id"`
+	Player2ID        string `json:"player2_id"`
+}
+
 // SelectInitialFactionRequest Scenario calls this once the tutorial/story pins the player's faction choice;
 // account UPSERTs player_factions with is_initial=TRUE in one tx.
 type SelectInitialFactionRequest struct {
@@ -195,6 +205,9 @@ type RegisterPlayerJSONRequestBody = RegisterRequest
 
 // AwardGameExpJSONRequestBody defines body for AwardGameExp for application/json ContentType.
 type AwardGameExpJSONRequestBody = AwardGameExpRequest
+
+// RevertBattleCountJSONRequestBody defines body for RevertBattleCount for application/json ContentType.
+type RevertBattleCountJSONRequestBody = RevertBattleCountRequest
 
 // RequestEditorFn  is the function signature for the RequestEditor callback function
 type RequestEditorFn func(ctx context.Context, req *http.Request) error
@@ -339,6 +352,11 @@ type ClientInterface interface {
 	AwardGameExpWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	AwardGameExp(ctx context.Context, body AwardGameExpJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// RevertBattleCountWithBody request with any body
+	RevertBattleCountWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	RevertBattleCount(ctx context.Context, body RevertBattleCountJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ListPlayerFactions request
 	ListPlayerFactions(ctx context.Context, playerID string, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -658,6 +676,30 @@ func (c *Client) AwardGameExpWithBody(ctx context.Context, contentType string, b
 
 func (c *Client) AwardGameExp(ctx context.Context, body AwardGameExpJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewAwardGameExpRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) RevertBattleCountWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRevertBattleCountRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) RevertBattleCount(ctx context.Context, body RevertBattleCountJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRevertBattleCountRequest(c.Server, body)
 	if err != nil {
 		return nil, err
 	}
@@ -1276,6 +1318,46 @@ func NewAwardGameExpRequestWithBody(server string, contentType string, body io.R
 	return req, nil
 }
 
+// NewRevertBattleCountRequest calls the generic RevertBattleCount builder with application/json body
+func NewRevertBattleCountRequest(server string, body RevertBattleCountJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewRevertBattleCountRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewRevertBattleCountRequestWithBody generates requests for RevertBattleCount with any type of body
+func NewRevertBattleCountRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/internal/v1/players/revert-battle-count")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
 // NewListPlayerFactionsRequest generates requests for ListPlayerFactions
 func NewListPlayerFactionsRequest(server string, playerID string) (*http.Request, error) {
 	var err error
@@ -1423,6 +1505,11 @@ type ClientWithResponsesInterface interface {
 	AwardGameExpWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*AwardGameExpResponse, error)
 
 	AwardGameExpWithResponse(ctx context.Context, body AwardGameExpJSONRequestBody, reqEditors ...RequestEditorFn) (*AwardGameExpResponse, error)
+
+	// RevertBattleCountWithBodyWithResponse request with any body
+	RevertBattleCountWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RevertBattleCountResponse, error)
+
+	RevertBattleCountWithResponse(ctx context.Context, body RevertBattleCountJSONRequestBody, reqEditors ...RequestEditorFn) (*RevertBattleCountResponse, error)
 
 	// ListPlayerFactionsWithResponse request
 	ListPlayerFactionsWithResponse(ctx context.Context, playerID string, reqEditors ...RequestEditorFn) (*ListPlayerFactionsResponse, error)
@@ -1931,6 +2018,35 @@ func (r AwardGameExpResponse) ContentType() string {
 	return ""
 }
 
+type RevertBattleCountResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+}
+
+// Status returns HTTPResponse.Status
+func (r RevertBattleCountResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r RevertBattleCountResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r RevertBattleCountResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 type ListPlayerFactionsResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -2192,6 +2308,23 @@ func (c *ClientWithResponses) AwardGameExpWithResponse(ctx context.Context, body
 		return nil, err
 	}
 	return ParseAwardGameExpResponse(rsp)
+}
+
+// RevertBattleCountWithBodyWithResponse request with arbitrary body returning *RevertBattleCountResponse
+func (c *ClientWithResponses) RevertBattleCountWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RevertBattleCountResponse, error) {
+	rsp, err := c.RevertBattleCountWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRevertBattleCountResponse(rsp)
+}
+
+func (c *ClientWithResponses) RevertBattleCountWithResponse(ctx context.Context, body RevertBattleCountJSONRequestBody, reqEditors ...RequestEditorFn) (*RevertBattleCountResponse, error) {
+	rsp, err := c.RevertBattleCount(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRevertBattleCountResponse(rsp)
 }
 
 // ListPlayerFactionsWithResponse request returning *ListPlayerFactionsResponse
@@ -2568,6 +2701,22 @@ func ParseAwardGameExpResponse(rsp *http.Response) (*AwardGameExpResponse, error
 	}
 
 	response := &AwardGameExpResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	return response, nil
+}
+
+// ParseRevertBattleCountResponse parses an HTTP response from a RevertBattleCountWithResponse call
+func ParseRevertBattleCountResponse(rsp *http.Response) (*RevertBattleCountResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &RevertBattleCountResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}
