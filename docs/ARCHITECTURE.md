@@ -287,6 +287,7 @@ usecase 層は HTTP ステータスを知らず、handler 層は SQL を知ら�
 - `DATABASE_CONN` は Secret Manager 由来。k8s マニフェストにインラインしない
 - `GOOGLE_CLOUD_PROJECT_ID` は ConfigMap 経由で環境ごとに切り替え (Pub/Sub 購読・Firestore 双方で共有)
 - `FACTION_ACQUIRED_SUBSCRIPTION` / `PREMIUM_UPDATED_SUBSCRIPTION` / `PLAYER_ONBOARDED_SUBSCRIPTION` / `ONBOARDING_NAME_SET_SUBSCRIPTION` / `ONBOARDING_FACTION_SET_SUBSCRIPTION` は ConfigMap で環境ごとの subscription 名を指定する (コード側にデフォルト名は持たない)
+- `DATABASE_IAM_AUTH_ENABLED` / `CLOUDSQL_CONNECTION_NAME` は ConfigMap 経由。Cloud SQL への接続方式 (IAM 認証かパスワード接続か) を環境ごとに切り替える
 
 ### Pub/Sub トピックと subscriber
 

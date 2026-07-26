@@ -114,6 +114,7 @@ services:
       LOG_MODE: local
       PORT: "9005"
       DATABASE_CONN: postgres://account:account@postgres:5432/account?sslmode=disable
+      DATABASE_IAM_AUTH_ENABLED: "false"
       GOOGLE_CLOUD_PROJECT_ID: overload-party-local
       INTERNAL_AUTH_SECRET: dev-secret-not-for-prod
       PUBSUB_EMULATOR_HOST: pubsub-emulator:8085

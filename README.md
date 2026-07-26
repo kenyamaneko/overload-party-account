@@ -71,6 +71,8 @@ ConfigMap:
 | `ONBOARDING_NAME_SET_SUBSCRIPTION` | onboarding-name-set の pull subscription 名 |
 | `ONBOARDING_FACTION_SET_SUBSCRIPTION` | onboarding-faction-set の pull subscription 名 |
 | `LOG_MODE` | `production`（Cloud Logging 互換 JSON）/ `local`（TextHandler）|
+| `DATABASE_IAM_AUTH_ENABLED` | `true`（Cloud SQL Go Connector 経由の IAM 認証）/ `false`（`DATABASE_CONN` によるパスワード接続）|
+| `CLOUDSQL_CONNECTION_NAME` | Cloud SQL インスタンスの接続名（`project:region:instance`）。`DATABASE_IAM_AUTH_ENABLED=true` のときのみ必須 |
 
 ローカルで Pub/Sub / Firestore emulator に接続する場合は `PUBSUB_EMULATOR_HOST` / `FIRESTORE_EMULATOR_HOST` を併せて設定する（`make run` の compose 定義が emulator のサービス名を渡す）。
 
