@@ -13,11 +13,6 @@ var allEnvKeys = []string{
 	"PORT",
 	"DATABASE_CONN",
 	"GOOGLE_CLOUD_PROJECT_ID",
-	"FACTION_ACQUIRED_SUBSCRIPTION",
-	"PREMIUM_UPDATED_SUBSCRIPTION",
-	"PLAYER_ONBOARDED_SUBSCRIPTION",
-	"ONBOARDING_NAME_SET_SUBSCRIPTION",
-	"ONBOARDING_FACTION_SET_SUBSCRIPTION",
 	"INTERNAL_AUTH_SECRET",
 	"LOG_MODE",
 }
@@ -46,16 +41,11 @@ func mergeEnv(maps ...map[string]string) map[string]string {
 // CLAUDE.md「デフォルト値へのフォールバックを行わない」方針により、全必須 env を
 // 明示的に供給する。各ケースはこれを baseline に override を重ねる。
 var validLocalEnv = map[string]string{
-	"PORT":                                "9005",
-	"DATABASE_CONN":                       "host=localhost port=5432 dbname=account user=account password=account sslmode=disable",
-	"GOOGLE_CLOUD_PROJECT_ID":             "account-local",
-	"FACTION_ACQUIRED_SUBSCRIPTION":       "faction-acquired-account-sub",
-	"PREMIUM_UPDATED_SUBSCRIPTION":        "premium-updated-account-sub",
-	"PLAYER_ONBOARDED_SUBSCRIPTION":       "player-onboarded-account-sub",
-	"ONBOARDING_NAME_SET_SUBSCRIPTION":    "onboarding-name-set-account-sub",
-	"ONBOARDING_FACTION_SET_SUBSCRIPTION": "onboarding-faction-set-account-sub",
-	"INTERNAL_AUTH_SECRET":                "test-internal-auth-secret-do-not-use-in-prod-xxxxx",
-	"LOG_MODE":                            "local",
+	"PORT":                    "9005",
+	"DATABASE_CONN":           "host=localhost port=5432 dbname=account user=account password=account sslmode=disable",
+	"GOOGLE_CLOUD_PROJECT_ID": "account-local",
+	"INTERNAL_AUTH_SECRET":    "test-internal-auth-secret-do-not-use-in-prod-xxxxx",
+	"LOG_MODE":                "local",
 }
 
 func TestFromEnv(t *testing.T) {
@@ -69,9 +59,6 @@ func TestFromEnv(t *testing.T) {
 			assert.Equal(t, 9005, cfg.Port)
 			assert.Equal(t, "host=localhost port=5432 dbname=account user=account password=account sslmode=disable", cfg.DatabaseConn)
 			assert.Equal(t, "account-local", cfg.GoogleCloudProjectID)
-			assert.Equal(t, "faction-acquired-account-sub", cfg.FactionAcquiredSubscription)
-			assert.Equal(t, "premium-updated-account-sub", cfg.PremiumUpdatedSubscription)
-			assert.Equal(t, "player-onboarded-account-sub", cfg.PlayerOnboardedSubscription)
 			assert.Equal(t, LogModeLocal, cfg.LogMode)
 		})
 
@@ -128,31 +115,6 @@ func TestFromEnv(t *testing.T) {
 				name:    "GOOGLE_CLOUD_PROJECT_ID が未設定のとき、エラーになる",
 				envs:    mergeEnv(validLocalEnv, map[string]string{"GOOGLE_CLOUD_PROJECT_ID": ""}),
 				wantErr: "GOOGLE_CLOUD_PROJECT_ID is required",
-			},
-			{
-				name:    "FACTION_ACQUIRED_SUBSCRIPTION が未設定のとき、エラーになる",
-				envs:    mergeEnv(validLocalEnv, map[string]string{"FACTION_ACQUIRED_SUBSCRIPTION": ""}),
-				wantErr: "FACTION_ACQUIRED_SUBSCRIPTION is required",
-			},
-			{
-				name:    "PREMIUM_UPDATED_SUBSCRIPTION が未設定のとき、エラーになる",
-				envs:    mergeEnv(validLocalEnv, map[string]string{"PREMIUM_UPDATED_SUBSCRIPTION": ""}),
-				wantErr: "PREMIUM_UPDATED_SUBSCRIPTION is required",
-			},
-			{
-				name:    "PLAYER_ONBOARDED_SUBSCRIPTION が未設定のとき、エラーになる",
-				envs:    mergeEnv(validLocalEnv, map[string]string{"PLAYER_ONBOARDED_SUBSCRIPTION": ""}),
-				wantErr: "PLAYER_ONBOARDED_SUBSCRIPTION is required",
-			},
-			{
-				name:    "ONBOARDING_NAME_SET_SUBSCRIPTION が未設定のとき、エラーになる",
-				envs:    mergeEnv(validLocalEnv, map[string]string{"ONBOARDING_NAME_SET_SUBSCRIPTION": ""}),
-				wantErr: "ONBOARDING_NAME_SET_SUBSCRIPTION is required",
-			},
-			{
-				name:    "ONBOARDING_FACTION_SET_SUBSCRIPTION が未設定のとき、エラーになる",
-				envs:    mergeEnv(validLocalEnv, map[string]string{"ONBOARDING_FACTION_SET_SUBSCRIPTION": ""}),
-				wantErr: "ONBOARDING_FACTION_SET_SUBSCRIPTION is required",
 			},
 			{
 				name:    "INTERNAL_AUTH_SECRET が未設定のとき、エラーになる",

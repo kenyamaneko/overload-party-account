@@ -12,9 +12,8 @@ import (
 	"github.com/kenyamaneko/overload-party-account/internal/port"
 )
 
-// mustMarshal は json.Marshal の testing 版。event_type 欠落など、typed helper
-// (apishopfake.PublishXxx) で表現できない壊れたペイロードをケースに含めるための
-// ヘルパ。
+// mustMarshal は json.Marshal の testing 版。HandleMessage に渡す payload を
+// event_type 欠落などの壊れたケースも含め明示的に組み立てるためのヘルパ。
 func mustMarshal(t *testing.T, v any) []byte {
 	t.Helper()
 	b, err := json.Marshal(v)

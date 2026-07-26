@@ -64,15 +64,12 @@ ConfigMap:
 | 変数名 | 説明 |
 |---|---|
 | `PORT` | HTTP リッスンポート（1-65535） |
-| `GOOGLE_CLOUD_PROJECT_ID` | Pub/Sub 購読 / Firestore (`game_config`) で利用する Google Cloud プロジェクト ID |
-| `FACTION_ACQUIRED_SUBSCRIPTION` | faction-acquired の pull subscription 名 |
-| `PREMIUM_UPDATED_SUBSCRIPTION` | premium-updated の pull subscription 名 |
-| `PLAYER_ONBOARDED_SUBSCRIPTION` | player-onboarded の pull subscription 名 |
-| `ONBOARDING_NAME_SET_SUBSCRIPTION` | onboarding-name-set の pull subscription 名 |
-| `ONBOARDING_FACTION_SET_SUBSCRIPTION` | onboarding-faction-set の pull subscription 名 |
+| `GOOGLE_CLOUD_PROJECT_ID` | Firestore (`game_config`) で利用する Google Cloud プロジェクト ID |
 | `LOG_MODE` | `production`（Cloud Logging 互換 JSON）/ `local`（TextHandler）|
 
-ローカルで Pub/Sub / Firestore emulator に接続する場合は `PUBSUB_EMULATOR_HOST` / `FIRESTORE_EMULATOR_HOST` を併せて設定する（`make run` の compose 定義が emulator のサービス名を渡す）。
+ローカルで Firestore emulator に接続する場合は `FIRESTORE_EMULATOR_HOST` を併せて設定する（`make run` の compose 定義が emulator のサービス名を渡す）。
+
+Pub/Sub の 5 購読は Cloud Run push subscription 経由で `/internal/v1/pubsub/<イベント名>` が受ける（[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) の「Pub/Sub subscriber」参照）。到達制御は Cloud Run の呼び出し IAM が担い、受け口自体はアプリ層の認証を持たない。ローカルでは IAM が挟まらないため、`curl` で直接 push envelope を投げて動作確認できる。
 
 ## 公開パッケージ
 

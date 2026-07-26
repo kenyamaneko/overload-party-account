@@ -17,8 +17,8 @@ import (
 
 	pubsubadapter "github.com/kenyamaneko/overload-party-account/internal/adapter/pubsub"
 	"github.com/kenyamaneko/overload-party-account/internal/config"
+	"github.com/kenyamaneko/overload-party-account/internal/handler/pubsubpush"
 	"github.com/kenyamaneko/overload-party-account/internal/handler/rest"
-	"github.com/kenyamaneko/overload-party-account/internal/port"
 	accountfirestore "github.com/kenyamaneko/overload-party-account/internal/repository/firestore"
 	"github.com/kenyamaneko/overload-party-account/internal/repository/postgres"
 	"github.com/kenyamaneko/overload-party-account/internal/router"
@@ -127,6 +127,20 @@ func run() error {
 	onboardingInteractor := usecase.NewOnboardingInteractor(playerRepo, playerRepo, factionRepo, eventRepo, txManager)
 	settingsInteractor := usecase.NewPlayerSettingsInteractor(playerSettingsRepo)
 
+	factionSub := pubsubadapter.NewFactionAcquiredSubscriber(factionRepo, txManager, eventRepo)
+	premiumSub := pubsubadapter.NewPremiumUpdatedSubscriber(playerRepo, txManager, eventRepo)
+	onboardedSub := pubsubadapter.NewPlayerOnboardedSubscriber(onboardingInteractor)
+	nameSetSub := pubsubadapter.NewOnboardingNameSetSubscriber(onboardingInteractor)
+	factionSetSub := pubsubadapter.NewOnboardingFactionSetSubscriber(onboardingInteractor)
+
+	pubsubHandlers := pubsubpush.Handlers{
+		FactionAcquired:      pubsubpush.NewEventHandler(factionSub.HandleMessage),
+		PremiumUpdated:       pubsubpush.NewEventHandler(premiumSub.HandleMessage),
+		PlayerOnboarded:      pubsubpush.NewEventHandler(onboardedSub.HandleMessage),
+		OnboardingNameSet:    pubsubpush.NewEventHandler(nameSetSub.HandleMessage),
+		OnboardingFactionSet: pubsubpush.NewEventHandler(factionSetSub.HandleMessage),
+	}
+
 	authH := rest.NewAuthHandler(authInteractor)
 	playerH := rest.NewPlayerHandler(playerInteractor)
 	factionH := rest.NewFactionHandler(factionInteractor)
@@ -136,7 +150,7 @@ func run() error {
 		internalauth.StaticHS256Resolver([]byte(cfg.InternalAuthSecret), internalauth.DefaultKeyID),
 	)
 
-	r := router.New(authH, playerH, factionH, settingsH, authVerifier)
+	r := router.New(authH, playerH, factionH, settingsH, authVerifier, pubsubHandlers)
 
 	srv := &http.Server{
 		Addr:              fmt.Sprintf(":%d", cfg.Port),
@@ -144,29 +158,16 @@ func run() error {
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
-	streams, closeStreams, err := openSubscriptionStreams(ctx, cfg)
-	if err != nil {
-		return err
-	}
-	defer closeStreams()
-
-	factionSub := pubsubadapter.NewFactionAcquiredSubscriber(streams.FactionAcquired, factionRepo, txManager, eventRepo)
-	premiumSub := pubsubadapter.NewPremiumUpdatedSubscriber(streams.PremiumUpdated, playerRepo, txManager, eventRepo)
-	onboardedSub := pubsubadapter.NewPlayerOnboardedSubscriber(streams.PlayerOnboarded, onboardingInteractor)
-	nameSetSub := pubsubadapter.NewOnboardingNameSetSubscriber(streams.OnboardingNameSet, onboardingInteractor)
-	factionSetSub := pubsubadapter.NewOnboardingFactionSetSubscriber(streams.OnboardingFactionSet, onboardingInteractor)
-
 	slog.Info("account starting",
 		"addr", srv.Addr,
 		"google_cloud_project", cfg.GoogleCloudProjectID,
 	)
 
-	return runHTTPAndSubscribers(ctx, srv, factionSub, premiumSub, onboardedSub, nameSetSub, factionSetSub)
+	return runHTTP(ctx, srv)
 }
 
-// runHTTPAndSubscribers は HTTP server と Pub/Sub subscriber 群を並行起動し、
-// どれかの失敗・シグナル到来で全体を graceful に停止する。
-func runHTTPAndSubscribers(ctx context.Context, srv *http.Server, subscribers ...port.EventSubscriber) error {
+// runHTTP は HTTP server を起動し、シグナル到来で graceful に停止する。
+func runHTTP(ctx context.Context, srv *http.Server) error {
 	g, gCtx := errgroup.WithContext(ctx)
 
 	g.Go(func() error {
@@ -175,15 +176,6 @@ func runHTTPAndSubscribers(ctx context.Context, srv *http.Server, subscribers ..
 		}
 		return nil
 	})
-
-	for _, subscriber := range subscribers {
-		g.Go(func() error {
-			if err := subscriber.Start(gCtx); err != nil && gCtx.Err() == nil {
-				return fmt.Errorf("subscriber: %w", err)
-			}
-			return nil
-		})
-	}
 
 	g.Go(func() error {
 		<-gCtx.Done()
@@ -197,61 +189,4 @@ func runHTTPAndSubscribers(ctx context.Context, srv *http.Server, subscribers ..
 	})
 
 	return g.Wait()
-}
-
-// subscriptionStreams は account サービスが購読する 5 つの Pub/Sub stream を束ねる。
-// stream ごとの defer Close を main から消し、一括 close 関数を返すための受け皿。
-type subscriptionStreams struct {
-	FactionAcquired      *pubsubadapter.Stream
-	PremiumUpdated       *pubsubadapter.Stream
-	PlayerOnboarded      *pubsubadapter.Stream
-	OnboardingNameSet    *pubsubadapter.Stream
-	OnboardingFactionSet *pubsubadapter.Stream
-}
-
-// openSubscriptionStreams は 5 つの Pub/Sub stream を順次 Open し、一括 close 関数と
-// 共に返す。途中で失敗した場合はそれまでに開いた stream を逆順に Close してから
-// エラーを返すため、リーク無しに run() の早期 return が可能。
-func openSubscriptionStreams(ctx context.Context, cfg *config.Config) (*subscriptionStreams, func(), error) {
-	specs := []struct {
-		name           string
-		subscriptionID string
-		assign         func(*subscriptionStreams, *pubsubadapter.Stream)
-	}{
-		{"faction-acquired", cfg.FactionAcquiredSubscription, func(s *subscriptionStreams, st *pubsubadapter.Stream) { s.FactionAcquired = st }},
-		{"premium-updated", cfg.PremiumUpdatedSubscription, func(s *subscriptionStreams, st *pubsubadapter.Stream) { s.PremiumUpdated = st }},
-		{"player-onboarded", cfg.PlayerOnboardedSubscription, func(s *subscriptionStreams, st *pubsubadapter.Stream) { s.PlayerOnboarded = st }},
-		{"onboarding-name-set", cfg.OnboardingNameSetSubscription, func(s *subscriptionStreams, st *pubsubadapter.Stream) { s.OnboardingNameSet = st }},
-		{"onboarding-faction-set", cfg.OnboardingFactionSetSubscription, func(s *subscriptionStreams, st *pubsubadapter.Stream) { s.OnboardingFactionSet = st }},
-	}
-
-	streams := &subscriptionStreams{}
-	opened := make([]struct {
-		name   string
-		stream *pubsubadapter.Stream
-	}, 0, len(specs))
-
-	closeAll := func() {
-		// 逆順 Close: 後から開いた SDK リソースを先に解放する慣用。
-		for i := len(opened) - 1; i >= 0; i-- {
-			if cerr := opened[i].stream.Close(); cerr != nil {
-				slog.Warn("pubsub stream close", "name", opened[i].name, "error", cerr)
-			}
-		}
-	}
-
-	for _, spec := range specs {
-		st, err := pubsubadapter.NewStream(ctx, cfg.GoogleCloudProjectID, spec.subscriptionID)
-		if err != nil {
-			closeAll()
-			return nil, nil, fmt.Errorf("%s stream: %w", spec.name, err)
-		}
-		spec.assign(streams, st)
-		opened = append(opened, struct {
-			name   string
-			stream *pubsubadapter.Stream
-		}{name: spec.name, stream: st})
-	}
-
-	return streams, closeAll, nil
 }
