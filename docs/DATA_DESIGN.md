@@ -97,7 +97,7 @@ account スキーマはプレイヤーの基本情報・デイリーバトル回
 | カラム名 | 型 | Nullable | 説明 |
 |---|---|---|---|
 | `player_id` | UUID | No | プレイヤーID |
-| `language` | VARCHAR(10) | No | 言語設定 |
+| `"language"` | VARCHAR(10) | No | 言語設定 |
 | `bgm_volume` | BIGINT | No | BGM音量 (0-100) |
 | `se_volume` | BIGINT | No | SE音量 (0-100) |
 | `push_enabled` | BOOLEAN | No | 通知許可 |

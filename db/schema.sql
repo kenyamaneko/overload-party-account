@@ -114,7 +114,7 @@ CREATE UNIQUE INDEX idx_player_factions_initial
 
 CREATE TABLE account.player_settings (
   player_id    UUID PRIMARY KEY REFERENCES account.players(player_id) ON DELETE CASCADE, -- プレイヤーID
-  language     VARCHAR(10) NOT NULL,                 -- 言語設定
+  "language"   VARCHAR(10) NOT NULL,                 -- 言語設定
   bgm_volume   BIGINT NOT NULL,                      -- BGM音量 (0-100)
   se_volume    BIGINT NOT NULL,                      -- SE音量 (0-100)
   push_enabled BOOLEAN NOT NULL,                     -- 通知許可
