@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"cloud.google.com/go/firestore"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"golang.org/x/sync/errgroup"
 
 	pubsubadapter "github.com/kenyamaneko/overload-party-account/internal/adapter/pubsub"
@@ -91,10 +90,11 @@ func run() error {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
-	pool, err := pgxpool.New(ctx, cfg.DatabaseConn)
+	pool, closeDatabasePool, err := newDatabasePool(ctx, cfg)
 	if err != nil {
-		return fmt.Errorf("pgxpool new: %w", err)
+		return fmt.Errorf("new database pool: %w", err)
 	}
+	defer closeDatabasePool()
 	defer pool.Close()
 
 	fsClient, err := firestore.NewClient(ctx, cfg.GoogleCloudProjectID)

@@ -15,6 +15,8 @@ var allEnvKeys = []string{
 	"GOOGLE_CLOUD_PROJECT_ID",
 	"INTERNAL_AUTH_SECRET",
 	"LOG_MODE",
+	"DATABASE_IAM_AUTH_ENABLED",
+	"CLOUDSQL_CONNECTION_NAME",
 }
 
 // setEnv は allEnvKeys を一括で上書きする。envs に無いキーは "" として t.Setenv で
@@ -41,11 +43,12 @@ func mergeEnv(maps ...map[string]string) map[string]string {
 // CLAUDE.md「デフォルト値へのフォールバックを行わない」方針により、全必須 env を
 // 明示的に供給する。各ケースはこれを baseline に override を重ねる。
 var validLocalEnv = map[string]string{
-	"PORT":                    "9005",
-	"DATABASE_CONN":           "host=localhost port=5432 dbname=account user=account password=account sslmode=disable",
-	"GOOGLE_CLOUD_PROJECT_ID": "account-local",
-	"INTERNAL_AUTH_SECRET":    "test-internal-auth-secret-do-not-use-in-prod-xxxxx",
-	"LOG_MODE":                "local",
+	"PORT":                      "9005",
+	"DATABASE_CONN":             "host=localhost port=5432 dbname=account user=account password=account sslmode=disable",
+	"GOOGLE_CLOUD_PROJECT_ID":   "account-local",
+	"INTERNAL_AUTH_SECRET":      "test-internal-auth-secret-do-not-use-in-prod-xxxxx",
+	"LOG_MODE":                  "local",
+	"DATABASE_IAM_AUTH_ENABLED": "false",
 }
 
 func TestFromEnv(t *testing.T) {
@@ -78,6 +81,29 @@ func TestFromEnv(t *testing.T) {
 
 			require.NoError(t, err)
 			assert.Equal(t, 8080, cfg.Port)
+		})
+
+		t.Run("DATABASE_IAM_AUTH_ENABLED が false のとき、CLOUDSQL_CONNECTION_NAME が未設定でも成功する", func(t *testing.T) {
+			setEnv(t, validLocalEnv)
+
+			cfg, err := FromEnv()
+
+			require.NoError(t, err)
+			assert.False(t, cfg.DatabaseIAMAuthEnabled)
+			assert.Empty(t, cfg.CloudSQLConnectionName)
+		})
+
+		t.Run("DATABASE_IAM_AUTH_ENABLED が true かつ CLOUDSQL_CONNECTION_NAME が指定されるとき、両方の値が Config に反映される", func(t *testing.T) {
+			setEnv(t, mergeEnv(validLocalEnv, map[string]string{
+				"DATABASE_IAM_AUTH_ENABLED": "true",
+				"CLOUDSQL_CONNECTION_NAME":  "overload-party-dev:asia-northeast1:overload-party-db",
+			}))
+
+			cfg, err := FromEnv()
+
+			require.NoError(t, err)
+			assert.True(t, cfg.DatabaseIAMAuthEnabled)
+			assert.Equal(t, "overload-party-dev:asia-northeast1:overload-party-db", cfg.CloudSQLConnectionName)
 		})
 
 		// 必須 env が未設定・未定義値のときはデフォルトにフォールバックせず即エラーにする (回帰防止)。
@@ -130,6 +156,24 @@ func TestFromEnv(t *testing.T) {
 				name:    "LOG_MODE が未定義値のとき、エラーになる",
 				envs:    mergeEnv(validLocalEnv, map[string]string{"LOG_MODE": "verbose"}),
 				wantErr: "LOG_MODE must be",
+			},
+			{
+				name:    "DATABASE_IAM_AUTH_ENABLED が未設定のとき、変数名を含むエラーになる",
+				envs:    mergeEnv(validLocalEnv, map[string]string{"DATABASE_IAM_AUTH_ENABLED": ""}),
+				wantErr: "DATABASE_IAM_AUTH_ENABLED must be",
+			},
+			{
+				name:    `DATABASE_IAM_AUTH_ENABLED が "true"/"false" 以外の "yes" のとき、変数名を含むエラーになる`,
+				envs:    mergeEnv(validLocalEnv, map[string]string{"DATABASE_IAM_AUTH_ENABLED": "yes"}),
+				wantErr: "DATABASE_IAM_AUTH_ENABLED must be",
+			},
+			{
+				name: "DATABASE_IAM_AUTH_ENABLED が true かつ CLOUDSQL_CONNECTION_NAME が未設定のとき、CLOUDSQL_CONNECTION_NAME を含むエラーになる",
+				envs: mergeEnv(validLocalEnv, map[string]string{
+					"DATABASE_IAM_AUTH_ENABLED": "true",
+					"CLOUDSQL_CONNECTION_NAME":  "",
+				}),
+				wantErr: "CLOUDSQL_CONNECTION_NAME is required",
 			},
 		}
 		for _, tc := range invalidCases {

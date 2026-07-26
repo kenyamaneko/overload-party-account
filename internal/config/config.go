@@ -36,6 +36,12 @@ type Config struct {
 
 	// LogMode は log handler の選択。production / local のいずれか必須。
 	LogMode LogMode
+
+	// DatabaseIAMAuthEnabled は Cloud SQL への接続方式を切り替える。
+	DatabaseIAMAuthEnabled bool
+
+	// CloudSQLConnectionName は Cloud SQL インスタンスの接続名 (project:region:instance)。
+	CloudSQLConnectionName string
 }
 
 // FromEnv は環境変数から Config を構築する。
@@ -74,6 +80,22 @@ func FromEnv() (*Config, error) {
 	case LogModeProduction, LogModeLocal:
 	default:
 		return nil, fmt.Errorf("config: LOG_MODE must be %q or %q, got %q", LogModeProduction, LogModeLocal, cfg.LogMode)
+	}
+
+	rawIAMAuth := os.Getenv("DATABASE_IAM_AUTH_ENABLED")
+	switch rawIAMAuth {
+	case "true":
+		cfg.DatabaseIAMAuthEnabled = true
+	case "false":
+		cfg.DatabaseIAMAuthEnabled = false
+	default:
+		return nil, fmt.Errorf("config: DATABASE_IAM_AUTH_ENABLED must be %q or %q, got %q", "true", "false", rawIAMAuth)
+	}
+	if cfg.DatabaseIAMAuthEnabled {
+		cfg.CloudSQLConnectionName = os.Getenv("CLOUDSQL_CONNECTION_NAME")
+		if cfg.CloudSQLConnectionName == "" {
+			return nil, fmt.Errorf("config: CLOUDSQL_CONNECTION_NAME is required when DATABASE_IAM_AUTH_ENABLED is true")
+		}
 	}
 
 	return cfg, nil

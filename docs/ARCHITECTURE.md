@@ -288,6 +288,7 @@ usecase 層は HTTP ステータスを知らず、handler 層は SQL を知ら�
 - `DATABASE_CONN` は Secret Manager 由来。k8s マニフェストにインラインしない
 - `GOOGLE_CLOUD_PROJECT_ID` は ConfigMap 経由で環境ごとに切り替え (Firestore で使用)
 - Pub/Sub の push subscription 名・エンドポイント URL は Terraform 側が管理し、account のコードは関知しない ([overload-party-infra](https://github.com/kenyamaneko/overload-party-infra) の担当)
+- `DATABASE_IAM_AUTH_ENABLED` / `CLOUDSQL_CONNECTION_NAME` は ConfigMap 経由。Cloud SQL への接続方式 (IAM 認証かパスワード接続か) を環境ごとに切り替える
 
 ### Pub/Sub トピックと subscriber
 
