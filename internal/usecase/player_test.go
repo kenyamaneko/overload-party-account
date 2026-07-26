@@ -11,6 +11,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	gamedesign "github.com/kenyamaneko/overload-party-common/packages/game-design-constants"
+
 	"github.com/kenyamaneko/overload-party-account/internal/domain"
 	"github.com/kenyamaneko/overload-party-account/internal/port"
 )
@@ -405,7 +407,7 @@ func TestAwardGameExp(t *testing.T) {
 					seedPlayerWithState(t, testPlayerID2, "uid-2", "Bob", false, 1, 0, 0, today())
 
 					svc := newPlayerTestInteractor(nil)
-					require.NoError(t, svc.AwardGameExp(ctx, testPlayerID1, testPlayerID2, tt.winnerNum, tt.reason, "pvp"))
+					require.NoError(t, svc.AwardGameExp(ctx, testPlayerID1, testPlayerID2, tt.winnerNum, tt.reason, gamedesign.MatchTypePvp))
 
 					got1, err := svc.GetPlayerResponse(ctx, testPlayerID1)
 					require.NoError(t, err)
@@ -451,7 +453,7 @@ func TestAwardGameExp(t *testing.T) {
 					seedPlayerWithState(t, testPlayerID1, "uid-1", "Alice", false, 1, 0, 0, today())
 
 					svc := newPlayerTestInteractor(nil)
-					require.NoError(t, svc.AwardGameExp(ctx, testPlayerID1, "npc-easy", tt.winnerNum, tt.reason, "npc"))
+					require.NoError(t, svc.AwardGameExp(ctx, testPlayerID1, "npc-easy", tt.winnerNum, tt.reason, gamedesign.MatchTypeNpc))
 
 					got1, err := svc.GetPlayerResponse(ctx, testPlayerID1)
 					require.NoError(t, err)
