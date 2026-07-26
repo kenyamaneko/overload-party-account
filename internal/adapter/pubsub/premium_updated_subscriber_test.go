@@ -3,6 +3,7 @@ package pubsub
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -19,13 +20,14 @@ func TestHandleMessagePremiumUpdated(t *testing.T) {
 		// 契約検証は apishop 側の型をそのまま使う。shop が schema を変えたら本テストが
 		// compile / 実行で破綻し、乖離を CI で検知できるようにするため。
 		tests := []struct {
-			name          string
-			payload       []byte
-			seedProcessed map[string]string
-			updateErr     error
-			insertErr     error
-			wantErr       bool
-			assertRepos   func(t *testing.T, premiumRepo *fakePremiumRepo)
+			name            string
+			payload         []byte
+			seedProcessed   map[string]string
+			updateErr       error
+			insertErr       error
+			wantErr         bool
+			wantErrContains string
+			assertRepos     func(t *testing.T, premiumRepo *fakePremiumRepo)
 		}{
 			{
 				name: "premium=true + expiry を受けたとき、players に反映して成功になる",
@@ -77,9 +79,10 @@ func TestHandleMessagePremiumUpdated(t *testing.T) {
 				},
 			},
 			{
-				name:    "不正な JSON のとき、握りつぶさず失敗になる",
-				payload: []byte("{malformed"),
-				wantErr: true,
+				name:            "不正な JSON のとき、握りつぶさず失敗になる",
+				payload:         []byte("{malformed"),
+				wantErr:         true,
+				wantErrContains: "premium-updated: bad payload",
 				assertRepos: func(t *testing.T, premiumRepo *fakePremiumRepo) {
 					assert.Empty(t, premiumRepo.premium, "JSON parse 失敗時は副作用が残らない")
 				},
@@ -105,8 +108,9 @@ func TestHandleMessagePremiumUpdated(t *testing.T) {
 					PlayerID:  "p-5",
 					IsPremium: true,
 				}),
-				insertErr: errors.New("db unavailable"),
-				wantErr:   true,
+				insertErr:       errors.New("db unavailable"),
+				wantErr:         true,
+				wantErrContains: "insert processed_events",
 				assertRepos: func(t *testing.T, premiumRepo *fakePremiumRepo) {
 					assert.Empty(t, premiumRepo.premium, "processed_events INSERT 失敗時は UpdatePremium まで到達しない")
 				},
@@ -119,8 +123,9 @@ func TestHandleMessagePremiumUpdated(t *testing.T) {
 					PlayerID:  "p-6",
 					IsPremium: true,
 				}),
-				updateErr: errors.New("row not found"),
-				wantErr:   true,
+				updateErr:       errors.New("row not found"),
+				wantErr:         true,
+				wantErrContains: "update premium",
 				assertRepos: func(t *testing.T, premiumRepo *fakePremiumRepo) {
 					assert.Empty(t, premiumRepo.premium, "UpdatePremium 失敗時は tx rollback により副作用が残らない")
 				},
@@ -142,6 +147,7 @@ func TestHandleMessagePremiumUpdated(t *testing.T) {
 				err := sub.HandleMessage(context.Background(), tt.payload)
 
 				assert.Equal(t, tt.wantErr, err != nil, "エラー有無 (err=%v)", err)
+				assert.Contains(t, fmt.Sprintf("%v", err), tt.wantErrContains, "エラー内容が原因を区別できる")
 				tt.assertRepos(t, premiumRepo)
 			})
 		}

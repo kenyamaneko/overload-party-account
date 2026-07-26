@@ -3,6 +3,7 @@ package pubsub
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 
 	apiscenario "github.com/kenyamaneko/overload-party-scenario/packages/api-scenario"
@@ -55,6 +56,7 @@ func TestHandleMessagePlayerOnboarded(t *testing.T) {
 			returnProcessed bool
 			returnErr       error
 			wantErr         bool
+			wantErrContains string
 			assertApplier   func(t *testing.T, a *fakeOnboardingCompletedApplier)
 		}{
 			{
@@ -79,9 +81,10 @@ func TestHandleMessagePlayerOnboarded(t *testing.T) {
 				},
 			},
 			{
-				name:    "不正な JSON のとき、applier に到達せず失敗になる",
-				payload: []byte("broken"),
-				wantErr: true,
+				name:            "不正な JSON のとき、applier に到達せず失敗になる",
+				payload:         []byte("broken"),
+				wantErr:         true,
+				wantErrContains: "player-onboarded: bad payload",
 				assertApplier: func(t *testing.T, a *fakeOnboardingCompletedApplier) {
 					assert.False(t, a.called, "JSON parse 失敗時は applier に到達しない")
 				},
@@ -104,25 +107,28 @@ func TestHandleMessagePlayerOnboarded(t *testing.T) {
 					EventType: apiscenario.EventTypePlayerOnboarded,
 					EventID:   "33333333-3333-3333-3333-333333333333",
 				}),
-				wantErr: true,
+				wantErr:         true,
+				wantErrContains: "player-onboarded: missing player_id",
 				assertApplier: func(t *testing.T, a *fakeOnboardingCompletedApplier) {
 					assert.False(t, a.called, "必須フィールド欠落は applier より手前で弾く")
 				},
 			},
 			{
-				name:      "usecase が汎用エラーを返すとき、失敗になる",
-				payload:   validPayload,
-				returnErr: errors.New("db error"),
-				wantErr:   true,
+				name:            "usecase が汎用エラーを返すとき、失敗になる",
+				payload:         validPayload,
+				returnErr:       errors.New("db error"),
+				wantErr:         true,
+				wantErrContains: "player-onboarded: apply:",
 				assertApplier: func(t *testing.T, a *fakeOnboardingCompletedApplier) {
 					assert.True(t, a.called)
 				},
 			},
 			{
-				name:      "usecase が ErrNotFound を返すとき、publisher バグとして失敗になる",
-				payload:   validPayload,
-				returnErr: port.ErrNotFound,
-				wantErr:   true,
+				name:            "usecase が ErrNotFound を返すとき、publisher バグとして失敗になる",
+				payload:         validPayload,
+				returnErr:       port.ErrNotFound,
+				wantErr:         true,
+				wantErrContains: "player-onboarded: publisher bug:",
 				assertApplier: func(t *testing.T, a *fakeOnboardingCompletedApplier) {
 					assert.True(t, a.called)
 				},
@@ -140,6 +146,7 @@ func TestHandleMessagePlayerOnboarded(t *testing.T) {
 				err := sub.HandleMessage(context.Background(), tt.payload)
 
 				assert.Equal(t, tt.wantErr, err != nil, "エラー有無 (err=%v)", err)
+				assert.Contains(t, fmt.Sprintf("%v", err), tt.wantErrContains, "エラー内容が原因を区別できる")
 				tt.assertApplier(t, applier)
 			})
 		}

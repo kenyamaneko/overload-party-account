@@ -3,6 +3,7 @@ package pubsub
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 
 	apishop "github.com/kenyamaneko/overload-party-shop/packages/api-shop"
@@ -17,13 +18,14 @@ func TestHandleMessageFactionAcquired(t *testing.T) {
 		// 契約検証は apishop 側の型をそのまま使う。shop が schema を変えたら本テストが
 		// compile / 実行で破綻し、乖離を CI で検知できるようにするため。
 		tests := []struct {
-			name          string
-			payload       []byte
-			seedProcessed map[string]string
-			addErr        error
-			insertErr     error
-			wantErr       bool
-			assertRepos   func(t *testing.T, factionRepo *fakeFactionRepo, eventRepo *fakeProcessedEventRepo)
+			name            string
+			payload         []byte
+			seedProcessed   map[string]string
+			addErr          error
+			insertErr       error
+			wantErr         bool
+			wantErrContains string
+			assertRepos     func(t *testing.T, factionRepo *fakeFactionRepo, eventRepo *fakeProcessedEventRepo)
 		}{
 			{
 				name: "有効な faction_acquired を受けたとき、player_factions に is_initial=FALSE で追加して成功になる",
@@ -56,9 +58,10 @@ func TestHandleMessageFactionAcquired(t *testing.T) {
 				},
 			},
 			{
-				name:    "不正な JSON のとき、握りつぶさず失敗になる",
-				payload: []byte("{not-json"),
-				wantErr: true,
+				name:            "不正な JSON のとき、握りつぶさず失敗になる",
+				payload:         []byte("{not-json"),
+				wantErr:         true,
+				wantErrContains: "faction-acquired: bad payload",
 				assertRepos: func(t *testing.T, factionRepo *fakeFactionRepo, _ *fakeProcessedEventRepo) {
 					assert.Empty(t, factionRepo.added)
 				},
@@ -84,8 +87,9 @@ func TestHandleMessageFactionAcquired(t *testing.T) {
 					PlayerID:  "p-4",
 					Faction:   "Tuners",
 				}),
-				insertErr: errors.New("db unavailable"),
-				wantErr:   true,
+				insertErr:       errors.New("db unavailable"),
+				wantErr:         true,
+				wantErrContains: "insert processed_events",
 				assertRepos: func(t *testing.T, factionRepo *fakeFactionRepo, _ *fakeProcessedEventRepo) {
 					assert.Empty(t, factionRepo.added)
 				},
@@ -98,8 +102,9 @@ func TestHandleMessageFactionAcquired(t *testing.T) {
 					PlayerID:  "p-5",
 					Faction:   "SHE",
 				}),
-				addErr:  errors.New("fk violation"),
-				wantErr: true,
+				addErr:          errors.New("fk violation"),
+				wantErr:         true,
+				wantErrContains: "add player_faction",
 				assertRepos: func(t *testing.T, factionRepo *fakeFactionRepo, _ *fakeProcessedEventRepo) {
 					assert.Empty(t, factionRepo.added, "AddPlayerFaction 失敗時は副作用が残らない")
 				},
@@ -120,6 +125,7 @@ func TestHandleMessageFactionAcquired(t *testing.T) {
 				err := sub.HandleMessage(context.Background(), tt.payload)
 
 				assert.Equal(t, tt.wantErr, err != nil, "エラー有無 (err=%v)", err)
+				assert.Contains(t, fmt.Sprintf("%v", err), tt.wantErrContains, "エラー内容が原因を区別できる")
 				tt.assertRepos(t, factionRepo, eventRepo)
 			})
 		}

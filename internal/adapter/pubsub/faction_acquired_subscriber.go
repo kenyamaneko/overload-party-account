@@ -37,11 +37,11 @@ func NewFactionAcquiredSubscriber(
 func (s *FactionAcquiredSubscriber) HandleMessage(ctx context.Context, data []byte) error {
 	var event apishop.FactionAcquiredEvent
 	if err := json.Unmarshal(data, &event); err != nil {
-		slog.Error("faction-acquired subscriber: bad payload (nack)", "error", err)
+		slog.Error("faction-acquired subscriber: bad payload", "error", err)
 		return fmt.Errorf("faction-acquired: bad payload: %w", err)
 	}
 	if event.EventType != apishop.EventTypeFactionAcquired {
-		slog.Warn("faction-acquired subscriber: unknown event_type, acking", "event_type", event.EventType)
+		slog.Warn("faction-acquired subscriber: unknown event_type, skipping", "event_type", event.EventType)
 		return nil
 	}
 
