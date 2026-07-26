@@ -471,3 +471,104 @@ func TestUpdateProgression(t *testing.T) {
 		}
 	})
 }
+
+func TestGetOnboardingStatus(t *testing.T) {
+	repo := postgres.NewPlayerRepository(sharedPg.Pool)
+	ctx := context.Background()
+
+	t.Run("onboarding_status の取得", func(t *testing.T) {
+		tests := []struct {
+			name       string
+			lookupID   string
+			wantStatus string
+			wantErr    error
+		}{
+			{
+				name:       "シード直後のとき、not_started を返す",
+				lookupID:   testPlayerID1,
+				wantStatus: domain.OnboardingStatusNotStarted,
+			},
+			{
+				name:     "未シードのとき、ErrNotFound になる",
+				lookupID: testPlayerID2,
+				wantErr:  port.ErrNotFound,
+			},
+		}
+
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				sharedPg.Truncate(t)
+				seedPlayer(t, testPlayerID1, "uid-1", "Alice", false)
+
+				got, err := repo.GetOnboardingStatus(ctx, tt.lookupID)
+				require.ErrorIs(t, err, tt.wantErr)
+				assert.Equal(t, tt.wantStatus, got)
+			})
+		}
+	})
+}
+
+func TestUpdateOnboardingStatus(t *testing.T) {
+	repo := postgres.NewPlayerRepository(sharedPg.Pool)
+	ctx := context.Background()
+
+	t.Run("onboarding_status の更新", func(t *testing.T) {
+		t.Run("name_set に更新すると、取得で name_set が返る", func(t *testing.T) {
+			sharedPg.Truncate(t)
+			seedPlayer(t, testPlayerID1, "uid-1", "Alice", false)
+
+			require.NoError(t, repo.UpdateOnboardingStatus(ctx, testPlayerID1, domain.OnboardingStatusNameSet))
+
+			got, err := repo.GetOnboardingStatus(ctx, testPlayerID1)
+			require.NoError(t, err)
+			assert.Equal(t, domain.OnboardingStatusNameSet, got)
+		})
+
+		t.Run("未シードのとき、ErrNotFound になる", func(t *testing.T) {
+			sharedPg.Truncate(t)
+
+			err := repo.UpdateOnboardingStatus(ctx, testPlayerID2, domain.OnboardingStatusNameSet)
+			require.ErrorIs(t, err, port.ErrNotFound)
+		})
+	})
+}
+
+func TestGetProgression(t *testing.T) {
+	repo := postgres.NewPlayerRepository(sharedPg.Pool)
+	ctx := context.Background()
+
+	t.Run("進捗の取得", func(t *testing.T) {
+		tests := []struct {
+			name      string
+			lookupID  string
+			wantLevel int64
+			wantExp   int64
+			wantErr   error
+		}{
+			{
+				name:      "シード済みのとき、現在の level と exp を返す",
+				lookupID:  testPlayerID1,
+				wantLevel: 1,
+				wantExp:   0,
+			},
+			{
+				name:     "未シードのとき、ErrNotFound になる",
+				lookupID: testPlayerID2,
+				wantErr:  port.ErrNotFound,
+			},
+		}
+
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				sharedPg.Truncate(t)
+				seedPlayer(t, testPlayerID1, "uid-1", "Alice", false)
+
+				got, err := repo.GetProgression(ctx, tt.lookupID)
+				gotLevel, gotExp := progressionLevelExp(got)
+				require.ErrorIs(t, err, tt.wantErr)
+				assert.Equal(t, tt.wantLevel, gotLevel)
+				assert.Equal(t, tt.wantExp, gotExp)
+			})
+		}
+	})
+}
