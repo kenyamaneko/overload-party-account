@@ -8,7 +8,7 @@
 
 ```
 Gateway (唯一の入口)
-  └─ Account (:9005)                 ClusterIP のみ / 認証は gateway 側で完了済み
+  └─ Account (:9005)                 到達は gateway からのみ / 認証は gateway 側で完了済み
        ├─ PostgreSQL (account スキーマ)
        ├─ Cloud Firestore (game_config 読み取り専用)
        └─ Pub/Sub subscriber
@@ -52,14 +52,14 @@ overload-party-ops / overload-party-common を兄弟ディレクトリに checko
 
 すべて必須。未設定・不正値は起動時に即 fail する（[internal/config/config.go](internal/config/config.go) が SSoT、デフォルトへのフォールバック禁止）。
 
-Secret:
+シークレットとして扱う環境変数:
 
 | 変数名 | 説明 |
 |---|---|
 | `DATABASE_CONN` | PostgreSQL 接続文字列（pgx が解釈できる URL / libpq 形式） |
 | `INTERNAL_AUTH_SECRET` | gateway / 各サービスで共有する HS256 JWT 鍵（ADR-037） |
 
-ConfigMap:
+その他の環境変数:
 
 | 変数名 | 説明 |
 |---|---|

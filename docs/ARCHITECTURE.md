@@ -59,7 +59,7 @@ account は Firebase Auth の ID Token を検証しない。**認証は gateway 
 
 この信頼境界は 3 つの構造で支えている:
 
-1. **ネットワーク**: account は ClusterIP Service のみで公開し、Ingress に乗らない。外部からの到達経路は gateway 経由のみ
+1. **到達制御**: 誰が account を呼べるかは実行基盤の呼び出し認可が決め、外部からの到達経路は gateway 経由のみとする（[ADR-057](https://github.com/kenyamaneko/overload-party-common/blob/main/docs/adr/057-cloudrun-service-auth-iam-and-rs256.md)）
 2. **ルーター**: [internal/router/router.go](../internal/router/router.go) は bootstrap 系・サーバー間バッチを `/internal/v1/...` に JWT なしで生やし、player-scoped な `/api/v1/account/me/...` には `VerifyInternalAuth`（`X-Internal-Auth` の HS256 JWT 検証）だけを挟む。Firebase ID Token を検証するミドルウェアは存在しない
 3. **契約**: `/auth/register` / `/auth/login` は gateway が ID Token を検証して抽出した `firebase_uid` を受け取る。account 側では文字列として扱うだけ
 
@@ -285,10 +285,10 @@ usecase 層は HTTP ステータスを知らず、handler 層は SQL を知ら�
 
 環境変数の一覧と必須条件は [internal/config/config.go](../internal/config/config.go) の `FromEnv` が SSoT（欠ければ即 fail）。運用上の注意点のみ:
 
-- `DATABASE_CONN` は Secret Manager 由来。k8s マニフェストにインラインしない
-- `GOOGLE_CLOUD_PROJECT_ID` は ConfigMap 経由で環境ごとに切り替え (Firestore で使用)
+- `DATABASE_CONN` の接続先は Terraform が Cloud SQL の接続名から組み立てて渡す。値を account 側に持たない
+- `GOOGLE_CLOUD_PROJECT_ID` は環境ごとに切り替え (Firestore で使用)
 - Pub/Sub の push subscription 名・エンドポイント URL は Terraform 側が管理し、account のコードは関知しない ([overload-party-infra](https://github.com/kenyamaneko/overload-party-infra) の担当)
-- `DATABASE_IAM_AUTH_ENABLED` / `CLOUDSQL_CONNECTION_NAME` は ConfigMap 経由。Cloud SQL への接続方式 (IAM 認証かパスワード接続か) を環境ごとに切り替える
+- `DATABASE_IAM_AUTH_ENABLED` / `CLOUDSQL_CONNECTION_NAME` は Cloud SQL への接続方式 (IAM 認証かパスワード接続か) を環境ごとに切り替える
 
 ### Pub/Sub トピックと subscriber
 
