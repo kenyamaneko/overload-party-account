@@ -21,6 +21,8 @@ import (
 
 	apiscenario "github.com/kenyamaneko/overload-party-scenario/packages/api-scenario"
 
+	internalauth "github.com/kenyamaneko/overload-party-gateway/packages/internalauth-go"
+
 	pubsubadapter "github.com/kenyamaneko/overload-party-account/internal/adapter/pubsub"
 	"github.com/kenyamaneko/overload-party-account/internal/handler/pubsubpush"
 	"github.com/kenyamaneko/overload-party-account/internal/handler/rest"
@@ -28,13 +30,6 @@ import (
 	"github.com/kenyamaneko/overload-party-account/internal/usecase"
 	apiaccount "github.com/kenyamaneko/overload-party-account/packages/api-account"
 )
-
-// nullVerifier は auth 経路を通らないルートで Verify が呼ばれてはならないことを示す。
-type nullVerifier struct{}
-
-func (nullVerifier) Verify(string) (string, error) {
-	panic("Verify should not be called for routes outside /api/v1/account")
-}
 
 // newIntegrationRouter は実 interactor・実リポジトリで結線した router を返す。
 func newIntegrationRouter() *gin.Engine {
@@ -77,7 +72,8 @@ func newIntegrationRouter() *gin.Engine {
 		rest.NewPlayerHandler(playerInteractor),
 		rest.NewFactionHandler(factionInteractor),
 		rest.NewPlayerSettingsHandler(settingsInteractor),
-		nullVerifier{},
+		// VerifyFn 未設定: 結合テストが叩く auth-free ルートが verifier に到達しないことの検出を兼ねる
+		&internalauth.MockVerifier{},
 		pubsubHandlers,
 	)
 }
