@@ -135,3 +135,37 @@ func (h *PlayerHandler) AwardGameExp(c *gin.Context) {
 	}
 	c.Status(http.StatusNoContent)
 }
+
+// RevertBattleCount は停止で無効になった対戦の消費バトル回数を両プレイヤーに戻す。
+// gateway の停止時処理が直接呼ぶサーバー間バッチエンドポイントで body に両 player_id を
+// 含むため、JWT sub では表現できない。/internal/v1 配下に残し JWT を要求しない。
+func (h *PlayerHandler) RevertBattleCount(c *gin.Context) {
+	var req apiaccount.RevertBattleCountRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if req.GameID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "game_id is required"})
+		return
+	}
+	if req.Player1ID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "player1_id is required"})
+		return
+	}
+	if req.Player2ID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "player2_id is required"})
+		return
+	}
+	// 未指定のゼロ値を許すと 1970-01-01 のゲーム日で処理され戻し損ねたまま game_id だけ
+	// 消費されるため、0 以下を弾く。
+	if req.ConsumedAtMillis <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "consumed_at_millis must be positive"})
+		return
+	}
+	if err := h.playerInteractor.RevertBattleCount(c.Request.Context(), req.GameID, req.ConsumedAtMillis, req.Player1ID, req.Player2ID); err != nil {
+		respondError(c, err)
+		return
+	}
+	c.Status(http.StatusNoContent)
+}

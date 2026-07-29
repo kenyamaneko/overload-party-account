@@ -9,6 +9,7 @@ info:
     エンドポイント分類 (ADR-037 Phase 3):
     - `/internal/v1/auth/*`: Firebase UID をキーとする bootstrap 系。player_id 確立前のため認証なし
     - `/internal/v1/players/award-game-exp`: battle が直接呼ぶサーバー間バッチ。body に 2 プレイヤー分の player_id を含み JWT sub では表現できないため認証なし
+    - `/internal/v1/players/revert-battle-count`: gateway の停止時処理が直接呼ぶサーバー間バッチ。body に 2 プレイヤー分の player_id を含み JWT sub では表現できないため認証なし
     - `/api/v1/account/me/*`: gateway / shop / scenario が `X-Internal-Auth` (HS256 JWT) を付けて呼ぶ player-scoped API。player_id は sub クレームから解決し path / body には含めない
 
 paths:
@@ -144,6 +145,28 @@ paths:
           description: リクエストボディ不正
         "404":
           description: プレイヤーが存在しない
+        "500":
+          description: DB 接続エラー
+
+  /internal/v1/players/revert-battle-count:
+    post:
+      operationId: revertBattleCount
+      summary: 停止で無効になった対戦の消費バトル回数を両プレイヤーに戻す (gateway → account)
+      description: |
+        body に両 player_id・対戦識別子・バトル回数を消費した時刻を含むサーバー間バッチ呼び出し。
+        JWT sub では表現できないため bootstrap 系と同様に認証なし (/internal 配下)。
+        同一 game_id の呼び出しは 1 回のみ適用され、以降は idempotent に 204 を返す。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RevertBattleCountRequest"
+      responses:
+        "204":
+          description: 返却成功 (同一 game_id の再呼び出しも成功扱い)
+        "400":
+          description: リクエストボディ不正
         "500":
           description: DB 接続エラー
 
@@ -622,6 +645,27 @@ components:
           type: string
         match_type:
           type: string
+
+    RevertBattleCountRequest:
+      type: object
+      description: |
+        consumed_at_millis はバトル回数を消費した (gateway が increment を呼んだ) 時刻の
+        UNIX ミリ秒。停止発生時刻ではなく、消費時点の時刻を渡す。ゲーム日境界 (JST 05:00)
+        の判定はこの時刻を基準に account 側で行う。0 以下は 400 になる。
+      required: [game_id, player1_id, player2_id, consumed_at_millis]
+      properties:
+        game_id:
+          type: string
+          x-go-name: GameID
+        player1_id:
+          type: string
+          x-go-name: Player1ID
+        player2_id:
+          type: string
+          x-go-name: Player2ID
+        consumed_at_millis:
+          type: integer
+          format: int64
 
     FactionGrantRequest:
       type: object

@@ -92,6 +92,17 @@ CREATE TABLE account.player_daily_battle (
 );
 
 -- =============================================================================
+-- account.battle_count_reversals (消費バトル回数の返却が対戦単位で一度しか
+-- 適用されないことを保証する冪等性ガード。processed_events は Pub/Sub 配信の
+-- 冪等性専用のため、REST 呼び出しの冪等性はここで別に持つ)
+-- =============================================================================
+
+CREATE TABLE account.battle_count_reversals (
+  game_id     TEXT PRIMARY KEY,                     -- 対戦識別子 (battle が発行する game_id)
+  reverted_at TIMESTAMPTZ NOT NULL DEFAULT now()     -- 返却処理日時
+);
+
+-- =============================================================================
 -- account.player_factions (陣営所持の中間テーブル)
 -- =============================================================================
 

@@ -3,6 +3,7 @@ package usecase
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"cloud.google.com/go/civil"
@@ -29,13 +30,14 @@ const (
 
 // PlayerInteractor はプレイヤー情報の参照・更新を提供する。
 type PlayerInteractor struct {
-	playerRepo      port.PlayerRepo
-	premiumRepo     port.PlayerPremiumRepo
-	progressionRepo port.PlayerProgressionRepo
-	battleRepo      port.PlayerBattleRepo
-	playerViewRepo  port.PlayerViewRepo
-	gameConfigRepo  port.GameConfigRepo
-	txRunner        port.TxRunner
+	playerRepo              port.PlayerRepo
+	premiumRepo             port.PlayerPremiumRepo
+	progressionRepo         port.PlayerProgressionRepo
+	battleRepo              port.PlayerBattleRepo
+	battleCountReversalRepo port.BattleCountReversalRepo
+	playerViewRepo          port.PlayerViewRepo
+	gameConfigRepo          port.GameConfigRepo
+	txRunner                port.TxRunner
 }
 
 // NewPlayerInteractor は PlayerInteractor を生成する。
@@ -44,18 +46,20 @@ func NewPlayerInteractor(
 	premiumRepo port.PlayerPremiumRepo,
 	progressionRepo port.PlayerProgressionRepo,
 	battleRepo port.PlayerBattleRepo,
+	battleCountReversalRepo port.BattleCountReversalRepo,
 	playerViewRepo port.PlayerViewRepo,
 	gameConfigRepo port.GameConfigRepo,
 	txRunner port.TxRunner,
 ) *PlayerInteractor {
 	return &PlayerInteractor{
-		playerRepo:      playerRepo,
-		premiumRepo:     premiumRepo,
-		progressionRepo: progressionRepo,
-		battleRepo:      battleRepo,
-		playerViewRepo:  playerViewRepo,
-		gameConfigRepo:  gameConfigRepo,
-		txRunner:        txRunner,
+		playerRepo:              playerRepo,
+		premiumRepo:             premiumRepo,
+		progressionRepo:         progressionRepo,
+		battleRepo:              battleRepo,
+		battleCountReversalRepo: battleCountReversalRepo,
+		playerViewRepo:          playerViewRepo,
+		gameConfigRepo:          gameConfigRepo,
+		txRunner:                txRunner,
 	}
 }
 
@@ -183,6 +187,41 @@ func (s *PlayerInteractor) ensureWithinFreeBattleLimit(ctx context.Context, play
 	return nil
 }
 
+// RevertBattleCount は停止で無効になった対戦の消費バトル回数を両プレイヤーに戻す。
+// 同一 gameID の呼び出しは 1 回のみ適用され、以降は idempotent に成功を返す。
+func (s *PlayerInteractor) RevertBattleCount(ctx context.Context, gameID string, consumedAtMillis int64, player1ID, player2ID string) error {
+	return s.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
+		isNew, err := s.battleCountReversalRepo.MarkReverted(txCtx, gameID)
+		if err != nil {
+			return fmt.Errorf("mark battle count reverted: %w", err)
+		}
+		if !isNew {
+			return nil
+		}
+
+		gameDate := gameDayFor(time.UnixMilli(consumedAtMillis))
+		if err := s.revertPlayerBattleCount(txCtx, player1ID, gameDate, gameID); err != nil {
+			return err
+		}
+		return s.revertPlayerBattleCount(txCtx, player2ID, gameDate, gameID)
+	})
+}
+
+// revertPlayerBattleCount は 1 プレイヤー分の消費バトル回数を戻す。対象日の加算記録が
+// 見つからなければ、想定した日付と実際の加算日がずれている不整合の可能性として Warn ログを
+// 残す (呼び出し自体は idempotent な成功として扱う)。
+func (s *PlayerInteractor) revertPlayerBattleCount(ctx context.Context, playerID string, gameDate civil.Date, gameID string) error {
+	reverted, err := s.battleRepo.DecrementDailyBattleCount(ctx, playerID, gameDate)
+	if err != nil {
+		return fmt.Errorf("decrement daily battle: %w", err)
+	}
+	if !reverted {
+		slog.WarnContext(ctx, "battle count revert target not found",
+			"player_id", playerID, "game_date", gameDate.String(), "game_id", gameID)
+	}
+	return nil
+}
+
 // AwardExp はプレイヤーに経験値を付与しレベルを再計算する。
 // 並行 AwardExp によるロストアップデートを SELECT FOR UPDATE で防ぐため、
 // 取得・計算・書き込みを単一 Tx で直列化する。
@@ -272,5 +311,10 @@ func (s *PlayerInteractor) GetPlayerResponse(ctx context.Context, playerID strin
 
 // computeCurrentGameDay はゲーム日境界オフセットを適用した現在のゲーム内日付を返す。
 func computeCurrentGameDay() civil.Date {
-	return civil.DateOf(time.Now().UTC().Add(gameDayOffset))
+	return gameDayFor(time.Now())
+}
+
+// gameDayFor はゲーム日境界オフセットを適用した、指定時刻に対応するゲーム内日付を返す。
+func gameDayFor(t time.Time) civil.Date {
+	return civil.DateOf(t.UTC().Add(gameDayOffset))
 }

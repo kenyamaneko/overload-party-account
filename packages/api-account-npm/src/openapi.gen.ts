@@ -118,6 +118,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/internal/v1/players/revert-battle-count": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 停止で無効になった対戦の消費バトル回数を両プレイヤーに戻す (gateway → account)
+         * @description body に両 player_id・対戦識別子・バトル回数を消費した時刻を含むサーバー間バッチ呼び出し。
+         *     JWT sub では表現できないため bootstrap 系と同様に認証なし (/internal 配下)。
+         *     同一 game_id の呼び出しは 1 回のみ適用され、以降は idempotent に 204 を返す。
+         */
+        post: operations["revertBattleCount"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/account/me": {
         parameters: {
             query?: never;
@@ -394,6 +416,18 @@ export interface components {
             reason: string;
             match_type: string;
         };
+        /**
+         * @description consumed_at_millis はバトル回数を消費した (gateway が increment を呼んだ) 時刻の
+         *     UNIX ミリ秒。停止発生時刻ではなく、消費時点の時刻を渡す。ゲーム日境界 (JST 05:00)
+         *     の判定はこの時刻を基準に account 側で行う。0 以下は 400 になる。
+         */
+        RevertBattleCountRequest: {
+            game_id: string;
+            player1_id: string;
+            player2_id: string;
+            /** Format: int64 */
+            consumed_at_millis: number;
+        };
         FactionGrantRequest: {
             faction: string;
         };
@@ -642,6 +676,42 @@ export interface operations {
             };
             /** @description プレイヤーが存在しない */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description DB 接続エラー */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    revertBattleCount: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RevertBattleCountRequest"];
+            };
+        };
+        responses: {
+            /** @description 返却成功 (同一 game_id の再呼び出しも成功扱い) */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description リクエストボディ不正 */
+            400: {
                 headers: {
                     [name: string]: unknown;
                 };
