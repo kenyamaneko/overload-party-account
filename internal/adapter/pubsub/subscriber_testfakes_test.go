@@ -12,9 +12,8 @@ import (
 	"github.com/kenyamaneko/overload-party-account/internal/port"
 )
 
-// mustMarshal は json.Marshal の testing 版。event_type 欠落など、typed helper
-// (apishopfake.PublishXxx) で表現できない壊れたペイロードをケースに含めるための
-// ヘルパ。
+// mustMarshal は json.Marshal の testing 版。HandleMessage に渡す payload を
+// event_type 欠落などの壊れたケースも含め明示的に組み立てるためのヘルパ。
 func mustMarshal(t *testing.T, v any) []byte {
 	t.Helper()
 	b, err := json.Marshal(v)
@@ -35,8 +34,7 @@ func (fakeTxRunner) RunInTx(ctx context.Context, fn func(context.Context) error)
 // Insert は同一 event_id で 2 回目に false を返し、subscriber の idempotent ack
 // 経路を検証できるようにする。
 type fakeProcessedEventRepo struct {
-	seen    map[string]string // event_id -> event_type
-	insertN int
+	seen map[string]string // event_id -> event_type
 	// insertErr を設定すると Insert が常にこのエラーを返す (DB 障害の再現)。
 	insertErr error
 }
@@ -46,7 +44,6 @@ func newFakeProcessedEventRepo() *fakeProcessedEventRepo {
 }
 
 func (r *fakeProcessedEventRepo) Insert(_ context.Context, eventID, eventType string) (bool, error) {
-	r.insertN++
 	if r.insertErr != nil {
 		return false, r.insertErr
 	}

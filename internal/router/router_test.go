@@ -3,6 +3,7 @@ package router
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -12,8 +13,10 @@ import (
 	"cloud.google.com/go/civil"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/kenyamaneko/overload-party-account/internal/domain"
+	"github.com/kenyamaneko/overload-party-account/internal/handler/pubsubpush"
 	"github.com/kenyamaneko/overload-party-account/internal/handler/rest"
 	"github.com/kenyamaneko/overload-party-account/internal/port"
 	"github.com/kenyamaneko/overload-party-account/internal/usecase"
@@ -188,7 +191,21 @@ func newTestRouter(verifier internalauth.Verifier) *gin.Engine {
 		rest.NewFactionHandler(factionI),
 		rest.NewPlayerSettingsHandler(settingsI),
 		verifier,
+		newTestPubsubHandlers(),
 	)
+}
+
+// noopMessageHandler は push 受け口の配線先。常に ack (nil) を返す。
+func noopMessageHandler(context.Context, []byte) error { return nil }
+
+func newTestPubsubHandlers() pubsubpush.Handlers {
+	return pubsubpush.Handlers{
+		FactionAcquired:      pubsubpush.NewEventHandler(noopMessageHandler),
+		PremiumUpdated:       pubsubpush.NewEventHandler(noopMessageHandler),
+		PlayerOnboarded:      pubsubpush.NewEventHandler(noopMessageHandler),
+		OnboardingNameSet:    pubsubpush.NewEventHandler(noopMessageHandler),
+		OnboardingFactionSet: pubsubpush.NewEventHandler(noopMessageHandler),
+	}
 }
 
 func TestNew(t *testing.T) {
@@ -300,6 +317,31 @@ func TestNew(t *testing.T) {
 			req.Header.Set(internalauth.HeaderName, "any.token")
 			r.ServeHTTP(w, req)
 			assert.Equal(t, http.StatusOK, w.Code)
+		})
+
+		t.Run("Pub/Sub push の受け口は JWT 認証を経ずに実際の受け口に到達する", func(t *testing.T) {
+			// VerifyFn 未設定: push 経路が verifier に到達しないことの検出を兼ねる
+			r := newTestRouter(&internalauth.MockVerifier{})
+
+			paths := []string{
+				"/internal/v1/pubsub/faction-acquired",
+				"/internal/v1/pubsub/premium-updated",
+				"/internal/v1/pubsub/player-onboarded",
+				"/internal/v1/pubsub/onboarding-name-set",
+				"/internal/v1/pubsub/onboarding-faction-set",
+			}
+
+			for _, path := range paths {
+				t.Run("POST "+path+" は 200 を返す", func(t *testing.T) {
+					data := base64.StdEncoding.EncodeToString([]byte(`{"event_type":"noop"}`))
+					body := bytes.NewReader([]byte(`{"message":{"data":"` + data + `","messageId":"m-1"},"subscription":"test-sub"}`))
+					req := httptest.NewRequest(http.MethodPost, path, body)
+					req.Header.Set("Content-Type", "application/json")
+					w := httptest.NewRecorder()
+					r.ServeHTTP(w, req)
+					require.Equal(t, http.StatusOK, w.Code)
+				})
+			}
 		})
 	})
 }

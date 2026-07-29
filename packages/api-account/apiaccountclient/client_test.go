@@ -13,12 +13,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// StatusMapping 群は、SDK の固有責務である「OpenAPI spec で宣言された 4xx/5xx status を
-// sentinel error に変換する」契約を endpoint ごとに検証する。account は endpoint が多いため
-// 各 endpoint で代表 status を取り上げ、newStatusError の共通 switch を交差カバーする。
-
-func TestClient_RegisterPlayer_StatusMapping(t *testing.T) {
-	t.Run("RegisterPlayer のステータスマッピング", func(t *testing.T) {
+func TestClient_RegisterPlayer(t *testing.T) {
+	t.Run("RegisterPlayer", func(t *testing.T) {
 		cases := []struct {
 			name       string
 			status     int
@@ -54,8 +50,8 @@ func TestClient_RegisterPlayer_StatusMapping(t *testing.T) {
 	})
 }
 
-func TestClient_LoginPlayer_StatusMapping(t *testing.T) {
-	t.Run("LoginPlayer のステータスマッピング", func(t *testing.T) {
+func TestClient_LoginPlayer(t *testing.T) {
+	t.Run("LoginPlayer", func(t *testing.T) {
 		cases := []struct {
 			name       string
 			status     int
@@ -86,8 +82,8 @@ func TestClient_LoginPlayer_StatusMapping(t *testing.T) {
 	})
 }
 
-func TestClient_GetPlayerByFirebaseUID_StatusMapping(t *testing.T) {
-	t.Run("GetPlayerByFirebaseUID のステータスマッピング", func(t *testing.T) {
+func TestClient_GetPlayerByFirebaseUID(t *testing.T) {
+	t.Run("GetPlayerByFirebaseUID", func(t *testing.T) {
 		t.Run("404 を受けたとき、ErrNotFound になる", func(t *testing.T) {
 			srv := apiaccountserverfake.NewServer()
 			defer srv.Close()
@@ -100,8 +96,18 @@ func TestClient_GetPlayerByFirebaseUID_StatusMapping(t *testing.T) {
 	})
 }
 
-func TestClient_AwardGameExp_StatusMapping(t *testing.T) {
-	t.Run("AwardGameExp のステータスマッピング", func(t *testing.T) {
+func TestClient_AwardGameExp(t *testing.T) {
+	t.Run("AwardGameExp", func(t *testing.T) {
+		t.Run("204 を受けたとき、エラーにならない", func(t *testing.T) {
+			srv := apiaccountserverfake.NewServer()
+			defer srv.Close()
+			srv.AwardGameExpFn = func(_ apiaccount.AwardGameExpRequest) (int, any) { return http.StatusNoContent, nil }
+
+			c := newTestClient(t, srv.URL())
+			err := c.AwardGameExp(context.Background(), apiaccount.AwardGameExpRequest{})
+			require.NoError(t, err)
+		})
+
 		t.Run("400 を受けたとき、ErrBadRequest になる", func(t *testing.T) {
 			srv := apiaccountserverfake.NewServer()
 			defer srv.Close()
@@ -114,8 +120,8 @@ func TestClient_AwardGameExp_StatusMapping(t *testing.T) {
 	})
 }
 
-func TestClient_GetPlayer_StatusMapping(t *testing.T) {
-	t.Run("GetPlayer のステータスマッピング", func(t *testing.T) {
+func TestClient_GetPlayer(t *testing.T) {
+	t.Run("GetPlayer", func(t *testing.T) {
 		t.Run("401 を受けたとき、ErrUnauthorized になる", func(t *testing.T) {
 			srv := apiaccountserverfake.NewServer()
 			defer srv.Close()
@@ -125,11 +131,27 @@ func TestClient_GetPlayer_StatusMapping(t *testing.T) {
 			_, err := c.GetPlayer(context.Background())
 			assertSentinel(t, err, apiaccountclient.ErrUnauthorized)
 		})
+
+		t.Run("宣言されていない 403 を受けたとき、エラーになり定義済みのどの分類にも一致しない", func(t *testing.T) {
+			srv := apiaccountserverfake.NewServer()
+			defer srv.Close()
+			srv.GetPlayerFn = func() (int, any) { return http.StatusForbidden, nil }
+
+			c := newTestClient(t, srv.URL())
+			_, err := c.GetPlayer(context.Background())
+
+			require.Error(t, err)
+			assert.NotErrorIs(t, err, apiaccountclient.ErrUnauthorized)
+			assert.NotErrorIs(t, err, apiaccountclient.ErrNotFound)
+			assert.NotErrorIs(t, err, apiaccountclient.ErrBadRequest)
+			assert.NotErrorIs(t, err, apiaccountclient.ErrConflict)
+			assert.NotErrorIs(t, err, apiaccountclient.ErrInternalServer)
+		})
 	})
 }
 
-func TestClient_UpdateName_StatusMapping(t *testing.T) {
-	t.Run("UpdateName のステータスマッピング", func(t *testing.T) {
+func TestClient_UpdateName(t *testing.T) {
+	t.Run("UpdateName", func(t *testing.T) {
 		cases := []struct {
 			name       string
 			status     int
@@ -160,8 +182,20 @@ func TestClient_UpdateName_StatusMapping(t *testing.T) {
 	})
 }
 
-func TestClient_ValidateNameForOnboarding_StatusMapping(t *testing.T) {
-	t.Run("ValidateNameForOnboarding のステータスマッピング", func(t *testing.T) {
+func TestClient_ValidateNameForOnboarding(t *testing.T) {
+	t.Run("ValidateNameForOnboarding", func(t *testing.T) {
+		t.Run("204 を受けたとき、エラーにならない", func(t *testing.T) {
+			srv := apiaccountserverfake.NewServer()
+			defer srv.Close()
+			srv.ValidateNameForOnboardingFn = func(_ apiaccount.ValidateNameForOnboardingRequest) (int, any) {
+				return http.StatusNoContent, nil
+			}
+
+			c := newTestClient(t, srv.URL())
+			err := c.ValidateNameForOnboarding(context.Background(), apiaccount.ValidateNameForOnboardingRequest{})
+			require.NoError(t, err)
+		})
+
 		t.Run("400 を受けたとき、ErrBadRequest になる", func(t *testing.T) {
 			srv := apiaccountserverfake.NewServer()
 			defer srv.Close()
@@ -174,8 +208,8 @@ func TestClient_ValidateNameForOnboarding_StatusMapping(t *testing.T) {
 	})
 }
 
-func TestClient_GetBattleLimit_StatusMapping(t *testing.T) {
-	t.Run("GetBattleLimit のステータスマッピング", func(t *testing.T) {
+func TestClient_GetBattleLimit(t *testing.T) {
+	t.Run("GetBattleLimit", func(t *testing.T) {
 		t.Run("401 を受けたとき、ErrUnauthorized になる", func(t *testing.T) {
 			srv := apiaccountserverfake.NewServer()
 			defer srv.Close()
@@ -188,8 +222,18 @@ func TestClient_GetBattleLimit_StatusMapping(t *testing.T) {
 	})
 }
 
-func TestClient_IncrementBattleCount_StatusMapping(t *testing.T) {
-	t.Run("IncrementBattleCount のステータスマッピング", func(t *testing.T) {
+func TestClient_IncrementBattleCount(t *testing.T) {
+	t.Run("IncrementBattleCount", func(t *testing.T) {
+		t.Run("204 を受けたとき、エラーにならない", func(t *testing.T) {
+			srv := apiaccountserverfake.NewServer()
+			defer srv.Close()
+			srv.IncrementBattleCountFn = func() (int, any) { return http.StatusNoContent, nil }
+
+			c := newTestClient(t, srv.URL())
+			err := c.IncrementBattleCount(context.Background())
+			require.NoError(t, err)
+		})
+
 		t.Run("401 を受けたとき、ErrUnauthorized になる", func(t *testing.T) {
 			srv := apiaccountserverfake.NewServer()
 			defer srv.Close()
@@ -202,8 +246,18 @@ func TestClient_IncrementBattleCount_StatusMapping(t *testing.T) {
 	})
 }
 
-func TestClient_UpdatePremium_StatusMapping(t *testing.T) {
-	t.Run("UpdatePremium のステータスマッピング", func(t *testing.T) {
+func TestClient_UpdatePremium(t *testing.T) {
+	t.Run("UpdatePremium", func(t *testing.T) {
+		t.Run("204 を受けたとき、エラーにならない", func(t *testing.T) {
+			srv := apiaccountserverfake.NewServer()
+			defer srv.Close()
+			srv.UpdatePremiumFn = func(_ apiaccount.UpdatePremiumRequest) (int, any) { return http.StatusNoContent, nil }
+
+			c := newTestClient(t, srv.URL())
+			err := c.UpdatePremium(context.Background(), apiaccount.UpdatePremiumRequest{})
+			require.NoError(t, err)
+		})
+
 		t.Run("400 を受けたとき、ErrBadRequest になる", func(t *testing.T) {
 			srv := apiaccountserverfake.NewServer()
 			defer srv.Close()
@@ -216,8 +270,18 @@ func TestClient_UpdatePremium_StatusMapping(t *testing.T) {
 	})
 }
 
-func TestClient_AddExp_StatusMapping(t *testing.T) {
-	t.Run("AddExp のステータスマッピング", func(t *testing.T) {
+func TestClient_AddExp(t *testing.T) {
+	t.Run("AddExp", func(t *testing.T) {
+		t.Run("204 を受けたとき、エラーにならない", func(t *testing.T) {
+			srv := apiaccountserverfake.NewServer()
+			defer srv.Close()
+			srv.AddExpFn = func(_ apiaccount.AddExpRequest) (int, any) { return http.StatusNoContent, nil }
+
+			c := newTestClient(t, srv.URL())
+			err := c.AddExp(context.Background(), apiaccount.AddExpRequest{})
+			require.NoError(t, err)
+		})
+
 		t.Run("400 を受けたとき、ErrBadRequest になる", func(t *testing.T) {
 			srv := apiaccountserverfake.NewServer()
 			defer srv.Close()
@@ -230,8 +294,8 @@ func TestClient_AddExp_StatusMapping(t *testing.T) {
 	})
 }
 
-func TestClient_ListFactions_StatusMapping(t *testing.T) {
-	t.Run("ListFactions のステータスマッピング", func(t *testing.T) {
+func TestClient_ListFactions(t *testing.T) {
+	t.Run("ListFactions", func(t *testing.T) {
 		t.Run("401 を受けたとき、ErrUnauthorized になる", func(t *testing.T) {
 			srv := apiaccountserverfake.NewServer()
 			defer srv.Close()
@@ -244,8 +308,18 @@ func TestClient_ListFactions_StatusMapping(t *testing.T) {
 	})
 }
 
-func TestClient_GrantFaction_StatusMapping(t *testing.T) {
-	t.Run("GrantFaction のステータスマッピング", func(t *testing.T) {
+func TestClient_GrantFaction(t *testing.T) {
+	t.Run("GrantFaction", func(t *testing.T) {
+		t.Run("204 を受けたとき、エラーにならない", func(t *testing.T) {
+			srv := apiaccountserverfake.NewServer()
+			defer srv.Close()
+			srv.GrantFactionFn = func(_ apiaccount.FactionGrantRequest) (int, any) { return http.StatusNoContent, nil }
+
+			c := newTestClient(t, srv.URL())
+			err := c.GrantFaction(context.Background(), apiaccount.FactionGrantRequest{})
+			require.NoError(t, err)
+		})
+
 		t.Run("400 を受けたとき、ErrBadRequest になる", func(t *testing.T) {
 			srv := apiaccountserverfake.NewServer()
 			defer srv.Close()
@@ -258,8 +332,18 @@ func TestClient_GrantFaction_StatusMapping(t *testing.T) {
 	})
 }
 
-func TestClient_SelectInitialFaction_StatusMapping(t *testing.T) {
-	t.Run("SelectInitialFaction のステータスマッピング", func(t *testing.T) {
+func TestClient_SelectInitialFaction(t *testing.T) {
+	t.Run("SelectInitialFaction", func(t *testing.T) {
+		t.Run("200 を受けたとき、エラーにならない", func(t *testing.T) {
+			srv := apiaccountserverfake.NewServer()
+			defer srv.Close()
+			srv.SelectInitialFactionFn = func(_ apiaccount.SelectInitialFactionRequest) (int, any) { return http.StatusOK, nil }
+
+			c := newTestClient(t, srv.URL())
+			err := c.SelectInitialFaction(context.Background(), apiaccount.SelectInitialFactionRequest{})
+			require.NoError(t, err)
+		})
+
 		t.Run("400 を受けたとき、ErrBadRequest になる", func(t *testing.T) {
 			srv := apiaccountserverfake.NewServer()
 			defer srv.Close()
@@ -272,8 +356,8 @@ func TestClient_SelectInitialFaction_StatusMapping(t *testing.T) {
 	})
 }
 
-func TestClient_GetPlayerSettings_StatusMapping(t *testing.T) {
-	t.Run("GetPlayerSettings のステータスマッピング", func(t *testing.T) {
+func TestClient_GetPlayerSettings(t *testing.T) {
+	t.Run("GetPlayerSettings", func(t *testing.T) {
 		t.Run("401 を受けたとき、ErrUnauthorized になる", func(t *testing.T) {
 			srv := apiaccountserverfake.NewServer()
 			defer srv.Close()
@@ -286,8 +370,8 @@ func TestClient_GetPlayerSettings_StatusMapping(t *testing.T) {
 	})
 }
 
-func TestClient_UpdatePlayerSettings_StatusMapping(t *testing.T) {
-	t.Run("UpdatePlayerSettings のステータスマッピング", func(t *testing.T) {
+func TestClient_UpdatePlayerSettings(t *testing.T) {
+	t.Run("UpdatePlayerSettings", func(t *testing.T) {
 		t.Run("400 を受けたとき、ErrBadRequest になる", func(t *testing.T) {
 			srv := apiaccountserverfake.NewServer()
 			defer srv.Close()
@@ -302,7 +386,7 @@ func TestClient_UpdatePlayerSettings_StatusMapping(t *testing.T) {
 
 func TestClient_RequestEditor(t *testing.T) {
 	t.Run("リクエストエディタの適用", func(t *testing.T) {
-		t.Run("WithRequestEditorFn で渡した editor が全リクエストに適用される", func(t *testing.T) {
+		t.Run("設定したヘッダが送信先の全リクエストに付与される", func(t *testing.T) {
 			// X-Internal-Auth header 注入の接続点として SDK が機能することを担保する。
 			var gotHeader string
 			spy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

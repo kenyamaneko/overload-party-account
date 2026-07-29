@@ -8,7 +8,7 @@
 
 ```
 Gateway (唯一の入口)
-  └─ Account (:9005)                 ClusterIP のみ / 認証は gateway 側で完了済み
+  └─ Account (:9005)                 到達は gateway からのみ / 認証は gateway 側で完了済み
        ├─ PostgreSQL (account スキーマ)
        ├─ Cloud Firestore (game_config 読み取り専用)
        └─ Pub/Sub subscriber
@@ -52,27 +52,26 @@ overload-party-ops / overload-party-common を兄弟ディレクトリに checko
 
 すべて必須。未設定・不正値は起動時に即 fail する（[internal/config/config.go](internal/config/config.go) が SSoT、デフォルトへのフォールバック禁止）。
 
-Secret:
+シークレットとして扱う環境変数:
 
 | 変数名 | 説明 |
 |---|---|
 | `DATABASE_CONN` | PostgreSQL 接続文字列（pgx が解釈できる URL / libpq 形式） |
 | `INTERNAL_AUTH_SECRET` | gateway / 各サービスで共有する HS256 JWT 鍵（ADR-037） |
 
-ConfigMap:
+その他の環境変数:
 
 | 変数名 | 説明 |
 |---|---|
 | `PORT` | HTTP リッスンポート（1-65535） |
-| `GOOGLE_CLOUD_PROJECT_ID` | Pub/Sub 購読 / Firestore (`game_config`) で利用する Google Cloud プロジェクト ID |
-| `FACTION_ACQUIRED_SUBSCRIPTION` | faction-acquired の pull subscription 名 |
-| `PREMIUM_UPDATED_SUBSCRIPTION` | premium-updated の pull subscription 名 |
-| `PLAYER_ONBOARDED_SUBSCRIPTION` | player-onboarded の pull subscription 名 |
-| `ONBOARDING_NAME_SET_SUBSCRIPTION` | onboarding-name-set の pull subscription 名 |
-| `ONBOARDING_FACTION_SET_SUBSCRIPTION` | onboarding-faction-set の pull subscription 名 |
+| `GOOGLE_CLOUD_PROJECT_ID` | Firestore (`game_config`) で利用する Google Cloud プロジェクト ID |
 | `LOG_MODE` | `production`（Cloud Logging 互換 JSON）/ `local`（TextHandler）|
+| `DATABASE_IAM_AUTH_ENABLED` | `true`（Cloud SQL Go Connector 経由の IAM 認証）/ `false`（`DATABASE_CONN` によるパスワード接続）|
+| `CLOUDSQL_CONNECTION_NAME` | Cloud SQL インスタンスの接続名（`project:region:instance`）。`DATABASE_IAM_AUTH_ENABLED=true` のときのみ必須 |
 
-ローカルで Pub/Sub / Firestore emulator に接続する場合は `PUBSUB_EMULATOR_HOST` / `FIRESTORE_EMULATOR_HOST` を併せて設定する（`make run` の compose 定義が emulator のサービス名を渡す）。
+ローカルで Firestore emulator に接続する場合は `FIRESTORE_EMULATOR_HOST` を併せて設定する（`make run` の compose 定義が emulator のサービス名を渡す）。
+
+Pub/Sub の 5 購読は Cloud Run push subscription 経由で `/internal/v1/pubsub/<イベント名>` が受ける（[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) の「Pub/Sub subscriber」参照）。到達制御は Cloud Run の呼び出し IAM が担い、受け口自体はアプリ層の認証を持たない。ローカルでは IAM が挟まらないため、`curl` で直接 push envelope を投げて動作確認できる。
 
 ## 公開パッケージ
 

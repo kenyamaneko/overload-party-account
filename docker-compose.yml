@@ -1,13 +1,6 @@
 # account のローカル開発スタック。構成と使い方は README「ローカル開発」を参照。
 name: overload-party-account
 
-# 購読 subscription 名は account 本体と pubsub-init の双方が参照するため、ここで一度だけ定義する。
-x-faction-acquired-sub: &faction_acquired_sub faction-acquired-account-sub
-x-premium-updated-sub: &premium_updated_sub premium-updated-account-sub
-x-player-onboarded-sub: &player_onboarded_sub player-onboarded-account-sub
-x-onboarding-name-set-sub: &onboarding_name_set_sub onboarding-name-set-account-sub
-x-onboarding-faction-set-sub: &onboarding_faction_set_sub onboarding-faction-set-account-sub
-
 services:
   postgres:
     image: postgres:16-alpine
@@ -53,43 +46,6 @@ services:
       - pip install --quiet google-cloud-firestore pyyaml && python3 /seed/seed_game_config.py --project overload-party-local --source /seed/game_config_defaults.yaml
     restart: "no"
 
-  pubsub-emulator:
-    image: gcr.io/google.com/cloudsdktool/google-cloud-cli:emulators
-    command: >
-      gcloud beta emulators pubsub start
-      --project=overload-party-local
-      --host-port=0.0.0.0:8085
-    healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:8085 || exit 1"]
-      interval: 3s
-      timeout: 3s
-      retries: 20
-
-  # account が購読する subscription を emulator に用意する。account は起動時に
-  # 全 subscription の stream を開くため、作成完了を待たせる。
-  pubsub-init:
-    image: gcr.io/google.com/cloudsdktool/google-cloud-cli:emulators
-    depends_on:
-      pubsub-emulator:
-        condition: service_healthy
-    environment:
-      PUBSUB_EMULATOR_HOST: pubsub-emulator:8085
-      PUBSUB_PROJECT_ID: overload-party-local
-      FACTION_ACQUIRED_TOPIC: faction-acquired
-      FACTION_ACQUIRED_SUBSCRIPTION: *faction_acquired_sub
-      PREMIUM_UPDATED_TOPIC: premium-updated
-      PREMIUM_UPDATED_SUBSCRIPTION: *premium_updated_sub
-      PLAYER_ONBOARDED_TOPIC: player-onboarded
-      PLAYER_ONBOARDED_SUBSCRIPTION: *player_onboarded_sub
-      ONBOARDING_NAME_SET_TOPIC: onboarding-name-set
-      ONBOARDING_NAME_SET_SUBSCRIPTION: *onboarding_name_set_sub
-      ONBOARDING_FACTION_SET_TOPIC: onboarding-faction-set
-      ONBOARDING_FACTION_SET_SUBSCRIPTION: *onboarding_faction_set_sub
-    volumes:
-      - ./docker/pubsub/init-topics.sh:/init-topics.sh:ro
-    entrypoint: ["/bin/bash", "/init-topics.sh"]
-    restart: "no"
-
   account:
     image: golang:1.25-alpine
     working_dir: /src
@@ -98,8 +54,6 @@ services:
       postgres:
         condition: service_healthy
       firestore-init:
-        condition: service_completed_successfully
-      pubsub-init:
         condition: service_completed_successfully
     environment:
       CGO_ENABLED: "0"
@@ -114,15 +68,10 @@ services:
       LOG_MODE: local
       PORT: "9005"
       DATABASE_CONN: postgres://account:account@postgres:5432/account?sslmode=disable
+      DATABASE_IAM_AUTH_ENABLED: "false"
       GOOGLE_CLOUD_PROJECT_ID: overload-party-local
       INTERNAL_AUTH_SECRET: dev-secret-not-for-prod
-      PUBSUB_EMULATOR_HOST: pubsub-emulator:8085
       FIRESTORE_EMULATOR_HOST: firestore-emulator:8080
-      FACTION_ACQUIRED_SUBSCRIPTION: *faction_acquired_sub
-      PREMIUM_UPDATED_SUBSCRIPTION: *premium_updated_sub
-      PLAYER_ONBOARDED_SUBSCRIPTION: *player_onboarded_sub
-      ONBOARDING_NAME_SET_SUBSCRIPTION: *onboarding_name_set_sub
-      ONBOARDING_FACTION_SET_SUBSCRIPTION: *onboarding_faction_set_sub
     volumes:
       - ./:/src
       - ${HOST_GOMODCACHE:?make run 経由で起動すること (go env GOMODCACHE を渡す必要がある)}:/go/pkg/mod:ro

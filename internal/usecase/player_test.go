@@ -11,6 +11,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	gamedesign "github.com/kenyamaneko/overload-party-common/packages/game-design-constants"
+
 	"github.com/kenyamaneko/overload-party-account/internal/domain"
 	"github.com/kenyamaneko/overload-party-account/internal/port"
 )
@@ -134,6 +136,18 @@ func TestGetBattleLimit(t *testing.T) {
 				assert.Equal(t, tt.wantCanBattle, resp.CanBattle)
 			})
 		}
+
+		t.Run("対戦上限の取得時に無料上限が読めないとき、エラーになる", func(t *testing.T) {
+			sharedPg.Truncate(t)
+			seedPlayerWithState(t, testPlayerID1, "uid-1", "Alice", false, 1, 0, 3, today())
+
+			playerRepo, playerViewRepo, _, _, tx := newRealRepos()
+			svc := NewPlayerInteractor(playerRepo, playerRepo, playerRepo, playerRepo, playerViewRepo,
+				newFakeGameConfigRepo(map[string]int64{ConfigKeyExpFormulaCoefficient: testExpCoeff}), tx)
+
+			_, err := svc.GetBattleLimit(ctx, testPlayerID1)
+			require.ErrorIs(t, err, port.ErrNotFound)
+		})
 	})
 }
 
@@ -360,6 +374,22 @@ func TestAwardExp(t *testing.T) {
 				assert.Equal(t, tt.wantLevel, got.Level)
 			})
 		}
+
+		t.Run("経験値付与時に係数が読めないとき、エラーになり経験値は変わらない", func(t *testing.T) {
+			sharedPg.Truncate(t)
+			seedPlayerWithState(t, testPlayerID1, "uid-1", "Alice", false, 1, 0, 0, today())
+
+			playerRepo, playerViewRepo, _, _, tx := newRealRepos()
+			svc := NewPlayerInteractor(playerRepo, playerRepo, playerRepo, playerRepo, playerViewRepo,
+				newFakeGameConfigRepo(nil), tx)
+
+			err := svc.AwardExp(ctx, testPlayerID1, testExpWin)
+			require.ErrorIs(t, err, port.ErrNotFound)
+
+			prog, err := playerRepo.GetProgression(ctx, testPlayerID1)
+			require.NoError(t, err)
+			assert.Equal(t, int64(0), prog.Exp)
+		})
 	})
 }
 
@@ -396,6 +426,20 @@ func TestAwardGameExp(t *testing.T) {
 					wantP1Exp: testExpDraw,
 					wantP2Exp: testExpDraw,
 				},
+				{
+					name:      "勝者番号が 1 でも理由が draw のとき、両者に exp_draw が付与される",
+					winnerNum: 1,
+					reason:    "draw",
+					wantP1Exp: testExpDraw,
+					wantP2Exp: testExpDraw,
+				},
+				{
+					name:      "理由が draw 以外で勝者番号が 0 のとき、両者に exp_draw が付与される",
+					winnerNum: 0,
+					reason:    "system_down",
+					wantP1Exp: testExpDraw,
+					wantP2Exp: testExpDraw,
+				},
 			}
 
 			for _, tt := range tests {
@@ -405,7 +449,7 @@ func TestAwardGameExp(t *testing.T) {
 					seedPlayerWithState(t, testPlayerID2, "uid-2", "Bob", false, 1, 0, 0, today())
 
 					svc := newPlayerTestInteractor(nil)
-					require.NoError(t, svc.AwardGameExp(ctx, testPlayerID1, testPlayerID2, tt.winnerNum, tt.reason, "pvp"))
+					require.NoError(t, svc.AwardGameExp(ctx, testPlayerID1, testPlayerID2, tt.winnerNum, tt.reason, gamedesign.MatchTypePvp))
 
 					got1, err := svc.GetPlayerResponse(ctx, testPlayerID1)
 					require.NoError(t, err)
@@ -451,13 +495,37 @@ func TestAwardGameExp(t *testing.T) {
 					seedPlayerWithState(t, testPlayerID1, "uid-1", "Alice", false, 1, 0, 0, today())
 
 					svc := newPlayerTestInteractor(nil)
-					require.NoError(t, svc.AwardGameExp(ctx, testPlayerID1, "npc-easy", tt.winnerNum, tt.reason, "npc"))
+					require.NoError(t, svc.AwardGameExp(ctx, testPlayerID1, "npc-easy", tt.winnerNum, tt.reason, gamedesign.MatchTypeNpc))
 
 					got1, err := svc.GetPlayerResponse(ctx, testPlayerID1)
 					require.NoError(t, err)
 					assert.Equal(t, tt.wantP1Exp, got1.Exp)
 				})
 			}
+		})
+
+		t.Run("対戦結果の付与時に exp_win が読めないとき、エラーになり両者の経験値は変わらない", func(t *testing.T) {
+			sharedPg.Truncate(t)
+			seedPlayerWithState(t, testPlayerID1, "uid-1", "Alice", false, 1, 0, 0, today())
+			seedPlayerWithState(t, testPlayerID2, "uid-2", "Bob", false, 1, 0, 0, today())
+
+			playerRepo, playerViewRepo, _, _, tx := newRealRepos()
+			svc := NewPlayerInteractor(playerRepo, playerRepo, playerRepo, playerRepo, playerViewRepo,
+				newFakeGameConfigRepo(map[string]int64{
+					gameConfigKeyExpLoss: testExpLoss,
+					gameConfigKeyExpDraw: testExpDraw,
+				}), tx)
+
+			err := svc.AwardGameExp(ctx, testPlayerID1, testPlayerID2, 1, "system_down", "pvp")
+			require.ErrorIs(t, err, port.ErrNotFound)
+
+			prog1, err := playerRepo.GetProgression(ctx, testPlayerID1)
+			require.NoError(t, err)
+			assert.Equal(t, int64(0), prog1.Exp)
+
+			prog2, err := playerRepo.GetProgression(ctx, testPlayerID2)
+			require.NoError(t, err)
+			assert.Equal(t, int64(0), prog2.Exp)
 		})
 	})
 }

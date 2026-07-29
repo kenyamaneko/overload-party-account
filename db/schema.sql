@@ -52,15 +52,13 @@ CREATE TABLE account.players (
   premium_expires_at TIMESTAMPTZ,                    -- サブスク有効期限
   created_at         TIMESTAMPTZ NOT NULL DEFAULT now(), -- 作成日時
   updated_at         TIMESTAMPTZ NOT NULL DEFAULT now(), -- 更新日時
-  PRIMARY KEY (player_id)
+  PRIMARY KEY (player_id),
+  CONSTRAINT chk_players_onboarding_status
+    CHECK (onboarding_status IN ('not_started', 'name_set', 'faction_set', 'completed'))
 );
 
 CREATE UNIQUE INDEX idx_players_firebase_uid ON account.players(firebase_uid);
 CREATE TRIGGER trg_players_updated_at BEFORE UPDATE ON account.players FOR EACH ROW EXECUTE FUNCTION account.update_updated_at();
-
-ALTER TABLE account.players
-  ADD CONSTRAINT chk_players_onboarding_status
-    CHECK (onboarding_status IN ('not_started', 'name_set', 'faction_set', 'completed'));
 
 -- =============================================================================
 -- account.player_progression (child of players, 1:1)
@@ -116,7 +114,7 @@ CREATE UNIQUE INDEX idx_player_factions_initial
 
 CREATE TABLE account.player_settings (
   player_id    UUID PRIMARY KEY REFERENCES account.players(player_id) ON DELETE CASCADE, -- プレイヤーID
-  language     VARCHAR(10) NOT NULL,                 -- 言語設定
+  "language"   VARCHAR(10) NOT NULL,                 -- 言語設定
   bgm_volume   BIGINT NOT NULL,                      -- BGM音量 (0-100)
   se_volume    BIGINT NOT NULL,                      -- SE音量 (0-100)
   push_enabled BOOLEAN NOT NULL,                     -- 通知許可

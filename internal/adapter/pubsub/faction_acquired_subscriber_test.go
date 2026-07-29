@@ -2,46 +2,40 @@ package pubsub
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
+	"fmt"
 	"testing"
-	"time"
 
 	apishop "github.com/kenyamaneko/overload-party-shop/packages/api-shop"
-	"github.com/kenyamaneko/overload-party-shop/packages/api-shop/apishopfake"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-// topicFactionAcquired は apishopfake が PublishFactionAcquired / ExpectFactionAcquired で
-// 内部的にハードコードしているルーティングキー。raw bytes を broker.Publish するケース
-// (不正 JSON / 未知 event_type) と NewStream の subscribe topic を一致させる必要がある。
-const topicFactionAcquired = "faction-acquired"
-
-func TestConsumeFactionAcquired(t *testing.T) {
-	t.Run("faction_acquired イベントの購読", func(t *testing.T) {
+func TestHandleMessageFactionAcquired(t *testing.T) {
+	t.Run("faction_acquired イベントの処理", func(t *testing.T) {
 		const existingEventID = "11111111-1111-1111-1111-111111111111"
 
-		// 契約検証は apishopfake 経由で shop 側の publish 型をそのまま使う。shop が schema を
-		// 変えたら本テストが compile / 実行で破綻し、乖離を CI で検知できるようにするため。
+		// 契約検証は apishop 側の型をそのまま使う。shop が schema を変えたら本テストが
+		// compile / 実行で破綻し、乖離を CI で検知できるようにするため。
 		tests := []struct {
-			name          string
-			publish       func(ctx context.Context, pub *apishopfake.Publisher, broker *apishopfake.Broker)
-			seedProcessed map[string]string
-			addErr        error
-			insertErr     error
-			wantAck       bool
-			assertRepos   func(t *testing.T, factionRepo *fakeFactionRepo, eventRepo *fakeProcessedEventRepo)
+			name            string
+			payload         []byte
+			seedProcessed   map[string]string
+			addErr          error
+			insertErr       error
+			wantErr         bool
+			wantErrContains string
+			assertRepos     func(t *testing.T, factionRepo *fakeFactionRepo, eventRepo *fakeProcessedEventRepo)
 		}{
 			{
-				name: "有効な faction_acquired を受けたとき、player_factions に is_initial=FALSE で追加して ACK になる",
-				publish: func(ctx context.Context, pub *apishopfake.Publisher, _ *apishopfake.Broker) {
-					_ = apishopfake.PublishFactionAcquired(ctx, pub, apishop.FactionAcquiredEvent{
-						PlayerID: "p-1",
-						Faction:  "SHE",
-					})
-				},
-				wantAck: true,
+				name: "有効な faction_acquired を受けたとき、player_factions に is_initial=FALSE で追加して成功になる",
+				payload: mustMarshal(t, apishop.FactionAcquiredEvent{
+					EventType: apishop.EventTypeFactionAcquired,
+					EventID:   "aaaaaaaa-0001-0001-0001-000000000001",
+					PlayerID:  "p-1",
+					Faction:   "SHE",
+				}),
+				wantErr: false,
 				assertRepos: func(t *testing.T, factionRepo *fakeFactionRepo, _ *fakeProcessedEventRepo) {
 					require.Len(t, factionRepo.added, 1)
 					assert.Equal(t, "p-1", factionRepo.added[0].PlayerID)
@@ -50,70 +44,67 @@ func TestConsumeFactionAcquired(t *testing.T) {
 				},
 			},
 			{
-				name: "同一 event_id が processed_events に既にあるとき、副作用なしで ACK になる",
-				publish: func(ctx context.Context, pub *apishopfake.Publisher, _ *apishopfake.Broker) {
-					_ = apishopfake.PublishFactionAcquired(ctx, pub, apishop.FactionAcquiredEvent{
-						EventID:  existingEventID,
-						PlayerID: "p-2",
-						Faction:  "Tenki",
-					})
-				},
+				name: "同一 event_id が processed_events に既にあるとき、副作用なしで成功になる",
+				payload: mustMarshal(t, apishop.FactionAcquiredEvent{
+					EventType: apishop.EventTypeFactionAcquired,
+					EventID:   existingEventID,
+					PlayerID:  "p-2",
+					Faction:   "Tenki",
+				}),
 				seedProcessed: map[string]string{existingEventID: apishop.EventTypeFactionAcquired},
-				wantAck:       true,
+				wantErr:       false,
 				assertRepos: func(t *testing.T, factionRepo *fakeFactionRepo, _ *fakeProcessedEventRepo) {
 					assert.Empty(t, factionRepo.added)
 				},
 			},
 			{
-				name: "不正な JSON のとき、握りつぶさず NACK になる",
-				publish: func(_ context.Context, _ *apishopfake.Publisher, broker *apishopfake.Broker) {
-					broker.Publish(topicFactionAcquired, []byte("{not-json"))
-				},
-				wantAck: false,
+				name:            "不正な JSON のとき、握りつぶさず失敗になる",
+				payload:         []byte("{not-json"),
+				wantErr:         true,
+				wantErrContains: "faction-acquired: bad payload",
 				assertRepos: func(t *testing.T, factionRepo *fakeFactionRepo, _ *fakeProcessedEventRepo) {
 					assert.Empty(t, factionRepo.added)
 				},
 			},
 			{
-				name: "未知の event_type のとき、責務外として副作用なく ACK になる",
-				publish: func(_ context.Context, _ *apishopfake.Publisher, broker *apishopfake.Broker) {
-					payload, _ := json.Marshal(apishop.FactionAcquiredEvent{
-						EventType: "unknown",
-						EventID:   "22222222-2222-2222-2222-222222222222",
-						PlayerID:  "p-3",
-						Faction:   "Sugar",
-					})
-					broker.Publish(topicFactionAcquired, payload)
-				},
-				wantAck: true,
+				name: "未知の event_type のとき、責務外として副作用なく成功になる",
+				payload: mustMarshal(t, apishop.FactionAcquiredEvent{
+					EventType: "unknown",
+					EventID:   "aaaaaaaa-0002-0002-0002-000000000002",
+					PlayerID:  "p-3",
+					Faction:   "Sugar",
+				}),
+				wantErr: false,
 				assertRepos: func(t *testing.T, factionRepo *fakeFactionRepo, _ *fakeProcessedEventRepo) {
 					assert.Empty(t, factionRepo.added)
 				},
 			},
 			{
-				name: "processed_events への INSERT が失敗するとき、NACK になる",
-				publish: func(ctx context.Context, pub *apishopfake.Publisher, _ *apishopfake.Broker) {
-					_ = apishopfake.PublishFactionAcquired(ctx, pub, apishop.FactionAcquiredEvent{
-						PlayerID: "p-4",
-						Faction:  "Tuners",
-					})
-				},
-				insertErr: errors.New("db unavailable"),
-				wantAck:   false,
+				name: "processed_events への INSERT が失敗するとき、失敗になる",
+				payload: mustMarshal(t, apishop.FactionAcquiredEvent{
+					EventType: apishop.EventTypeFactionAcquired,
+					EventID:   "aaaaaaaa-0003-0003-0003-000000000003",
+					PlayerID:  "p-4",
+					Faction:   "Tuners",
+				}),
+				insertErr:       errors.New("db unavailable"),
+				wantErr:         true,
+				wantErrContains: "insert processed_events",
 				assertRepos: func(t *testing.T, factionRepo *fakeFactionRepo, _ *fakeProcessedEventRepo) {
 					assert.Empty(t, factionRepo.added)
 				},
 			},
 			{
-				name: "player_factions への追加が失敗するとき、副作用を残さず NACK になる",
-				publish: func(ctx context.Context, pub *apishopfake.Publisher, _ *apishopfake.Broker) {
-					_ = apishopfake.PublishFactionAcquired(ctx, pub, apishop.FactionAcquiredEvent{
-						PlayerID: "p-5",
-						Faction:  "SHE",
-					})
-				},
-				addErr:  errors.New("fk violation"),
-				wantAck: false,
+				name: "player_factions への追加が失敗するとき、副作用を残さず失敗になる",
+				payload: mustMarshal(t, apishop.FactionAcquiredEvent{
+					EventType: apishop.EventTypeFactionAcquired,
+					EventID:   "aaaaaaaa-0004-0004-0004-000000000004",
+					PlayerID:  "p-5",
+					Faction:   "SHE",
+				}),
+				addErr:          errors.New("fk violation"),
+				wantErr:         true,
+				wantErrContains: "add player_faction",
 				assertRepos: func(t *testing.T, factionRepo *fakeFactionRepo, _ *fakeProcessedEventRepo) {
 					assert.Empty(t, factionRepo.added, "AddPlayerFaction 失敗時は副作用が残らない")
 				},
@@ -122,10 +113,6 @@ func TestConsumeFactionAcquired(t *testing.T) {
 
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
-				broker := apishopfake.NewBroker()
-				pub := apishopfake.NewPublisher(broker)
-				stream := apishopfake.NewStream(apishopfake.NewSubscriber(broker), topicFactionAcquired)
-
 				factionRepo := &fakeFactionRepo{addErr: tt.addErr}
 				eventRepo := newFakeProcessedEventRepo()
 				eventRepo.insertErr = tt.insertErr
@@ -133,23 +120,12 @@ func TestConsumeFactionAcquired(t *testing.T) {
 					eventRepo.seen[k] = v
 				}
 
-				sub := NewFactionAcquiredSubscriber(stream, factionRepo, fakeTxRunner{}, eventRepo)
+				sub := NewFactionAcquiredSubscriber(factionRepo, fakeTxRunner{}, eventRepo)
 
-				ctx, cancel := context.WithCancel(context.Background())
-				defer cancel()
+				err := sub.HandleMessage(context.Background(), tt.payload)
 
-				started := make(chan struct{})
-				go func() {
-					close(started)
-					_ = sub.Start(ctx)
-				}()
-				<-started
-
-				tt.publish(ctx, pub, broker)
-
-				handlerErr := stream.ExpectHandled(t, time.Second)
-				assert.Equal(t, tt.wantAck, handlerErr == nil, "ack 判定 (nil=ack, err=%v)", handlerErr)
-
+				assert.Equal(t, tt.wantErr, err != nil, "エラー有無 (err=%v)", err)
+				assert.Contains(t, fmt.Sprintf("%v", err), tt.wantErrContains, "エラー内容が原因を区別できる")
 				tt.assertRepos(t, factionRepo, eventRepo)
 			})
 		}

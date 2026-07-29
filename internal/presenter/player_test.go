@@ -66,28 +66,3 @@ func TestBuildPlayerResponse(t *testing.T) {
 		})
 	})
 }
-
-func TestBuildPlayerSettingsResponse(t *testing.T) {
-	t.Run("プレイヤー設定応答の組み立て", func(t *testing.T) {
-		t.Run("PlayerSettings の各フィールドが wire 応答に射影される", func(t *testing.T) {
-			updated := time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC)
-			in := &domain.PlayerSettings{
-				PlayerID:    "p1",
-				Language:    "ja",
-				BgmVolume:   80,
-				SeVolume:    60,
-				PushEnabled: true,
-				UpdatedAt:   updated,
-			}
-
-			got := presenter.BuildPlayerSettingsResponse(in)
-
-			assert.Equal(t, "p1", got.PlayerID)
-			assert.Equal(t, "ja", got.Language)
-			assert.Equal(t, int64(80), got.BgmVolume)
-			assert.Equal(t, int64(60), got.SeVolume)
-			assert.True(t, got.PushEnabled)
-			assert.Equal(t, updated, got.UpdatedAt)
-		})
-	})
-}
