@@ -152,6 +152,17 @@ func (stubBattleRepo) IncrementDailyBattleCount(context.Context, string, civil.D
 	return 1, nil
 }
 
+func (stubBattleRepo) DecrementDailyBattleCount(context.Context, string, civil.Date) (bool, error) {
+	return true, nil
+}
+
+// stubBattleCountReversalRepo は返却が未記録である状態を返す port.BattleCountReversalRepo スタブ。
+type stubBattleCountReversalRepo struct{}
+
+func (stubBattleCountReversalRepo) MarkReverted(context.Context, string) (bool, error) {
+	return true, nil
+}
+
 // stubFactionRepo は固定の所持ファクションを返す port.FactionRepo スタブ。
 type stubFactionRepo struct{}
 
@@ -180,7 +191,7 @@ func newTestRouter(verifier internalauth.Verifier) *gin.Engine {
 	)
 	playerI := usecase.NewPlayerInteractor(
 		stubPlayerRepo{}, stubPremiumRepo{}, stubProgressionRepo{}, stubBattleRepo{},
-		stubPlayerViewRepo{}, stubGameConfigRepo{}, stubTxRunner{},
+		stubBattleCountReversalRepo{}, stubPlayerViewRepo{}, stubGameConfigRepo{}, stubTxRunner{},
 	)
 	factionI := usecase.NewFactionInteractor(stubPlayerRepo{}, stubFactionRepo{}, stubTxRunner{})
 	settingsI := usecase.NewPlayerSettingsInteractor(stubPlayerSettingsRepo{})
@@ -293,11 +304,12 @@ func TestNew(t *testing.T) {
 					w := httptest.NewRecorder()
 					r.ServeHTTP(w, httptest.NewRequest(tc.method, tc.path, nil))
 					assert.Equal(t, http.StatusUnauthorized, w.Code)
+					assert.Contains(t, w.Body.String(), "header is required")
 				})
 			}
 		})
 
-		t.Run("verifier がエラーを返すとき、401 になる", func(t *testing.T) {
+		t.Run("認証トークンの検証が失敗するとき、401 になり、header 欠落とは異なるトークン不正のエラーが応答本文に含まれる", func(t *testing.T) {
 			r := newTestRouter(&internalauth.MockVerifier{
 				VerifyFn: func(string) (string, error) { return "", errors.New("invalid token") },
 			})
@@ -306,6 +318,7 @@ func TestNew(t *testing.T) {
 			req.Header.Set(internalauth.HeaderName, "any.token")
 			r.ServeHTTP(w, req)
 			assert.Equal(t, http.StatusUnauthorized, w.Code)
+			assert.Contains(t, w.Body.String(), "invalid internal auth token")
 		})
 
 		t.Run("有効な token のとき、handler に到達し 200 になる", func(t *testing.T) {
