@@ -6,6 +6,7 @@ import (
 	"context"
 	"testing"
 
+	apiscenario "github.com/kenyamaneko/overload-party-scenario/packages/api-scenario"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -25,7 +26,7 @@ func TestApplyNameSet(t *testing.T) {
 			svc := NewOnboardingInteractor(playerRepo, playerRepo, factionRepo, eventRepo, tx)
 
 			eventID := "10000000-1111-1111-1111-111111111111"
-			processed, err := svc.ApplyNameSet(ctx, eventID, "onboarding.name-set", testPlayerID1, "Kenya")
+			processed, err := svc.ApplyNameSet(ctx, eventID, apiscenario.EventTypeOnboardingNameSet, testPlayerID1, "Kenya")
 			require.NoError(t, err)
 			assert.True(t, processed)
 
@@ -49,10 +50,10 @@ func TestApplyNameSet(t *testing.T) {
 			svc := NewOnboardingInteractor(playerRepo, playerRepo, factionRepo, eventRepo, tx)
 
 			eventID := "20000000-1111-1111-1111-111111111111"
-			_, err := svc.ApplyNameSet(ctx, eventID, "onboarding.name-set", testPlayerID1, "Kenya")
+			_, err := svc.ApplyNameSet(ctx, eventID, apiscenario.EventTypeOnboardingNameSet, testPlayerID1, "Kenya")
 			require.NoError(t, err)
 
-			processed, err := svc.ApplyNameSet(ctx, eventID, "onboarding.name-set", testPlayerID1, "Renamed")
+			processed, err := svc.ApplyNameSet(ctx, eventID, apiscenario.EventTypeOnboardingNameSet, testPlayerID1, "Renamed")
 			require.NoError(t, err)
 			assert.False(t, processed)
 
@@ -73,7 +74,7 @@ func TestApplyNameSet(t *testing.T) {
 			svc := NewOnboardingInteractor(playerRepo, playerRepo, factionRepo, eventRepo, tx)
 
 			eventID := "30000000-1111-1111-1111-111111111111"
-			processed, err := svc.ApplyNameSet(ctx, eventID, "onboarding.name-set", testPlayerID1, "Renamed")
+			processed, err := svc.ApplyNameSet(ctx, eventID, apiscenario.EventTypeOnboardingNameSet, testPlayerID1, "Renamed")
 			require.NoError(t, err)
 			assert.True(t, processed)
 
@@ -97,7 +98,7 @@ func TestApplyNameSet(t *testing.T) {
 			svc := NewOnboardingInteractor(playerRepo, playerRepo, factionRepo, eventRepo, tx)
 
 			eventID := "40000000-1111-1111-1111-111111111111"
-			processed, err := svc.ApplyNameSet(ctx, eventID, "onboarding.name-set", testPlayerID1, "   ")
+			processed, err := svc.ApplyNameSet(ctx, eventID, apiscenario.EventTypeOnboardingNameSet, testPlayerID1, "   ")
 			require.ErrorIs(t, err, domain.ErrInvalidName)
 			assert.False(t, processed)
 
@@ -121,7 +122,7 @@ func TestApplyNameSet(t *testing.T) {
 			svc := NewOnboardingInteractor(playerRepo, playerRepo, factionRepo, eventRepo, tx)
 
 			eventID := "50000000-1111-1111-1111-111111111111"
-			processed, err := svc.ApplyNameSet(ctx, eventID, "onboarding.name-set", testPlayerID2, "Kenya")
+			processed, err := svc.ApplyNameSet(ctx, eventID, apiscenario.EventTypeOnboardingNameSet, testPlayerID2, "Kenya")
 			require.ErrorIs(t, err, port.ErrNotFound)
 			assert.False(t, processed)
 
