@@ -21,6 +21,8 @@ import (
 
 	apiscenario "github.com/kenyamaneko/overload-party-scenario/packages/api-scenario"
 
+	internalauth "github.com/kenyamaneko/overload-party-gateway/packages/internalauth-go"
+
 	pubsubadapter "github.com/kenyamaneko/overload-party-account/internal/adapter/pubsub"
 	"github.com/kenyamaneko/overload-party-account/internal/handler/pubsubpush"
 	"github.com/kenyamaneko/overload-party-account/internal/handler/rest"
@@ -70,7 +72,8 @@ func newIntegrationRouter() *gin.Engine {
 		rest.NewPlayerHandler(playerInteractor),
 		rest.NewFactionHandler(factionInteractor),
 		rest.NewPlayerSettingsHandler(settingsInteractor),
-		nullVerifier{},
+		// VerifyFn 未設定: 結合テストが叩く auth-free ルートが verifier に到達しないことの検出を兼ねる
+		&internalauth.MockVerifier{},
 		pubsubHandlers,
 	)
 }
