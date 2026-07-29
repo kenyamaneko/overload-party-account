@@ -18,6 +18,9 @@ import (
 //     のため JWT を要求しない
 //   - /internal/v1/players/award-game-exp: battle が直接呼ぶサーバー間バッチ。body に
 //     2 プレイヤー分の player_id を含み JWT sub では表現できないため /internal に残す
+//   - /internal/v1/players/revert-battle-count: gateway の停止時処理が直接呼ぶサーバー間
+//     バッチ。body に 2 プレイヤー分の player_id を含み JWT sub では表現できないため
+//     /internal に残す
 //   - /internal/v1/pubsub/*: Cloud Pub/Sub push subscription の受け口。呼び出し元が
 //     プレイヤーではなく Pub/Sub 基盤のため JWT を要求せず、到達制御は Cloud Run の
 //     呼び出し IAM に委ねる
@@ -47,6 +50,7 @@ func New(
 
 		internal.GET("/players/:playerID/factions", factionH.ListPlayerFactions)
 		internal.POST("/players/award-game-exp", playerH.AwardGameExp)
+		internal.POST("/players/revert-battle-count", playerH.RevertBattleCount)
 
 		pubsubGroup := internal.Group("/pubsub")
 		{

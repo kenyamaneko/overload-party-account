@@ -152,6 +152,12 @@ func newProcessedEventRepo() *postgres.ProcessedEventRepository {
 	return postgres.NewProcessedEventRepository(sharedPg.Pool)
 }
 
+// newBattleCountReversalRepo は実 PostgreSQL の battle_count_reversals リポジトリを返す。
+// RevertBattleCount の冪等ガード Tx 境界テスト等で使用する。
+func newBattleCountReversalRepo() *postgres.BattleCountReversalRepository {
+	return postgres.NewBattleCountReversalRepository(sharedPg.Pool)
+}
+
 // 共通テストプレイヤー ID — postgres 層テストと重複するが、
 // 別パッケージなのでここで再定義する（shop と同じ運用）。
 const (

@@ -134,6 +134,18 @@ func (c *Client) AwardGameExp(ctx context.Context, req apiaccount.AwardGameExpRe
 	return newStatusError("AwardGameExp", resp.StatusCode())
 }
 
+// RevertBattleCount は停止で無効になった対戦の消費バトル回数を両プレイヤーに戻す。spec は 204 を返す。
+func (c *Client) RevertBattleCount(ctx context.Context, req apiaccount.RevertBattleCountRequest) error {
+	resp, err := c.api.RevertBattleCountWithResponse(ctx, apiaccount.RevertBattleCountJSONRequestBody(req))
+	if err != nil {
+		return fmt.Errorf("apiaccountclient: RevertBattleCount: %w", err)
+	}
+	if resp.StatusCode() == http.StatusNoContent {
+		return nil
+	}
+	return newStatusError("RevertBattleCount", resp.StatusCode())
+}
+
 // GetPlayer は呼出元 player 自身の情報を返す (X-Internal-Auth の sub から解決)。
 func (c *Client) GetPlayer(ctx context.Context) (*apiaccount.PlayerResponse, error) {
 	resp, err := c.api.GetPlayerWithResponse(ctx)

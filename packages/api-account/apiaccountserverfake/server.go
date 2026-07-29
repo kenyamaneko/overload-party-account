@@ -42,6 +42,9 @@ type Server struct {
 	// AwardGameExpFn: POST /internal/v1/players/award-game-exp。既定は 204 No Content。
 	AwardGameExpFn func(req apiaccount.AwardGameExpRequest) (int, any)
 
+	// RevertBattleCountFn: POST /internal/v1/players/revert-battle-count。既定は 204 No Content。
+	RevertBattleCountFn func(req apiaccount.RevertBattleCountRequest) (int, any)
+
 	// GetPlayerFn: GET /api/v1/account/me。既定は 200 + 空 PlayerResponse。
 	GetPlayerFn func() (int, any)
 
@@ -90,6 +93,7 @@ func NewServer() *Server {
 	mux.HandleFunc("POST /internal/v1/auth/login", s.handleLogin)
 	mux.HandleFunc("GET /internal/v1/auth/by-firebase-uid/{firebaseUID}", s.handleFindByFirebaseUID)
 	mux.HandleFunc("POST /internal/v1/players/award-game-exp", s.handleAwardGameExp)
+	mux.HandleFunc("POST /internal/v1/players/revert-battle-count", s.handleRevertBattleCount)
 
 	mux.HandleFunc("GET /api/v1/account/me", s.handleGetPlayer)
 	mux.HandleFunc("PUT /api/v1/account/me/name", s.handleUpdateName)
@@ -159,6 +163,20 @@ func (s *Server) handleAwardGameExp(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewDecoder(r.Body).Decode(&req)
 	s.mu.Lock()
 	fn := s.AwardGameExpFn
+	s.mu.Unlock()
+	if fn == nil {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	status, body := fn(req)
+	writeJSON(w, status, body)
+}
+
+func (s *Server) handleRevertBattleCount(w http.ResponseWriter, r *http.Request) {
+	var req apiaccount.RevertBattleCountRequest
+	_ = json.NewDecoder(r.Body).Decode(&req)
+	s.mu.Lock()
+	fn := s.RevertBattleCountFn
 	s.mu.Unlock()
 	if fn == nil {
 		w.WriteHeader(http.StatusNoContent)

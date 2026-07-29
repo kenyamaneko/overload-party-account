@@ -48,7 +48,7 @@ func newPlayerTestInteractor(overrides map[string]int64) *PlayerInteractor {
 		defaultValues[k] = v
 	}
 	playerRepo, playerViewRepo, _, _, tx := newRealRepos()
-	return NewPlayerInteractor(playerRepo, playerRepo, playerRepo, playerRepo, playerViewRepo, newFakeGameConfigRepo(defaultValues), tx)
+	return NewPlayerInteractor(playerRepo, playerRepo, playerRepo, playerRepo, newBattleCountReversalRepo(), playerViewRepo, newFakeGameConfigRepo(defaultValues), tx)
 }
 
 func TestGetBattleLimit(t *testing.T) {
@@ -142,7 +142,7 @@ func TestGetBattleLimit(t *testing.T) {
 			seedPlayerWithState(t, testPlayerID1, "uid-1", "Alice", false, 1, 0, 3, today())
 
 			playerRepo, playerViewRepo, _, _, tx := newRealRepos()
-			svc := NewPlayerInteractor(playerRepo, playerRepo, playerRepo, playerRepo, playerViewRepo,
+			svc := NewPlayerInteractor(playerRepo, playerRepo, playerRepo, playerRepo, newBattleCountReversalRepo(), playerViewRepo,
 				newFakeGameConfigRepo(map[string]int64{ConfigKeyExpFormulaCoefficient: testExpCoeff}), tx)
 
 			_, err := svc.GetBattleLimit(ctx, testPlayerID1)
@@ -239,6 +239,99 @@ func TestIncrementBattleCount(t *testing.T) {
 
 			err := svc.IncrementBattleCount(context.Background(), "99999999-9999-9999-9999-999999999999")
 			require.ErrorIs(t, err, port.ErrNotFound)
+		})
+	})
+}
+
+func TestRevertBattleCount(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("消費バトル回数の返却", func(t *testing.T) {
+		t.Run("両プレイヤーが当日 2 回消費しているとき、消費バトル回数を戻すと両者とも 1 回戻る", func(t *testing.T) {
+			sharedPg.Truncate(t)
+			seedPlayerWithState(t, testPlayerID1, "uid-1", "Alice", false, 1, 0, 2, today())
+			seedPlayerWithState(t, testPlayerID2, "uid-2", "Bob", false, 1, 0, 2, today())
+
+			svc := newPlayerTestInteractor(nil)
+			require.NoError(t, svc.RevertBattleCount(ctx, "11111111-2222-3333-4444-555555555555", time.Now().UnixMilli(), testPlayerID1, testPlayerID2))
+
+			playerRepo, _, _, _, _ := newRealRepos()
+			got1, err := playerRepo.GetDailyBattle(ctx, testPlayerID1, today())
+			require.NoError(t, err)
+			require.NotNil(t, got1)
+			assert.Equal(t, int64(1), got1.DailyBattleCount)
+
+			got2, err := playerRepo.GetDailyBattle(ctx, testPlayerID2, today())
+			require.NoError(t, err)
+			require.NotNil(t, got2)
+			assert.Equal(t, int64(1), got2.DailyBattleCount)
+		})
+
+		t.Run("同一 game_id で二度消費バトル回数を戻すとき、2 回目は反映されず 1 回戻ったままになる", func(t *testing.T) {
+			sharedPg.Truncate(t)
+			seedPlayerWithState(t, testPlayerID1, "uid-1", "Alice", false, 1, 0, 2, today())
+			seedPlayerWithState(t, testPlayerID2, "uid-2", "Bob", false, 1, 0, 2, today())
+
+			svc := newPlayerTestInteractor(nil)
+			consumedAtMillis := time.Now().UnixMilli()
+			require.NoError(t, svc.RevertBattleCount(ctx, "22222222-3333-4444-5555-666666666666", consumedAtMillis, testPlayerID1, testPlayerID2))
+			require.NoError(t, svc.RevertBattleCount(ctx, "22222222-3333-4444-5555-666666666666", consumedAtMillis, testPlayerID1, testPlayerID2))
+
+			playerRepo, _, _, _, _ := newRealRepos()
+			got1, err := playerRepo.GetDailyBattle(ctx, testPlayerID1, today())
+			require.NoError(t, err)
+			require.NotNil(t, got1)
+			assert.Equal(t, int64(1), got1.DailyBattleCount)
+		})
+
+		t.Run("当日の消費バトル回数が 0 のとき、戻しても 0 のままになる", func(t *testing.T) {
+			sharedPg.Truncate(t)
+			seedPlayerWithState(t, testPlayerID1, "uid-1", "Alice", false, 1, 0, 0, today())
+			seedPlayerWithState(t, testPlayerID2, "uid-2", "Bob", false, 1, 0, 0, today())
+
+			svc := newPlayerTestInteractor(nil)
+			require.NoError(t, svc.RevertBattleCount(ctx, "33333333-4444-5555-6666-777777777777", time.Now().UnixMilli(), testPlayerID1, testPlayerID2))
+
+			playerRepo, _, _, _, _ := newRealRepos()
+			got1, err := playerRepo.GetDailyBattle(ctx, testPlayerID1, today())
+			require.NoError(t, err)
+			require.NotNil(t, got1)
+			assert.Equal(t, int64(0), got1.DailyBattleCount)
+		})
+
+		t.Run("当日にバトルの履歴が無いとき、戻しても記録は作られない", func(t *testing.T) {
+			sharedPg.Truncate(t)
+			seedPlayerWithState(t, testPlayerID1, "uid-1", "Alice", false, 1, 0, -1, civil.Date{})
+			seedPlayerWithState(t, testPlayerID2, "uid-2", "Bob", false, 1, 0, -1, civil.Date{})
+
+			svc := newPlayerTestInteractor(nil)
+			require.NoError(t, svc.RevertBattleCount(ctx, "44444444-5555-6666-7777-888888888888", time.Now().UnixMilli(), testPlayerID1, testPlayerID2))
+
+			playerRepo, _, _, _, _ := newRealRepos()
+			got1, err := playerRepo.GetDailyBattle(ctx, testPlayerID1, today())
+			require.NoError(t, err)
+			assert.Nil(t, got1)
+		})
+
+		t.Run("対戦の消費が前日に発生していたとき、前日のカウントが戻り当日の記録は作られない", func(t *testing.T) {
+			sharedPg.Truncate(t)
+			seedPlayerWithState(t, testPlayerID1, "uid-1", "Alice", false, 1, 0, 1, yesterday())
+			seedPlayerWithState(t, testPlayerID2, "uid-2", "Bob", false, 1, 0, 1, yesterday())
+
+			svc := newPlayerTestInteractor(nil)
+			y := yesterday()
+			consumedAt := time.Date(y.Year, y.Month, y.Day, 12, 0, 0, 0, time.UTC)
+			require.NoError(t, svc.RevertBattleCount(ctx, "55555555-6666-7777-8888-999999999999", consumedAt.UnixMilli(), testPlayerID1, testPlayerID2))
+
+			playerRepo, _, _, _, _ := newRealRepos()
+			gotYesterday, err := playerRepo.GetDailyBattle(ctx, testPlayerID1, yesterday())
+			require.NoError(t, err)
+			require.NotNil(t, gotYesterday)
+			assert.Equal(t, int64(0), gotYesterday.DailyBattleCount)
+
+			gotToday, err := playerRepo.GetDailyBattle(ctx, testPlayerID1, today())
+			require.NoError(t, err)
+			assert.Nil(t, gotToday)
 		})
 	})
 }
@@ -380,7 +473,7 @@ func TestAwardExp(t *testing.T) {
 			seedPlayerWithState(t, testPlayerID1, "uid-1", "Alice", false, 1, 0, 0, today())
 
 			playerRepo, playerViewRepo, _, _, tx := newRealRepos()
-			svc := NewPlayerInteractor(playerRepo, playerRepo, playerRepo, playerRepo, playerViewRepo,
+			svc := NewPlayerInteractor(playerRepo, playerRepo, playerRepo, playerRepo, newBattleCountReversalRepo(), playerViewRepo,
 				newFakeGameConfigRepo(nil), tx)
 
 			err := svc.AwardExp(ctx, testPlayerID1, testExpWin)
@@ -510,7 +603,7 @@ func TestAwardGameExp(t *testing.T) {
 			seedPlayerWithState(t, testPlayerID2, "uid-2", "Bob", false, 1, 0, 0, today())
 
 			playerRepo, playerViewRepo, _, _, tx := newRealRepos()
-			svc := NewPlayerInteractor(playerRepo, playerRepo, playerRepo, playerRepo, playerViewRepo,
+			svc := NewPlayerInteractor(playerRepo, playerRepo, playerRepo, playerRepo, newBattleCountReversalRepo(), playerViewRepo,
 				newFakeGameConfigRepo(map[string]int64{
 					gameConfigKeyExpLoss: testExpLoss,
 					gameConfigKeyExpDraw: testExpDraw,
