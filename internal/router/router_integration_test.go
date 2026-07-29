@@ -27,6 +27,13 @@ import (
 	apiaccount "github.com/kenyamaneko/overload-party-account/packages/api-account"
 )
 
+// nullVerifier は auth 経路を通らないルートで Verify が呼ばれてはならないことを示す。
+type nullVerifier struct{}
+
+func (nullVerifier) Verify(string) (string, error) {
+	panic("Verify should not be called for routes outside /api/v1/account")
+}
+
 // newIntegrationRouter は実 interactor・実リポジトリで結線した router を返す。
 func newIntegrationRouter() *gin.Engine {
 	playerRepo := postgres.NewPlayerRepository(sharedPg.Pool)
