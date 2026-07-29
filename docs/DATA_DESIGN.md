@@ -117,7 +117,7 @@ account スキーマはプレイヤーの基本情報・デイリーバトル回
 | カラム名 | 型 | Nullable | 説明 |
 |---|---|---|---|
 | `player_id` | UUID | No | プレイヤーID |
-| `language` | VARCHAR(10) | No | 言語設定 |
+| `"language"` | VARCHAR(10) | No | 言語設定 |
 | `bgm_volume` | BIGINT | No | BGM音量 (0-100) |
 | `se_volume` | BIGINT | No | SE音量 (0-100) |
 | `push_enabled` | BOOLEAN | No | 通知許可 |
@@ -165,8 +165,8 @@ Pub/Sub subscriber の冪等性を保証するアプリ層ガードテーブル�
 <!-- END GENERATED: processed_events -->
 
 **設計判断:**
-- Pub/Sub の Exactly-Once Delivery に対するアプリ層の二重防御。Exactly-Once 契約が破れたとき（再配信・手動 replay）のセーフティネット
-- subscriber は `INSERT ... ON CONFLICT DO NOTHING RETURNING event_id` で重複を検知。`RETURNING` が空なら処理本体をスキップして ACK する
+- account は Pub/Sub の push subscription で受信する。push は at-least-once 配信のみで exactly-once をサポートしないため、本テーブルが冪等性を保証する唯一の防御になる
+- subscriber は `INSERT ... ON CONFLICT DO NOTHING RETURNING event_id` で重複を検知。`RETURNING` が空なら処理本体をスキップして成功として応答する
 - 処理本体と INSERT は同一トランザクション内で完結するため、「適用されたのに event_id が記録されない」状態は構造的に発生しない
 
 ---

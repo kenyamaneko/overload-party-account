@@ -1,6 +1,9 @@
 package router
 
 import (
+	"bytes"
+	"context"
+	"encoding/base64"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -8,7 +11,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
+	"github.com/kenyamaneko/overload-party-account/internal/handler/pubsubpush"
 	"github.com/kenyamaneko/overload-party-account/internal/handler/rest"
 
 	internalauth "github.com/kenyamaneko/overload-party-gateway/packages/internalauth-go"
@@ -35,6 +40,19 @@ func (nullVerifier) Verify(string) (string, error) {
 	panic("Verify should not be called for routes outside /api/v1/account")
 }
 
+// noopMessageHandler は router 単体テスト用の port.MessageHandler 最小 stub。
+func noopMessageHandler(context.Context, []byte) error { return nil }
+
+func newTestPubsubHandlers() pubsubpush.Handlers {
+	return pubsubpush.Handlers{
+		FactionAcquired:      pubsubpush.NewEventHandler(noopMessageHandler),
+		PremiumUpdated:       pubsubpush.NewEventHandler(noopMessageHandler),
+		PlayerOnboarded:      pubsubpush.NewEventHandler(noopMessageHandler),
+		OnboardingNameSet:    pubsubpush.NewEventHandler(noopMessageHandler),
+		OnboardingFactionSet: pubsubpush.NewEventHandler(noopMessageHandler),
+	}
+}
+
 func newTestRouter(verifier internalauth.Verifier) *gin.Engine {
 	return New(
 		rest.NewAuthHandler(nil),
@@ -42,6 +60,7 @@ func newTestRouter(verifier internalauth.Verifier) *gin.Engine {
 		rest.NewFactionHandler(nil),
 		rest.NewPlayerSettingsHandler(nil),
 		verifier,
+		newTestPubsubHandlers(),
 	)
 }
 
@@ -83,6 +102,30 @@ func TestNew(t *testing.T) {
 			req.Header.Set(internalauth.HeaderName, "any.token")
 			r.ServeHTTP(w, req)
 			assert.Equal(t, http.StatusUnauthorized, w.Code)
+		})
+
+		t.Run("Pub/Sub push の受け口は JWT 認証を経ずに実際の受け口に到達する", func(t *testing.T) {
+			r := newTestRouter(nullVerifier{})
+
+			paths := []string{
+				"/internal/v1/pubsub/faction-acquired",
+				"/internal/v1/pubsub/premium-updated",
+				"/internal/v1/pubsub/player-onboarded",
+				"/internal/v1/pubsub/onboarding-name-set",
+				"/internal/v1/pubsub/onboarding-faction-set",
+			}
+
+			for _, path := range paths {
+				t.Run("POST "+path+" は 200 を返す", func(t *testing.T) {
+					data := base64.StdEncoding.EncodeToString([]byte(`{"event_type":"noop"}`))
+					body := bytes.NewReader([]byte(`{"message":{"data":"` + data + `","messageId":"m-1"},"subscription":"test-sub"}`))
+					req := httptest.NewRequest(http.MethodPost, path, body)
+					req.Header.Set("Content-Type", "application/json")
+					w := httptest.NewRecorder()
+					r.ServeHTTP(w, req)
+					require.Equal(t, http.StatusOK, w.Code)
+				})
+			}
 		})
 	})
 }

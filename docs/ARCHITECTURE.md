@@ -59,7 +59,7 @@ account は Firebase Auth の ID Token を検証しない。**認証は gateway 
 
 この信頼境界は 3 つの構造で支えている:
 
-1. **ネットワーク**: account は ClusterIP Service のみで公開し、Ingress に乗らない。外部からの到達経路は gateway 経由のみ
+1. **到達制御**: 誰が account を呼べるかは実行基盤の呼び出し認可が決め、外部からの到達経路は gateway 経由のみとする（[ADR-057](https://github.com/kenyamaneko/overload-party-common/blob/main/docs/adr/057-cloudrun-service-auth-iam-and-rs256.md)）
 2. **ルーター**: [internal/router/router.go](../internal/router/router.go) は bootstrap 系・サーバー間バッチを `/internal/v1/...` に JWT なしで生やし、player-scoped な `/api/v1/account/me/...` には `VerifyInternalAuth`（`X-Internal-Auth` の HS256 JWT 検証）だけを挟む。Firebase ID Token を検証するミドルウェアは存在しない
 3. **契約**: `/auth/register` / `/auth/login` は gateway が ID Token を検証して抽出した `firebase_uid` を受け取る。account 側では文字列として扱うだけ
 
@@ -133,11 +133,13 @@ gateway が `IncrementBattleCount` を呼ぶのは対戦の識別子 (`game_id`)
 
 ## Pub/Sub subscriber
 
-account は 5 つの Pub/Sub subscription を常駐 worker として pull する。いずれも Exactly-Once Delivery を前提にしつつ、**アプリ層で `processed_events` による冪等ガード** を併用する二層防御。
+account は 5 つの Pub/Sub push subscription を `/internal/v1/pubsub/<イベント名>` の受け口で受ける。push subscription は at-least-once 配信のみで exactly-once 配信をサポートしないため、**`processed_events` による冪等ガードが唯一の防御**になる（再配信は例外ではなく通常の挙動として扱う）。
+
+到達制御は Cloud Run の呼び出し IAM が担い、受け口自体はアプリ層の認証を持たない。push envelope のデコード・応答コードへの変換は [internal/handler/pubsubpush](../internal/handler/pubsubpush) が共通化し、イベントごとの処理は各 subscriber の `HandleMessage` に委譲する。
 
 ### faction-acquired subscriber
 
-subscription: `faction-acquired-account-sub` (`FACTION_ACQUIRED_SUBSCRIPTION` で指定)
+受け口: `POST /internal/v1/pubsub/faction-acquired`
 
 発行元: shop のみ。shop 購入時のみ発火する単一業務事実イベント（ADR-022 / ADR-031）。
 
@@ -150,17 +152,17 @@ subscription: `faction-acquired-account-sub` (`FACTION_ACQUIRED_SUBSCRIPTION` �
 ```
 BEGIN TX
   INSERT processed_events (event_id, event_type)  ← ON CONFLICT DO NOTHING
-  IF 既存行だった: COMMIT; ACK; return
+  IF 既存行だった: COMMIT; 成功として return
   INSERT player_factions (player_id, faction, is_initial=FALSE)
     ON CONFLICT (player_id, faction) DO NOTHING
-COMMIT → ACK
+COMMIT → 成功
 ```
 
 scenario 起因の初期 faction 確定 (かつて `faction-selected(source=scenario_initial)` が担っていた) は onboarding-faction-set subscriber に統合された。
 
 ### premium-updated subscriber
 
-subscription: `premium-updated-account-sub` (`PREMIUM_UPDATED_SUBSCRIPTION` で指定)
+受け口: `POST /internal/v1/pubsub/premium-updated`
 
 発行元: shop のみ。shop がサブスクリプション状態遷移（開始 / 更新 / 期限切れ / 失効）のうち **premium が変化する遷移で publish する**（cancel 時は publish しない契約、shop 側 ARCHITECTURE.md 参照）。
 
@@ -170,12 +172,12 @@ subscription: `premium-updated-account-sub` (`PREMIUM_UPDATED_SUBSCRIPTION` で�
 BEGIN TX
   INSERT processed_events ...  ← 冪等ガード
   UPDATE players SET is_premium=$, premium_expires_at=$ WHERE player_id=$
-COMMIT → ACK
+COMMIT → 成功
 ```
 
 ### onboarding-name-set subscriber
 
-subscription: `onboarding-name-set-account-sub` (`ONBOARDING_NAME_SET_SUBSCRIPTION` で指定)
+受け口: `POST /internal/v1/pubsub/onboarding-name-set`
 
 発行元: scenario。オンボード内 name 入力ステップで scenario が account の validate REST 成功後に publish する。
 
@@ -184,10 +186,10 @@ subscription: `onboarding-name-set-account-sub` (`ONBOARDING_NAME_SET_SUBSCRIPTI
 ```
 BEGIN TX
   INSERT processed_events (event_id, event_type)  ← ON CONFLICT DO NOTHING
-  IF 既存行だった: COMMIT; ACK; return
+  IF 既存行だった: COMMIT; 成功として return
   UPDATE players SET name = $
   onboarding_status を 'name_set' へ前進 (後進遷移はスキップ)
-COMMIT → ACK
+COMMIT → 成功
 ```
 
 `onboarding_status` の遷移は `domain.CanTransitionOnboardingStatus` で前進方向のみ許容する。
@@ -195,7 +197,7 @@ out-of-order 配信で先に completed が反映済みでも整合性が保た�
 
 ### onboarding-faction-set subscriber
 
-subscription: `onboarding-faction-set-account-sub` (`ONBOARDING_FACTION_SET_SUBSCRIPTION` で指定)
+受け口: `POST /internal/v1/pubsub/onboarding-faction-set`
 
 発行元: scenario。オンボード内 faction 選択ステップで scenario の `SelectableFactions` 検証成功後に publish する。
 
@@ -204,16 +206,16 @@ subscription: `onboarding-faction-set-account-sub` (`ONBOARDING_FACTION_SET_SUBS
 ```
 BEGIN TX
   INSERT processed_events (event_id, event_type)  ← ON CONFLICT DO NOTHING
-  IF 既存行だった: COMMIT; ACK; return
+  IF 既存行だった: COMMIT; 成功として return
   onboarding_status を 'faction_set' へ前進 (後進遷移はスキップ)
   INSERT player_factions (player_id, faction, is_initial=TRUE)
     ON CONFLICT (player_id, faction) DO UPDATE SET is_initial = TRUE
-COMMIT → ACK
+COMMIT → 成功
 ```
 
 ### player-onboarded subscriber
 
-subscription: `player-onboarded-account-sub` (`PLAYER_ONBOARDED_SUBSCRIPTION` で指定)
+受け口: `POST /internal/v1/pubsub/player-onboarded`
 
 発行元: scenario。`POST /onboarding/complete` 受領時に transactional outbox 経由で publish する。
 
@@ -222,9 +224,9 @@ subscription: `player-onboarded-account-sub` (`PLAYER_ONBOARDED_SUBSCRIPTION` �
 ```
 BEGIN TX
   INSERT processed_events (event_id, event_type)  ← ON CONFLICT DO NOTHING
-  IF 既存行だった: COMMIT; ACK; return
+  IF 既存行だった: COMMIT; 成功として return
   UPDATE players SET onboarding_status = 'completed'
-COMMIT → ACK
+COMMIT → 成功
 ```
 
 initial faction の永続化は onboarding-faction-set subscriber が先行している前提。本 subscriber の責務は `completed` への状態遷移のみ。
@@ -233,20 +235,19 @@ initial faction の永続化は onboarding-faction-set subscriber が先行し�
 
 - 1 行 = (`event_id`, `event_type`, `processed_at`) の 3 カラム。`event_id` が PK
 - subscriber はトランザクション冒頭で `INSERT ... ON CONFLICT DO NOTHING RETURNING event_id`
-- `RETURNING` が空 → 既に処理済み → トランザクション内の後続処理をスキップして ACK
+- `RETURNING` が空 → 既に処理済み → トランザクション内の後続処理をスキップして成功として応答する
 - 処理本体と `processed_events` INSERT を同一トランザクションに揃えているため、部分適用は発生しない
 
-Pub/Sub の Exactly-Once 配信がインフラ層の第一防御。`processed_events` はアプリ層の第二防御で、Exactly-Once 契約が破れた場合（再配信・観測ウィンドウ外のリトライ・メッセージの手動 replay）のセーフティネット。
+### エラー時の応答コードと DLQ
 
-### エラー時の NACK と DLQ
-
-| 失敗種別 | 動作 |
+| 失敗種別 | 応答 |
 |---|---|
-| JSON デシリアライズ失敗 | NACK（Pub/Sub 側で再配信 → 最終的に DLQ へ） |
-| `event_type` が未知 | ACK（握りつぶしではなく「この subscriber の責務外」として意図的にスキップ。ログは残す） |
-| DB エラー / トランザクション失敗 | NACK（一時的障害としてリトライさせる） |
+| push envelope の形が不正 (JSON 構造 / message.data 欠落) または base64 復号失敗 | 400（[internal/handler/pubsubpush](../internal/handler/pubsubpush) が envelope を受理できず subscriber に到達しない） |
+| JSON デシリアライズ失敗 (event 本体) | 500（Pub/Sub 側で再配信 → 最終的に DLQ へ） |
+| `event_type` が未知 | 200（握りつぶしではなく「この subscriber の責務外」として意図的にスキップ。ログは残す） |
+| DB エラー / トランザクション失敗 | 500（一時的障害としてリトライさせる） |
 
-未知の `event_type` を ACK するのは、将来 publisher 側で新しいイベント種別を追加した際に account の subscriber を止めないため。既知の event_type のペイロードが壊れているケースは JSON デシリアライズ失敗側に分岐する。
+未知の `event_type` を 200 にするのは、将来 publisher 側で新しいイベント種別を追加した際に account の subscriber を止めないため。既知の event_type のペイロードが壊れているケースは JSON デシリアライズ失敗側に分岐する。
 
 `ApplyFactionSet` は `processed_events` を Insert した後に `ErrFactionConflict`（同一プレイヤーに別 faction で再到着）を検出すると Tx 全体をロールバックする。`processed_events` 行も巻き戻るため再配信のたびに同じ衝突が再発し、最終的に DLQ へ流れる挙動になる。これは publisher 側のバグ（同一プレイヤーへの矛盾する faction-set publish）でしか起きない想定で、自動リカバリせず DLQ で滞留させて運用に検知させる設計。救出は publisher 側の不整合を是正したうえで、DLQ メッセージを破棄するか正しいペイロードに差し替えて replay する。
 
@@ -292,19 +293,20 @@ usecase 層は HTTP ステータスを知らず、handler 層は SQL を知ら�
 
 環境変数の一覧と必須条件は [internal/config/config.go](../internal/config/config.go) の `FromEnv` が SSoT（欠ければ即 fail）。運用上の注意点のみ:
 
-- `DATABASE_CONN` は Secret Manager 由来。k8s マニフェストにインラインしない
-- `GOOGLE_CLOUD_PROJECT_ID` は ConfigMap 経由で環境ごとに切り替え (Pub/Sub 購読・Firestore 双方で共有)
-- `FACTION_ACQUIRED_SUBSCRIPTION` / `PREMIUM_UPDATED_SUBSCRIPTION` / `PLAYER_ONBOARDED_SUBSCRIPTION` / `ONBOARDING_NAME_SET_SUBSCRIPTION` / `ONBOARDING_FACTION_SET_SUBSCRIPTION` は ConfigMap で環境ごとの subscription 名を指定する (コード側にデフォルト名は持たない)
+- `DATABASE_CONN` の接続先は Terraform が Cloud SQL の接続名から組み立てて渡す。値を account 側に持たない
+- `GOOGLE_CLOUD_PROJECT_ID` は環境ごとに切り替え (Firestore で使用)
+- Pub/Sub の push subscription 名・エンドポイント URL は Terraform 側が管理し、account のコードは関知しない ([overload-party-infra](https://github.com/kenyamaneko/overload-party-infra) の担当)
+- `DATABASE_IAM_AUTH_ENABLED` / `CLOUDSQL_CONNECTION_NAME` は Cloud SQL への接続方式 (IAM 認証かパスワード接続か) を環境ごとに切り替える
 
 ### Pub/Sub トピックと subscriber
 
-| トピック | 発行元 | account の subscription | account 側の副作用 |
+| トピック | 発行元 | account の受け口 | account 側の副作用 |
 |---|---|---|---|
-| `faction-acquired` | shop | `faction-acquired-account-sub` | `player_factions` INSERT (`is_initial=FALSE`、「faction-acquired subscriber」) |
-| `premium-updated` | shop | `premium-updated-account-sub` | `players.is_premium` / `premium_expires_at` UPDATE (「premium-updated subscriber」) |
-| `onboarding-name-set` | scenario | `onboarding-name-set-account-sub` | `players.name` UPDATE + `onboarding_status='name_set'` を 1 tx で実行 (「onboarding-name-set subscriber」) |
-| `onboarding-faction-set` | scenario | `onboarding-faction-set-account-sub` | `player_factions` UPSERT (`is_initial=TRUE`) + `onboarding_status='faction_set'` を 1 tx で実行 (「onboarding-faction-set subscriber」) |
-| `player-onboarded` | scenario | `player-onboarded-account-sub` | `players.onboarding_status='completed'` UPDATE のみ (「player-onboarded subscriber」) |
+| `faction-acquired` | shop | `POST /internal/v1/pubsub/faction-acquired` | `player_factions` INSERT (`is_initial=FALSE`、「faction-acquired subscriber」) |
+| `premium-updated` | shop | `POST /internal/v1/pubsub/premium-updated` | `players.is_premium` / `premium_expires_at` UPDATE (「premium-updated subscriber」) |
+| `onboarding-name-set` | scenario | `POST /internal/v1/pubsub/onboarding-name-set` | `players.name` UPDATE + `onboarding_status='name_set'` を 1 tx で実行 (「onboarding-name-set subscriber」) |
+| `onboarding-faction-set` | scenario | `POST /internal/v1/pubsub/onboarding-faction-set` | `player_factions` UPSERT (`is_initial=TRUE`) + `onboarding_status='faction_set'` を 1 tx で実行 (「onboarding-faction-set subscriber」) |
+| `player-onboarded` | scenario | `POST /internal/v1/pubsub/player-onboarded` | `players.onboarding_status='completed'` UPDATE のみ (「player-onboarded subscriber」) |
 
 account 自身はトピックを publish しない。
 

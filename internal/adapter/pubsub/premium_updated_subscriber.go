@@ -11,9 +11,8 @@ import (
 	"github.com/kenyamaneko/overload-party-account/internal/port"
 )
 
-// PremiumUpdatedSubscriber は premium-updated subscription を消費する。
+// PremiumUpdatedSubscriber は premium-updated イベントを消費する。
 type PremiumUpdatedSubscriber struct {
-	stream      port.MessageStream
 	premiumRepo port.PlayerPremiumRepo
 	txRunner    port.TxRunner
 	eventRepo   port.ProcessedEventRepo
@@ -21,33 +20,27 @@ type PremiumUpdatedSubscriber struct {
 
 // NewPremiumUpdatedSubscriber は PremiumUpdatedSubscriber を生成する。
 func NewPremiumUpdatedSubscriber(
-	stream port.MessageStream,
 	premiumRepo port.PlayerPremiumRepo,
 	txRunner port.TxRunner,
 	eventRepo port.ProcessedEventRepo,
 ) *PremiumUpdatedSubscriber {
 	return &PremiumUpdatedSubscriber{
-		stream:      stream,
 		premiumRepo: premiumRepo,
 		txRunner:    txRunner,
 		eventRepo:   eventRepo,
 	}
 }
 
-// Start は ctx がキャンセルされるか stream がエラーを返すまでブロックする。
-func (s *PremiumUpdatedSubscriber) Start(ctx context.Context) error {
-	slog.Info("premium-updated subscriber: consuming")
-	return s.stream.Consume(ctx, s.processEvent)
-}
-
-func (s *PremiumUpdatedSubscriber) processEvent(ctx context.Context, data []byte) error {
+// HandleMessage は 1 件の premium-updated イベントを処理する。port.MessageHandler を満たし、
+// push 受け口 (internal/handler/pubsubpush) から呼ばれる。
+func (s *PremiumUpdatedSubscriber) HandleMessage(ctx context.Context, data []byte) error {
 	var event apishop.PremiumUpdatedEvent
 	if err := json.Unmarshal(data, &event); err != nil {
-		slog.Error("premium-updated subscriber: bad payload (nack)", "error", err)
+		slog.Error("premium-updated subscriber: bad payload", "error", err)
 		return fmt.Errorf("premium-updated: bad payload: %w", err)
 	}
 	if event.EventType != apishop.EventTypePremiumUpdated {
-		slog.Warn("premium-updated subscriber: unknown event_type, acking", "event_type", event.EventType)
+		slog.Warn("premium-updated subscriber: unknown event_type, skipping", "event_type", event.EventType)
 		return nil
 	}
 

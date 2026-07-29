@@ -5,6 +5,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/kenyamaneko/overload-party-account/internal/handler/pubsubpush"
 	"github.com/kenyamaneko/overload-party-account/internal/handler/rest"
 
 	internalauth "github.com/kenyamaneko/overload-party-gateway/packages/internalauth-go"
@@ -20,6 +21,9 @@ import (
 //   - /internal/v1/players/revert-battle-count: gateway の停止時処理が直接呼ぶサーバー間
 //     バッチ。body に 2 プレイヤー分の player_id を含み JWT sub では表現できないため
 //     /internal に残す
+//   - /internal/v1/pubsub/*: Cloud Pub/Sub push subscription の受け口。呼び出し元が
+//     プレイヤーではなく Pub/Sub 基盤のため JWT を要求せず、到達制御は Cloud Run の
+//     呼び出し IAM に委ねる
 //   - /api/v1/account/me/*: gateway / shop / scenario が JWT を付けて呼ぶ player-scoped
 //     API。VerifyInternalAuth が sub クレーム (= player_id) を context に注入し、
 //     handler は path / body から player_id を読まない
@@ -29,6 +33,7 @@ func New(
 	factionH *rest.FactionHandler,
 	settingsH *rest.PlayerSettingsHandler,
 	authVerifier internalauth.Verifier,
+	pubsubHandlers pubsubpush.Handlers,
 ) *gin.Engine {
 	r := gin.New()
 	r.Use(gin.Recovery())
@@ -46,6 +51,15 @@ func New(
 		internal.GET("/players/:playerID/factions", factionH.ListPlayerFactions)
 		internal.POST("/players/award-game-exp", playerH.AwardGameExp)
 		internal.POST("/players/revert-battle-count", playerH.RevertBattleCount)
+
+		pubsubGroup := internal.Group("/pubsub")
+		{
+			pubsubGroup.POST("/faction-acquired", pubsubHandlers.FactionAcquired.Handle)
+			pubsubGroup.POST("/premium-updated", pubsubHandlers.PremiumUpdated.Handle)
+			pubsubGroup.POST("/player-onboarded", pubsubHandlers.PlayerOnboarded.Handle)
+			pubsubGroup.POST("/onboarding-name-set", pubsubHandlers.OnboardingNameSet.Handle)
+			pubsubGroup.POST("/onboarding-faction-set", pubsubHandlers.OnboardingFactionSet.Handle)
+		}
 	}
 
 	api := r.Group("/api/v1/account")
