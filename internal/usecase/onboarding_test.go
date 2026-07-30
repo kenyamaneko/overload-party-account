@@ -6,12 +6,130 @@ import (
 	"context"
 	"testing"
 
+	apiscenario "github.com/kenyamaneko/overload-party-scenario/packages/api-scenario"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/kenyamaneko/overload-party-account/internal/domain"
 	"github.com/kenyamaneko/overload-party-account/internal/port"
 )
+
+func TestApplyNameSet(t *testing.T) {
+	t.Run("onboarding-name-set の適用", func(t *testing.T) {
+		t.Run("未処理のイベントを適用すると、表示名が保存されオンボード状態が name_set に進み処理済みになる", func(t *testing.T) {
+			ctx := context.Background()
+			sharedPg.Truncate(t)
+			seedPlayer(t, testPlayerID1, "uid-1", "", false) // name 未確定 (NULL) のプレイヤー
+
+			playerRepo, _, factionRepo, _, tx := newRealRepos()
+			eventRepo := newProcessedEventRepo()
+			svc := NewOnboardingInteractor(playerRepo, playerRepo, factionRepo, eventRepo, tx)
+
+			eventID := "10000000-1111-1111-1111-111111111111"
+			processed, err := svc.ApplyNameSet(ctx, eventID, apiscenario.EventTypeOnboardingNameSet, testPlayerID1, "Kenya")
+			require.NoError(t, err)
+			assert.True(t, processed)
+
+			p, ferr := playerRepo.FindByID(ctx, testPlayerID1)
+			require.NoError(t, ferr)
+			require.NotNil(t, p.Name)
+			assert.Equal(t, "Kenya", *p.Name)
+
+			status, serr := playerRepo.GetOnboardingStatus(ctx, testPlayerID1)
+			require.NoError(t, serr)
+			assert.Equal(t, domain.OnboardingStatusNameSet, status)
+		})
+
+		t.Run("同一 event_id を再配信すると、処理済みにならず表示名は変わらない", func(t *testing.T) {
+			ctx := context.Background()
+			sharedPg.Truncate(t)
+			seedPlayer(t, testPlayerID1, "uid-1", "", false)
+
+			playerRepo, _, factionRepo, _, tx := newRealRepos()
+			eventRepo := newProcessedEventRepo()
+			svc := NewOnboardingInteractor(playerRepo, playerRepo, factionRepo, eventRepo, tx)
+
+			eventID := "20000000-1111-1111-1111-111111111111"
+			_, err := svc.ApplyNameSet(ctx, eventID, apiscenario.EventTypeOnboardingNameSet, testPlayerID1, "Kenya")
+			require.NoError(t, err)
+
+			processed, err := svc.ApplyNameSet(ctx, eventID, apiscenario.EventTypeOnboardingNameSet, testPlayerID1, "Renamed")
+			require.NoError(t, err)
+			assert.False(t, processed)
+
+			p, ferr := playerRepo.FindByID(ctx, testPlayerID1)
+			require.NoError(t, ferr)
+			require.NotNil(t, p.Name)
+			assert.Equal(t, "Kenya", *p.Name, "重複配信は副作用を起こさず最初の値のまま")
+		})
+
+		t.Run("オンボード完了済みのプレイヤーに遅延到着すると、表示名は更新されるが状態は completed から後退しない", func(t *testing.T) {
+			ctx := context.Background()
+			sharedPg.Truncate(t)
+			seedPlayer(t, testPlayerID1, "uid-1", "Kenya", false)
+			updateOnboardingStatus(t, testPlayerID1, domain.OnboardingStatusCompleted)
+
+			playerRepo, _, factionRepo, _, tx := newRealRepos()
+			eventRepo := newProcessedEventRepo()
+			svc := NewOnboardingInteractor(playerRepo, playerRepo, factionRepo, eventRepo, tx)
+
+			eventID := "30000000-1111-1111-1111-111111111111"
+			processed, err := svc.ApplyNameSet(ctx, eventID, apiscenario.EventTypeOnboardingNameSet, testPlayerID1, "Renamed")
+			require.NoError(t, err)
+			assert.True(t, processed)
+
+			p, ferr := playerRepo.FindByID(ctx, testPlayerID1)
+			require.NoError(t, ferr)
+			require.NotNil(t, p.Name)
+			assert.Equal(t, "Renamed", *p.Name)
+
+			status, serr := playerRepo.GetOnboardingStatus(ctx, testPlayerID1)
+			require.NoError(t, serr)
+			assert.Equal(t, domain.OnboardingStatusCompleted, status)
+		})
+
+		t.Run("表示名が空白のみのとき、エラーになり何も保存されない", func(t *testing.T) {
+			ctx := context.Background()
+			sharedPg.Truncate(t)
+			seedPlayer(t, testPlayerID1, "uid-1", "", false)
+
+			playerRepo, _, factionRepo, _, tx := newRealRepos()
+			eventRepo := newProcessedEventRepo()
+			svc := NewOnboardingInteractor(playerRepo, playerRepo, factionRepo, eventRepo, tx)
+
+			eventID := "40000000-1111-1111-1111-111111111111"
+			processed, err := svc.ApplyNameSet(ctx, eventID, apiscenario.EventTypeOnboardingNameSet, testPlayerID1, "   ")
+			require.ErrorIs(t, err, domain.ErrInvalidName)
+			assert.False(t, processed)
+
+			p, ferr := playerRepo.FindByID(ctx, testPlayerID1)
+			require.NoError(t, ferr)
+			assert.Nil(t, p.Name)
+
+			assert.False(t, isProcessedEvent(t, eventID))
+
+			status, serr := playerRepo.GetOnboardingStatus(ctx, testPlayerID1)
+			require.NoError(t, serr)
+			assert.Equal(t, domain.OnboardingStatusNotStarted, status)
+		})
+
+		t.Run("存在しないプレイヤーのとき、エラーになり処理済みにならない", func(t *testing.T) {
+			ctx := context.Background()
+			sharedPg.Truncate(t)
+
+			playerRepo, _, factionRepo, _, tx := newRealRepos()
+			eventRepo := newProcessedEventRepo()
+			svc := NewOnboardingInteractor(playerRepo, playerRepo, factionRepo, eventRepo, tx)
+
+			eventID := "50000000-1111-1111-1111-111111111111"
+			processed, err := svc.ApplyNameSet(ctx, eventID, apiscenario.EventTypeOnboardingNameSet, testPlayerID2, "Kenya")
+			require.ErrorIs(t, err, port.ErrNotFound)
+			assert.False(t, processed)
+
+			assert.False(t, isProcessedEvent(t, eventID), "player 未存在での失敗は Tx ロールバックで processed_events も巻き戻る")
+		})
+	})
+}
 
 func TestApplyFactionSet(t *testing.T) {
 	t.Run("onboarding-faction-set の適用", func(t *testing.T) {
