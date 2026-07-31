@@ -4,10 +4,16 @@ name: CI
 on:
   pull_request:
     branches: [main]
+  workflow_call:
+    outputs:
+      code-changed:
+        description: "'true' when the run touched code. The test results exist only then."
+        value: ${{ jobs.changes.outputs.code }}
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # main の run は GitHub Pages への deploy に繋がるため、後続の push で打ち切らない
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -90,14 +96,23 @@ jobs:
       # ワークスペース参照だけではルートの `go test ./...` に含まれず、明示的に走らせる。
       - name: Run api-account unit tests
         working-directory: packages/api-account
-        run: go test -race -count=1 ./... -json | tee go-test-unit.json
+        run: go test -race -count=1 ./... -json | tee ../../go-test-unit-api-account.json
       - name: Report api-account test results
         if: ${{ !cancelled() }}
         uses: kenyamaneko/overload-party-common/.github/actions/go-test-report@main
         with:
-          json-path: packages/api-account/go-test-unit.json
+          json-path: go-test-unit-api-account.json
           title: api-account 単体テスト結果
           module-dir: packages/api-account
+      # 同一 run 内でテスト観点カタログを組むためだけに使うので保持は最短にする
+      - name: Upload unit test results
+        uses: actions/upload-artifact@v4
+        with:
+          name: go-test-unit
+          path: |
+            go-test-unit.json
+            go-test-unit-api-account.json
+          retention-days: 1
 
   test-integration:
     needs: changes
@@ -142,6 +157,13 @@ jobs:
         with:
           json-path: go-test-integration.json
           title: 結合テスト結果
+      # 同一 run 内でテスト観点カタログを組むためだけに使うので保持は最短にする
+      - name: Upload integration test results
+        uses: actions/upload-artifact@v4
+        with:
+          name: go-test-integration
+          path: go-test-integration.json
+          retention-days: 1
 
   image-scan:
     needs: changes
