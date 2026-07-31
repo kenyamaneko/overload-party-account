@@ -147,8 +147,12 @@ func run() error {
 	factionH := rest.NewFactionHandler(factionInteractor)
 	settingsH := rest.NewPlayerSettingsHandler(settingsInteractor)
 
+	internalAuthKey, err := internalauth.ParsePublicKeyPEM([]byte(cfg.InternalAuthPublicKey))
+	if err != nil {
+		return fmt.Errorf("INTERNAL_AUTH_PUBLIC_KEY is invalid: %w", err)
+	}
 	authVerifier := internalauth.NewVerifier(
-		internalauth.StaticHS256Resolver([]byte(cfg.InternalAuthSecret), internalauth.DefaultKeyID),
+		internalauth.StaticPublicKeyResolver(internalAuthKey, internalauth.DefaultKeyID),
 	)
 
 	r := router.New(authH, playerH, factionH, settingsH, authVerifier, pubsubHandlers)

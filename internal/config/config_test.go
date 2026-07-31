@@ -9,11 +9,15 @@ import (
 
 // allEnvKeys は FromEnv が読む全 env キー。各テストは毎回これらを明示値（または ""）
 // で上書きし、シェル環境からの漏れで Given が非決定になるのを防ぐ。
+// testPublicKeyPEM は config が値をそのまま保持することの確認にだけ使うダミー。
+// 鍵としての妥当性は検証しないため、PEM の体裁だけ揃えている。
+const testPublicKeyPEM = "-----BEGIN PUBLIC KEY-----\ndummy-not-a-real-key\n-----END PUBLIC KEY-----\n"
+
 var allEnvKeys = []string{
 	"PORT",
 	"DATABASE_CONN",
 	"GOOGLE_CLOUD_PROJECT_ID",
-	"INTERNAL_AUTH_SECRET",
+	"INTERNAL_AUTH_PUBLIC_KEY",
 	"LOG_MODE",
 	"DATABASE_IAM_AUTH_ENABLED",
 	"CLOUDSQL_CONNECTION_NAME",
@@ -46,7 +50,7 @@ var validLocalEnv = map[string]string{
 	"PORT":                      "9005",
 	"DATABASE_CONN":             "host=localhost port=5432 dbname=account user=account password=account sslmode=disable",
 	"GOOGLE_CLOUD_PROJECT_ID":   "account-local",
-	"INTERNAL_AUTH_SECRET":      "test-internal-auth-secret-do-not-use-in-prod-xxxxx",
+	"INTERNAL_AUTH_PUBLIC_KEY":  testPublicKeyPEM,
 	"LOG_MODE":                  "local",
 	"DATABASE_IAM_AUTH_ENABLED": "false",
 }
@@ -143,9 +147,9 @@ func TestFromEnv(t *testing.T) {
 				wantErr: "GOOGLE_CLOUD_PROJECT_ID is required",
 			},
 			{
-				name:    "INTERNAL_AUTH_SECRET が未設定のとき、エラーになる",
-				envs:    mergeEnv(validLocalEnv, map[string]string{"INTERNAL_AUTH_SECRET": ""}),
-				wantErr: "INTERNAL_AUTH_SECRET is required",
+				name:    "INTERNAL_AUTH_PUBLIC_KEY が未設定のとき、エラーになる",
+				envs:    mergeEnv(validLocalEnv, map[string]string{"INTERNAL_AUTH_PUBLIC_KEY": ""}),
+				wantErr: "INTERNAL_AUTH_PUBLIC_KEY is required",
 			},
 			{
 				name:    "LOG_MODE が未設定のとき、エラーになる",

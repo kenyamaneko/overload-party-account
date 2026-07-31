@@ -57,7 +57,7 @@ overload-party-ops / overload-party-common を兄弟ディレクトリに checko
 | 変数名 | 説明 |
 |---|---|
 | `DATABASE_CONN` | PostgreSQL 接続文字列（pgx が解釈できる URL / libpq 形式） |
-| `INTERNAL_AUTH_SECRET` | gateway / 各サービスで共有する HS256 JWT 鍵（ADR-037） |
+| `INTERNAL_AUTH_PUBLIC_KEY` | gateway が発行する RS256 JWT を検証する公開鍵（PEM） |
 
 その他の環境変数:
 

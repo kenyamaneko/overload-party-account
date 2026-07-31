@@ -30,9 +30,9 @@ type Config struct {
 	// ローカル/CI では FIRESTORE_EMULATOR_HOST 経由でエミュレーターに接続する。
 	GoogleCloudProjectID string
 
-	// InternalAuthSecret は gateway / 各サービス間で共有する HMAC 鍵。
-	// X-Internal-Auth (HS256 JWT) の検証に使う。ADR-037 参照。
-	InternalAuthSecret string
+	// InternalAuthPublicKey は gateway が内部トークンの署名に使う鍵の対になる公開鍵。PEM 形式。
+	// X-Internal-Auth (RS256 JWT) の検証に使う。
+	InternalAuthPublicKey string
 
 	// LogMode は log handler の選択。production / local のいずれか必須。
 	LogMode LogMode
@@ -47,10 +47,10 @@ type Config struct {
 // FromEnv は環境変数から Config を構築する。
 func FromEnv() (*Config, error) {
 	cfg := &Config{
-		DatabaseConn:         os.Getenv("DATABASE_CONN"),
-		GoogleCloudProjectID: os.Getenv("GOOGLE_CLOUD_PROJECT_ID"),
-		InternalAuthSecret:   os.Getenv("INTERNAL_AUTH_SECRET"),
-		LogMode:              LogMode(os.Getenv("LOG_MODE")),
+		DatabaseConn:          os.Getenv("DATABASE_CONN"),
+		GoogleCloudProjectID:  os.Getenv("GOOGLE_CLOUD_PROJECT_ID"),
+		InternalAuthPublicKey: os.Getenv("INTERNAL_AUTH_PUBLIC_KEY"),
+		LogMode:               LogMode(os.Getenv("LOG_MODE")),
 	}
 
 	rawPort := os.Getenv("PORT")
@@ -72,8 +72,8 @@ func FromEnv() (*Config, error) {
 	if cfg.GoogleCloudProjectID == "" {
 		return nil, fmt.Errorf("config: GOOGLE_CLOUD_PROJECT_ID is required (Firestore (game_config) で必要)")
 	}
-	if cfg.InternalAuthSecret == "" {
-		return nil, fmt.Errorf("config: INTERNAL_AUTH_SECRET is required (HS256 JWT shared secret, see ADR-037)")
+	if cfg.InternalAuthPublicKey == "" {
+		return nil, fmt.Errorf("config: INTERNAL_AUTH_PUBLIC_KEY is required (gateway が発行する RS256 JWT の検証鍵)")
 	}
 
 	switch cfg.LogMode {
