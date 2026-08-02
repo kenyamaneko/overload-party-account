@@ -38,12 +38,12 @@ func (r *FactionRepository) AddPlayerFaction(ctx context.Context, playerID, fact
 	return nil
 }
 
-// SetInitialFaction は (player_id, faction) を is_initial=TRUE で INSERT する。
-// PK 重複や partial unique index 違反は DB エラーとしてそのまま返す。
+// SetInitialFaction は (player_id, faction) をプレイヤーの初期選択ファクションとして登録する。
 func (r *FactionRepository) SetInitialFaction(ctx context.Context, playerID, faction string) error {
 	_, err := connFrom(ctx, r.pool).Exec(ctx,
 		`INSERT INTO account.player_factions (player_id, faction, is_initial)
-		 VALUES ($1, $2, TRUE)`,
+		 VALUES ($1, $2, TRUE)
+		 ON CONFLICT (player_id, faction) DO UPDATE SET is_initial = TRUE`,
 		playerID, faction,
 	)
 	if err != nil {

@@ -77,11 +77,14 @@ func (r *fakeFactionRepo) AddPlayerFaction(_ context.Context, playerID, faction 
 
 func (r *fakeFactionRepo) SetInitialFaction(_ context.Context, playerID, faction string) error {
 	for _, a := range r.added {
-		if a.PlayerID == playerID && a.Faction == faction {
-			return fmt.Errorf("duplicate (player_id, faction)")
-		}
-		if a.PlayerID == playerID && a.IsInitial {
+		if a.PlayerID == playerID && a.IsInitial && a.Faction != faction {
 			return fmt.Errorf("partial unique index violation: another initial exists")
+		}
+	}
+	for i, a := range r.added {
+		if a.PlayerID == playerID && a.Faction == faction {
+			r.added[i].IsInitial = true
+			return nil
 		}
 	}
 	r.added = append(r.added, factionAdd{PlayerID: playerID, Faction: faction, IsInitial: true})

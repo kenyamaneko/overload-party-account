@@ -6,6 +6,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -99,40 +100,34 @@ func TestSetInitialFaction(t *testing.T) {
 
 	t.Run("初期ファクションの設定", func(t *testing.T) {
 		tests := []struct {
-			name        string
-			seed        []factionAdd
-			wantErr     bool
-			wantInitial *string
+			name         string
+			seed         []factionAdd
+			setCalls     int
+			wantInitial  *string
+			wantFactions []string
 		}{
 			{
-				name:        "対象行が無いとき、新規 INSERT され initial になる",
-				seed:        nil,
-				wantErr:     false,
-				wantInitial: ptr("SHE"),
-			},
-			{
-				name: "別プレイヤーが同 faction を所持していても、initial 選択に影響しない",
-				seed: []factionAdd{
-					{playerID: testPlayerID2, faction: "SHE", isInitial: false},
-				},
-				wantErr:     false,
-				wantInitial: ptr("SHE"),
-			},
-			{
-				name: "(player_id, faction) が PK 重複のとき、エラーになる",
+				name: "ショップで購入済みのファクションを初期選択すると、そのファクションが初期選択として記録される",
 				seed: []factionAdd{
 					{playerID: testPlayerID1, faction: "SHE", isInitial: false},
 				},
-				wantErr:     true,
-				wantInitial: nil,
+				setCalls:     1,
+				wantInitial:  ptr("SHE"),
+				wantFactions: []string{"SHE"},
 			},
 			{
-				name: "別 faction が既に is_initial=TRUE のとき、partial unique index 違反でエラーになる",
-				seed: []factionAdd{
-					{playerID: testPlayerID1, faction: "Tenki", isInitial: true},
-				},
-				wantErr:     true,
-				wantInitial: ptr("Tenki"),
+				name:         "未所持のファクションを初期選択すると、所持と初期選択の両方が記録される",
+				seed:         nil,
+				setCalls:     1,
+				wantInitial:  ptr("SHE"),
+				wantFactions: []string{"SHE"},
+			},
+			{
+				name:         "同じ初期選択が二度届いても、記録が変わらない",
+				seed:         nil,
+				setCalls:     2,
+				wantInitial:  ptr("SHE"),
+				wantFactions: []string{"SHE"},
 			},
 		}
 
@@ -140,19 +135,58 @@ func TestSetInitialFaction(t *testing.T) {
 			t.Run(tt.name, func(t *testing.T) {
 				sharedPg.Truncate(t)
 				seedPlayer(t, testPlayerID1, "uid-1", "Alice", false)
-				seedPlayer(t, testPlayerID2, "uid-2", "Bob", false)
 				for _, s := range tt.seed {
 					seedPlayerFaction(t, s.playerID, s.faction, s.isInitial)
 				}
 
-				err := repo.SetInitialFaction(ctx, testPlayerID1, "SHE")
-				require.Equal(t, tt.wantErr, err != nil)
+				for i := 0; i < tt.setCalls; i++ {
+					require.NoError(t, repo.SetInitialFaction(ctx, testPlayerID1, "SHE"))
+				}
 
-				got, err := repo.GetInitialFaction(ctx, testPlayerID1)
+				gotInitial, err := repo.GetInitialFaction(ctx, testPlayerID1)
 				require.NoError(t, err)
-				assert.Equal(t, tt.wantInitial, got)
+				assert.Equal(t, tt.wantInitial, gotInitial)
+
+				gotFactions, err := repo.GetPlayerFactions(ctx, testPlayerID1)
+				require.NoError(t, err)
+				assert.ElementsMatch(t, tt.wantFactions, gotFactions)
 			})
 		}
+
+		t.Run("別プレイヤーが同じファクションを購入済みでも、初期選択は選んだプレイヤーだけに記録される", func(t *testing.T) {
+			sharedPg.Truncate(t)
+			seedPlayer(t, testPlayerID1, "uid-1", "Alice", false)
+			seedPlayer(t, testPlayerID2, "uid-2", "Bob", false)
+			seedPlayerFaction(t, testPlayerID2, "SHE", false)
+
+			require.NoError(t, repo.SetInitialFaction(ctx, testPlayerID1, "SHE"))
+
+			gotInitial1, err := repo.GetInitialFaction(ctx, testPlayerID1)
+			require.NoError(t, err)
+			assert.Equal(t, ptr("SHE"), gotInitial1)
+
+			gotInitial2, err := repo.GetInitialFaction(ctx, testPlayerID2)
+			require.NoError(t, err)
+			assert.Nil(t, gotInitial2)
+		})
+
+		t.Run("別のファクションが初期選択済みのとき、購入済みファクションの初期選択は失敗し、先の初期選択が残る", func(t *testing.T) {
+			sharedPg.Truncate(t)
+			seedPlayer(t, testPlayerID1, "uid-1", "Alice", false)
+			seedPlayerFaction(t, testPlayerID1, "Tenki", true)
+			seedPlayerFaction(t, testPlayerID1, "SHE", false)
+
+			err := repo.SetInitialFaction(ctx, testPlayerID1, "SHE")
+
+			var pgErr *pgconn.PgError
+			require.ErrorAs(t, err, &pgErr)
+			assert.Equal(t, "23505", pgErr.Code)
+			assert.Equal(t, "idx_player_factions_initial", pgErr.ConstraintName)
+
+			gotInitial, err := repo.GetInitialFaction(ctx, testPlayerID1)
+			require.NoError(t, err)
+			assert.Equal(t, ptr("Tenki"), gotInitial)
+		})
 	})
 }
 
