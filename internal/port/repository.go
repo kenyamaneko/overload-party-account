@@ -129,8 +129,7 @@ type FactionRepo interface {
 	GetPlayerFactions(ctx context.Context, playerID string) ([]string, error)
 	// GetInitialFaction はプレイヤーの initial faction を返す。未選択なら (nil, nil)。
 	GetInitialFaction(ctx context.Context, playerID string) (*string, error)
-	// SetInitialFaction は (player_id, faction) を is_initial=TRUE で INSERT する。
-	// PK 重複や partial unique index 違反は DB エラーとしてそのまま返す。
+	// SetInitialFaction は (player_id, faction) をプレイヤーの初期選択ファクションとして登録する。
 	SetInitialFaction(ctx context.Context, playerID, faction string) error
 }
 

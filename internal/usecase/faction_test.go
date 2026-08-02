@@ -80,6 +80,13 @@ func TestSelectInitialFaction(t *testing.T) {
 				wantOwned:   []string{"SHE", "Tenki"},
 				wantInitial: ptr("Tenki"),
 			},
+			{
+				name:        "ショップ所持 (SHE) と同じ SHE を初回選択するとき、所持 [SHE]・initial=SHE になる",
+				seedShop:    []string{"SHE"},
+				faction:     "SHE",
+				wantOwned:   []string{"SHE"},
+				wantInitial: ptr("SHE"),
+			},
 		}
 		for _, tc := range validCases {
 			t.Run(tc.name, func(t *testing.T) {
@@ -153,11 +160,5 @@ func TestSelectInitialFaction(t *testing.T) {
 				require.ErrorIs(t, err, tc.wantErr)
 			})
 		}
-
-		t.Run("ショップ所持と同一 faction を初回選択するとき、PK 重複でエラーになる", func(t *testing.T) {
-			// PK 重複はドメイン sentinel を持たない永続層エラーなので、種別ではなくエラー発生のみ確かめる。
-			err := selectAndAssertState(t, []string{"SHE"}, nil, testPlayerID1, "SHE", []string{"SHE"}, nil)
-			require.Error(t, err)
-		})
 	})
 }
