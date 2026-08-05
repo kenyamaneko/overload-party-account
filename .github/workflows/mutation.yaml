@@ -1,0 +1,19 @@
+name: Mutation Test
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: mutation-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  mutation:
+    uses: kenyamaneko/overload-party-common/.github/workflows/go-mutation.yaml@main
+    with:
+      target-dir: internal/domain
+      timeout-coefficient: 300
+    secrets: inherit
