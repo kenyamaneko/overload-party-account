@@ -91,9 +91,9 @@ func (s *AuthInteractor) Register(ctx context.Context, firebaseUID string) (*api
 	}
 
 	view := &domain.PlayerView{
-		Player:         *player,
-		Level:          progression.Level,
-		Exp:            progression.Exp,
+		Player: *player,
+		Level:  progression.Level,
+		Exp:    progression.Exp,
 		// 登録時点では initial_faction 未選択。onboarding-faction-set イベントの
 		// subscriber が player_factions に is_initial=TRUE 行を入れて確定させる。
 		InitialFaction: nil,
