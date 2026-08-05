@@ -15,8 +15,8 @@ import (
 )
 
 func TestApplyNameSet(t *testing.T) {
-	t.Run("onboarding-name-set の適用", func(t *testing.T) {
-		t.Run("未処理のイベントを適用すると、表示名が保存されオンボード状態が name_set に進み処理済みになる", func(t *testing.T) {
+	t.Run("onboarding-name-setの適用", func(t *testing.T) {
+		t.Run("未処理のイベントを適用すると、表示名が保存されオンボード状態がname_setに進み処理済みになる", func(t *testing.T) {
 			ctx := context.Background()
 			sharedPg.Truncate(t)
 			seedPlayer(t, testPlayerID1, "uid-1", "", false) // name 未確定 (NULL) のプレイヤー
@@ -40,7 +40,7 @@ func TestApplyNameSet(t *testing.T) {
 			assert.Equal(t, domain.OnboardingStatusNameSet, status)
 		})
 
-		t.Run("同一 event_id を再配信すると、処理済みにならず表示名は変わらない", func(t *testing.T) {
+		t.Run("同一event_idを再配信すると、処理済みにならず表示名は変わらない", func(t *testing.T) {
 			ctx := context.Background()
 			sharedPg.Truncate(t)
 			seedPlayer(t, testPlayerID1, "uid-1", "", false)
@@ -63,7 +63,7 @@ func TestApplyNameSet(t *testing.T) {
 			assert.Equal(t, "Kenya", *p.Name, "重複配信は副作用を起こさず最初の値のまま")
 		})
 
-		t.Run("オンボード完了済みのプレイヤーに遅延到着すると、表示名は更新されるが状態は completed から後退しない", func(t *testing.T) {
+		t.Run("オンボード完了済みのプレイヤーに遅延到着すると、表示名は更新されるが状態はcompletedから後退しない", func(t *testing.T) {
 			ctx := context.Background()
 			sharedPg.Truncate(t)
 			seedPlayer(t, testPlayerID1, "uid-1", "Kenya", false)
@@ -132,8 +132,8 @@ func TestApplyNameSet(t *testing.T) {
 }
 
 func TestApplyFactionSet(t *testing.T) {
-	t.Run("onboarding-faction-set の適用", func(t *testing.T) {
-		t.Run("name 未確定 (NULL) でも initial_faction が反映され processed になる", func(t *testing.T) {
+	t.Run("onboarding-faction-setの適用", func(t *testing.T) {
+		t.Run("name未確定 (NULL)でもinitial_factionが反映されprocessedになる", func(t *testing.T) {
 			// name はシナリオが入力時点で確定済みのため、faction-set 経路は initial_faction の
 			// 反映と冪等ガードのみを担い、name には触れない。
 			ctx := context.Background()
@@ -169,7 +169,7 @@ func TestApplyFactionSet(t *testing.T) {
 			assert.ElementsMatch(t, []string{"SHE"}, factions)
 		})
 
-		t.Run("name_set まで進んだプレイヤーに適用すると、状態が faction_set に進む", func(t *testing.T) {
+		t.Run("name_setまで進んだプレイヤーに適用すると、状態がfaction_setに進む", func(t *testing.T) {
 			ctx := context.Background()
 			sharedPg.Truncate(t)
 			seedPlayer(t, testPlayerID1, "uid-1", "Alice", false)
@@ -199,7 +199,7 @@ func TestApplyFactionSet(t *testing.T) {
 			assert.Equal(t, domain.OnboardingStatusFactionSet, status)
 		})
 
-		t.Run("同一 event_id を再配信すると、処理済みにならず初期陣営と状態は変わらない", func(t *testing.T) {
+		t.Run("同一event_idを再配信すると、処理済みにならず初期陣営と状態は変わらない", func(t *testing.T) {
 			ctx := context.Background()
 			sharedPg.Truncate(t)
 			seedPlayer(t, testPlayerID1, "uid-1", "Alice", false)
@@ -227,7 +227,7 @@ func TestApplyFactionSet(t *testing.T) {
 			assert.Equal(t, domain.OnboardingStatusFactionSet, status)
 		})
 
-		t.Run("既に SHE で確定済みのプレイヤーに別の Tenki が届くと、ErrFactionConflict になり SHE のまま残る", func(t *testing.T) {
+		t.Run("既にSHEで確定済みのプレイヤーに別のTenkiが届くと、ErrFactionConflictになりSHEのまま残る", func(t *testing.T) {
 			ctx := context.Background()
 			sharedPg.Truncate(t)
 			seedPlayer(t, testPlayerID1, "uid-1", "Alice", false)
@@ -253,7 +253,7 @@ func TestApplyFactionSet(t *testing.T) {
 			assert.False(t, isProcessedEvent(t, secondEventID), "衝突時は Tx ロールバックで processed_events も巻き戻る")
 		})
 
-		t.Run("既に SHE で確定済みのプレイヤーに同じ SHE が別 event_id で届くと、上書きなしで処理済みになる", func(t *testing.T) {
+		t.Run("既にSHEで確定済みのプレイヤーに同じSHEが別event_idで届くと、上書きなしで処理済みになる", func(t *testing.T) {
 			ctx := context.Background()
 			sharedPg.Truncate(t)
 			seedPlayer(t, testPlayerID1, "uid-1", "Alice", false)
@@ -278,7 +278,7 @@ func TestApplyFactionSet(t *testing.T) {
 			assert.Equal(t, "SHE", *initial)
 		})
 
-		t.Run("選択不可の Neutral のとき、エラーになり初期陣営は未設定のまま保存されない", func(t *testing.T) {
+		t.Run("選択不可のNeutralのとき、エラーになり初期陣営は未設定のまま保存されない", func(t *testing.T) {
 			ctx := context.Background()
 			sharedPg.Truncate(t)
 			seedPlayer(t, testPlayerID1, "uid-1", "Alice", false)
@@ -306,8 +306,8 @@ func TestApplyFactionSet(t *testing.T) {
 }
 
 func TestApplyCompleted(t *testing.T) {
-	t.Run("player-onboarded の適用", func(t *testing.T) {
-		t.Run("未処理の完了イベントを適用すると、オンボード状態が completed になり処理済みになる", func(t *testing.T) {
+	t.Run("player-onboardedの適用", func(t *testing.T) {
+		t.Run("未処理の完了イベントを適用すると、オンボード状態がcompletedになり処理済みになる", func(t *testing.T) {
 			ctx := context.Background()
 			sharedPg.Truncate(t)
 			seedPlayer(t, testPlayerID1, "uid-1", "Alice", false)
@@ -325,7 +325,7 @@ func TestApplyCompleted(t *testing.T) {
 			assert.Equal(t, domain.OnboardingStatusCompleted, status)
 		})
 
-		t.Run("同一 event_id を再適用すると、処理済みにならず状態は completed のまま", func(t *testing.T) {
+		t.Run("同一event_idを再適用すると、処理済みにならず状態はcompletedのまま", func(t *testing.T) {
 			ctx := context.Background()
 			sharedPg.Truncate(t)
 			seedPlayer(t, testPlayerID1, "uid-1", "Alice", false)
@@ -347,7 +347,7 @@ func TestApplyCompleted(t *testing.T) {
 			assert.Equal(t, domain.OnboardingStatusCompleted, status)
 		})
 
-		t.Run("既に completed のプレイヤーに別 event_id で再到着すると、処理済みになり状態は completed のまま", func(t *testing.T) {
+		t.Run("既にcompletedのプレイヤーに別event_idで再到着すると、処理済みになり状態はcompletedのまま", func(t *testing.T) {
 			ctx := context.Background()
 			sharedPg.Truncate(t)
 			seedPlayer(t, testPlayerID1, "uid-1", "Alice", false)

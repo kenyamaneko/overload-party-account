@@ -56,8 +56,8 @@ var validLocalEnv = map[string]string{
 }
 
 func TestFromEnv(t *testing.T) {
-	t.Run("環境変数からの Config 構築", func(t *testing.T) {
-		t.Run("必須 env が揃うとき、全フィールドが Config に伝搬する", func(t *testing.T) {
+	t.Run("環境変数からのConfig構築", func(t *testing.T) {
+		t.Run("必須envが揃うとき、全フィールドがConfigに伝搬する", func(t *testing.T) {
 			setEnv(t, validLocalEnv)
 
 			cfg, err := FromEnv()
@@ -69,7 +69,7 @@ func TestFromEnv(t *testing.T) {
 			assert.Equal(t, LogModeLocal, cfg.LogMode)
 		})
 
-		t.Run("LOG_MODE=production のとき、LogModeProduction として受理される", func(t *testing.T) {
+		t.Run("LOG_MODE=productionのとき、LogModeProductionとして受理される", func(t *testing.T) {
 			setEnv(t, mergeEnv(validLocalEnv, map[string]string{"LOG_MODE": "production"}))
 
 			cfg, err := FromEnv()
@@ -78,7 +78,7 @@ func TestFromEnv(t *testing.T) {
 			assert.Equal(t, LogModeProduction, cfg.LogMode)
 		})
 
-		t.Run("PORT が指定されるとき、その値が Config に反映される", func(t *testing.T) {
+		t.Run("PORTが指定されるとき、その値がConfigに反映される", func(t *testing.T) {
 			setEnv(t, mergeEnv(validLocalEnv, map[string]string{"PORT": "8080"}))
 
 			cfg, err := FromEnv()
@@ -87,7 +87,7 @@ func TestFromEnv(t *testing.T) {
 			assert.Equal(t, 8080, cfg.Port)
 		})
 
-		t.Run("DATABASE_IAM_AUTH_ENABLED が false のとき、CLOUDSQL_CONNECTION_NAME が未設定でも成功する", func(t *testing.T) {
+		t.Run("DATABASE_IAM_AUTH_ENABLEDがfalseのとき、CLOUDSQL_CONNECTION_NAMEが未設定でも成功する", func(t *testing.T) {
 			setEnv(t, validLocalEnv)
 
 			cfg, err := FromEnv()
@@ -97,7 +97,7 @@ func TestFromEnv(t *testing.T) {
 			assert.Empty(t, cfg.CloudSQLConnectionName)
 		})
 
-		t.Run("DATABASE_IAM_AUTH_ENABLED が true かつ CLOUDSQL_CONNECTION_NAME が指定されるとき、両方の値が Config に反映される", func(t *testing.T) {
+		t.Run("DATABASE_IAM_AUTH_ENABLEDがtrueかつCLOUDSQL_CONNECTION_NAMEが指定されるとき、両方の値がConfigに反映される", func(t *testing.T) {
 			setEnv(t, mergeEnv(validLocalEnv, map[string]string{
 				"DATABASE_IAM_AUTH_ENABLED": "true",
 				"CLOUDSQL_CONNECTION_NAME":  "overload-party-dev:asia-northeast1:overload-party-db",
@@ -117,62 +117,62 @@ func TestFromEnv(t *testing.T) {
 			wantErr string
 		}{
 			{
-				name:    "PORT が未設定のとき、エラーになる",
+				name:    "PORTが未設定のとき、エラーになる",
 				envs:    mergeEnv(validLocalEnv, map[string]string{"PORT": ""}),
 				wantErr: "PORT is required",
 			},
 			{
-				name:    "PORT が数値でないとき、エラーになる",
+				name:    "PORTが数値でないとき、エラーになる",
 				envs:    mergeEnv(validLocalEnv, map[string]string{"PORT": "not-a-number"}),
 				wantErr: "PORT",
 			},
 			{
-				name:    "PORT が 0 のとき、エラーになる",
+				name:    "PORTが0のとき、エラーになる",
 				envs:    mergeEnv(validLocalEnv, map[string]string{"PORT": "0"}),
 				wantErr: "PORT must be in 1-65535",
 			},
 			{
-				name:    "PORT が 65535 超のとき、エラーになる",
+				name:    "PORTが65535超のとき、エラーになる",
 				envs:    mergeEnv(validLocalEnv, map[string]string{"PORT": "70000"}),
 				wantErr: "PORT must be in 1-65535",
 			},
 			{
-				name:    "DATABASE_CONN が未設定のとき、エラーになる",
+				name:    "DATABASE_CONNが未設定のとき、エラーになる",
 				envs:    mergeEnv(validLocalEnv, map[string]string{"DATABASE_CONN": ""}),
 				wantErr: "DATABASE_CONN is required",
 			},
 			{
-				name:    "GOOGLE_CLOUD_PROJECT_ID が未設定のとき、エラーになる",
+				name:    "GOOGLE_CLOUD_PROJECT_IDが未設定のとき、エラーになる",
 				envs:    mergeEnv(validLocalEnv, map[string]string{"GOOGLE_CLOUD_PROJECT_ID": ""}),
 				wantErr: "GOOGLE_CLOUD_PROJECT_ID is required",
 			},
 			{
-				name:    "INTERNAL_AUTH_PUBLIC_KEY が未設定のとき、エラーになる",
+				name:    "INTERNAL_AUTH_PUBLIC_KEYが未設定のとき、エラーになる",
 				envs:    mergeEnv(validLocalEnv, map[string]string{"INTERNAL_AUTH_PUBLIC_KEY": ""}),
 				wantErr: "INTERNAL_AUTH_PUBLIC_KEY is required",
 			},
 			{
-				name:    "LOG_MODE が未設定のとき、エラーになる",
+				name:    "LOG_MODEが未設定のとき、エラーになる",
 				envs:    mergeEnv(validLocalEnv, map[string]string{"LOG_MODE": ""}),
 				wantErr: "LOG_MODE must be",
 			},
 			{
-				name:    "LOG_MODE が未定義値のとき、エラーになる",
+				name:    "LOG_MODEが未定義値のとき、エラーになる",
 				envs:    mergeEnv(validLocalEnv, map[string]string{"LOG_MODE": "verbose"}),
 				wantErr: "LOG_MODE must be",
 			},
 			{
-				name:    "DATABASE_IAM_AUTH_ENABLED が未設定のとき、変数名を含むエラーになる",
+				name:    "DATABASE_IAM_AUTH_ENABLEDが未設定のとき、変数名を含むエラーになる",
 				envs:    mergeEnv(validLocalEnv, map[string]string{"DATABASE_IAM_AUTH_ENABLED": ""}),
 				wantErr: "DATABASE_IAM_AUTH_ENABLED must be",
 			},
 			{
-				name:    `DATABASE_IAM_AUTH_ENABLED が "true"/"false" 以外の "yes" のとき、変数名を含むエラーになる`,
+				name:    `DATABASE_IAM_AUTH_ENABLEDが "true"/"false" 以外の "yes" のとき、変数名を含むエラーになる`,
 				envs:    mergeEnv(validLocalEnv, map[string]string{"DATABASE_IAM_AUTH_ENABLED": "yes"}),
 				wantErr: "DATABASE_IAM_AUTH_ENABLED must be",
 			},
 			{
-				name: "DATABASE_IAM_AUTH_ENABLED が true かつ CLOUDSQL_CONNECTION_NAME が未設定のとき、CLOUDSQL_CONNECTION_NAME を含むエラーになる",
+				name: "DATABASE_IAM_AUTH_ENABLEDがtrueかつCLOUDSQL_CONNECTION_NAMEが未設定のとき、CLOUDSQL_CONNECTION_NAMEを含むエラーになる",
 				envs: mergeEnv(validLocalEnv, map[string]string{
 					"DATABASE_IAM_AUTH_ENABLED": "true",
 					"CLOUDSQL_CONNECTION_NAME":  "",

@@ -21,17 +21,17 @@ func TestClient_RegisterPlayer(t *testing.T) {
 			wantTarget error
 		}{
 			{
-				name:       "400 を受けたとき、ErrBadRequest になる",
+				name:       "400を受けたとき、ErrBadRequestになる",
 				status:     http.StatusBadRequest,
 				wantTarget: apiaccountclient.ErrBadRequest,
 			},
 			{
-				name:       "409 を受けたとき、ErrConflict になる",
+				name:       "409を受けたとき、ErrConflictになる",
 				status:     http.StatusConflict,
 				wantTarget: apiaccountclient.ErrConflict,
 			},
 			{
-				name:       "500 を受けたとき、ErrInternalServer になる",
+				name:       "500を受けたとき、ErrInternalServerになる",
 				status:     http.StatusInternalServerError,
 				wantTarget: apiaccountclient.ErrInternalServer,
 			},
@@ -58,12 +58,12 @@ func TestClient_LoginPlayer(t *testing.T) {
 			wantTarget error
 		}{
 			{
-				name:       "400 を受けたとき、ErrBadRequest になる",
+				name:       "400を受けたとき、ErrBadRequestになる",
 				status:     http.StatusBadRequest,
 				wantTarget: apiaccountclient.ErrBadRequest,
 			},
 			{
-				name:       "404 を受けたとき、ErrNotFound になる",
+				name:       "404を受けたとき、ErrNotFoundになる",
 				status:     http.StatusNotFound,
 				wantTarget: apiaccountclient.ErrNotFound,
 			},
@@ -84,7 +84,7 @@ func TestClient_LoginPlayer(t *testing.T) {
 
 func TestClient_GetPlayerByFirebaseUID(t *testing.T) {
 	t.Run("GetPlayerByFirebaseUID", func(t *testing.T) {
-		t.Run("404 を受けたとき、ErrNotFound になる", func(t *testing.T) {
+		t.Run("404を受けたとき、ErrNotFoundになる", func(t *testing.T) {
 			srv := apiaccountserverfake.NewServer()
 			defer srv.Close()
 			srv.FindByFirebaseUIDFn = func(_ string) (int, any) { return http.StatusNotFound, nil }
@@ -98,7 +98,7 @@ func TestClient_GetPlayerByFirebaseUID(t *testing.T) {
 
 func TestClient_AwardGameExp(t *testing.T) {
 	t.Run("AwardGameExp", func(t *testing.T) {
-		t.Run("204 を受けたとき、エラーにならない", func(t *testing.T) {
+		t.Run("204を受けたとき、エラーにならない", func(t *testing.T) {
 			srv := apiaccountserverfake.NewServer()
 			defer srv.Close()
 			srv.AwardGameExpFn = func(_ apiaccount.AwardGameExpRequest) (int, any) { return http.StatusNoContent, nil }
@@ -108,7 +108,7 @@ func TestClient_AwardGameExp(t *testing.T) {
 			require.NoError(t, err)
 		})
 
-		t.Run("400 を受けたとき、ErrBadRequest になる", func(t *testing.T) {
+		t.Run("400を受けたとき、ErrBadRequestになる", func(t *testing.T) {
 			srv := apiaccountserverfake.NewServer()
 			defer srv.Close()
 			srv.AwardGameExpFn = func(_ apiaccount.AwardGameExpRequest) (int, any) { return http.StatusBadRequest, nil }
@@ -122,7 +122,7 @@ func TestClient_AwardGameExp(t *testing.T) {
 
 func TestClient_RevertBattleCount(t *testing.T) {
 	t.Run("RevertBattleCount", func(t *testing.T) {
-		t.Run("204 を受けたとき、エラーにならない", func(t *testing.T) {
+		t.Run("204を受けたとき、エラーにならない", func(t *testing.T) {
 			srv := apiaccountserverfake.NewServer()
 			defer srv.Close()
 			srv.RevertBattleCountFn = func(_ apiaccount.RevertBattleCountRequest) (int, any) { return http.StatusNoContent, nil }
@@ -132,7 +132,7 @@ func TestClient_RevertBattleCount(t *testing.T) {
 			require.NoError(t, err)
 		})
 
-		t.Run("400 を受けたとき、ErrBadRequest になる", func(t *testing.T) {
+		t.Run("400を受けたとき、ErrBadRequestになる", func(t *testing.T) {
 			srv := apiaccountserverfake.NewServer()
 			defer srv.Close()
 			srv.RevertBattleCountFn = func(_ apiaccount.RevertBattleCountRequest) (int, any) { return http.StatusBadRequest, nil }
@@ -146,7 +146,7 @@ func TestClient_RevertBattleCount(t *testing.T) {
 
 func TestClient_GetPlayer(t *testing.T) {
 	t.Run("GetPlayer", func(t *testing.T) {
-		t.Run("401 を受けたとき、ErrUnauthorized になる", func(t *testing.T) {
+		t.Run("401を受けたとき、ErrUnauthorizedになる", func(t *testing.T) {
 			srv := apiaccountserverfake.NewServer()
 			defer srv.Close()
 			srv.GetPlayerFn = func() (int, any) { return http.StatusUnauthorized, nil }
@@ -156,7 +156,7 @@ func TestClient_GetPlayer(t *testing.T) {
 			assertSentinel(t, err, apiaccountclient.ErrUnauthorized)
 		})
 
-		t.Run("宣言されていない 403 を受けたとき、エラーになり定義済みのどの分類にも一致しない", func(t *testing.T) {
+		t.Run("宣言されていない403を受けたとき、エラーになり定義済みのどの分類にも一致しない", func(t *testing.T) {
 			srv := apiaccountserverfake.NewServer()
 			defer srv.Close()
 			srv.GetPlayerFn = func() (int, any) { return http.StatusForbidden, nil }
@@ -182,12 +182,12 @@ func TestClient_UpdateName(t *testing.T) {
 			wantTarget error
 		}{
 			{
-				name:       "400 を受けたとき、ErrBadRequest になる",
+				name:       "400を受けたとき、ErrBadRequestになる",
 				status:     http.StatusBadRequest,
 				wantTarget: apiaccountclient.ErrBadRequest,
 			},
 			{
-				name:       "401 を受けたとき、ErrUnauthorized になる",
+				name:       "401を受けたとき、ErrUnauthorizedになる",
 				status:     http.StatusUnauthorized,
 				wantTarget: apiaccountclient.ErrUnauthorized,
 			},
@@ -208,7 +208,7 @@ func TestClient_UpdateName(t *testing.T) {
 
 func TestClient_ValidateNameForOnboarding(t *testing.T) {
 	t.Run("ValidateNameForOnboarding", func(t *testing.T) {
-		t.Run("204 を受けたとき、エラーにならない", func(t *testing.T) {
+		t.Run("204を受けたとき、エラーにならない", func(t *testing.T) {
 			srv := apiaccountserverfake.NewServer()
 			defer srv.Close()
 			srv.ValidateNameForOnboardingFn = func(_ apiaccount.ValidateNameForOnboardingRequest) (int, any) {
@@ -220,7 +220,7 @@ func TestClient_ValidateNameForOnboarding(t *testing.T) {
 			require.NoError(t, err)
 		})
 
-		t.Run("400 を受けたとき、ErrBadRequest になる", func(t *testing.T) {
+		t.Run("400を受けたとき、ErrBadRequestになる", func(t *testing.T) {
 			srv := apiaccountserverfake.NewServer()
 			defer srv.Close()
 			srv.ValidateNameForOnboardingFn = func(_ apiaccount.ValidateNameForOnboardingRequest) (int, any) { return http.StatusBadRequest, nil }
@@ -234,7 +234,7 @@ func TestClient_ValidateNameForOnboarding(t *testing.T) {
 
 func TestClient_GetBattleLimit(t *testing.T) {
 	t.Run("GetBattleLimit", func(t *testing.T) {
-		t.Run("401 を受けたとき、ErrUnauthorized になる", func(t *testing.T) {
+		t.Run("401を受けたとき、ErrUnauthorizedになる", func(t *testing.T) {
 			srv := apiaccountserverfake.NewServer()
 			defer srv.Close()
 			srv.GetBattleLimitFn = func() (int, any) { return http.StatusUnauthorized, nil }
@@ -248,7 +248,7 @@ func TestClient_GetBattleLimit(t *testing.T) {
 
 func TestClient_IncrementBattleCount(t *testing.T) {
 	t.Run("IncrementBattleCount", func(t *testing.T) {
-		t.Run("204 を受けたとき、エラーにならない", func(t *testing.T) {
+		t.Run("204を受けたとき、エラーにならない", func(t *testing.T) {
 			srv := apiaccountserverfake.NewServer()
 			defer srv.Close()
 			srv.IncrementBattleCountFn = func() (int, any) { return http.StatusNoContent, nil }
@@ -258,7 +258,7 @@ func TestClient_IncrementBattleCount(t *testing.T) {
 			require.NoError(t, err)
 		})
 
-		t.Run("401 を受けたとき、ErrUnauthorized になる", func(t *testing.T) {
+		t.Run("401を受けたとき、ErrUnauthorizedになる", func(t *testing.T) {
 			srv := apiaccountserverfake.NewServer()
 			defer srv.Close()
 			srv.IncrementBattleCountFn = func() (int, any) { return http.StatusUnauthorized, nil }
@@ -272,7 +272,7 @@ func TestClient_IncrementBattleCount(t *testing.T) {
 
 func TestClient_UpdatePremium(t *testing.T) {
 	t.Run("UpdatePremium", func(t *testing.T) {
-		t.Run("204 を受けたとき、エラーにならない", func(t *testing.T) {
+		t.Run("204を受けたとき、エラーにならない", func(t *testing.T) {
 			srv := apiaccountserverfake.NewServer()
 			defer srv.Close()
 			srv.UpdatePremiumFn = func(_ apiaccount.UpdatePremiumRequest) (int, any) { return http.StatusNoContent, nil }
@@ -282,7 +282,7 @@ func TestClient_UpdatePremium(t *testing.T) {
 			require.NoError(t, err)
 		})
 
-		t.Run("400 を受けたとき、ErrBadRequest になる", func(t *testing.T) {
+		t.Run("400を受けたとき、ErrBadRequestになる", func(t *testing.T) {
 			srv := apiaccountserverfake.NewServer()
 			defer srv.Close()
 			srv.UpdatePremiumFn = func(_ apiaccount.UpdatePremiumRequest) (int, any) { return http.StatusBadRequest, nil }
@@ -296,7 +296,7 @@ func TestClient_UpdatePremium(t *testing.T) {
 
 func TestClient_AddExp(t *testing.T) {
 	t.Run("AddExp", func(t *testing.T) {
-		t.Run("204 を受けたとき、エラーにならない", func(t *testing.T) {
+		t.Run("204を受けたとき、エラーにならない", func(t *testing.T) {
 			srv := apiaccountserverfake.NewServer()
 			defer srv.Close()
 			srv.AddExpFn = func(_ apiaccount.AddExpRequest) (int, any) { return http.StatusNoContent, nil }
@@ -306,7 +306,7 @@ func TestClient_AddExp(t *testing.T) {
 			require.NoError(t, err)
 		})
 
-		t.Run("400 を受けたとき、ErrBadRequest になる", func(t *testing.T) {
+		t.Run("400を受けたとき、ErrBadRequestになる", func(t *testing.T) {
 			srv := apiaccountserverfake.NewServer()
 			defer srv.Close()
 			srv.AddExpFn = func(_ apiaccount.AddExpRequest) (int, any) { return http.StatusBadRequest, nil }
@@ -320,7 +320,7 @@ func TestClient_AddExp(t *testing.T) {
 
 func TestClient_ListFactions(t *testing.T) {
 	t.Run("ListFactions", func(t *testing.T) {
-		t.Run("401 を受けたとき、ErrUnauthorized になる", func(t *testing.T) {
+		t.Run("401を受けたとき、ErrUnauthorizedになる", func(t *testing.T) {
 			srv := apiaccountserverfake.NewServer()
 			defer srv.Close()
 			srv.ListFactionsFn = func() (int, any) { return http.StatusUnauthorized, nil }
@@ -334,7 +334,7 @@ func TestClient_ListFactions(t *testing.T) {
 
 func TestClient_GrantFaction(t *testing.T) {
 	t.Run("GrantFaction", func(t *testing.T) {
-		t.Run("204 を受けたとき、エラーにならない", func(t *testing.T) {
+		t.Run("204を受けたとき、エラーにならない", func(t *testing.T) {
 			srv := apiaccountserverfake.NewServer()
 			defer srv.Close()
 			srv.GrantFactionFn = func(_ apiaccount.FactionGrantRequest) (int, any) { return http.StatusNoContent, nil }
@@ -344,7 +344,7 @@ func TestClient_GrantFaction(t *testing.T) {
 			require.NoError(t, err)
 		})
 
-		t.Run("400 を受けたとき、ErrBadRequest になる", func(t *testing.T) {
+		t.Run("400を受けたとき、ErrBadRequestになる", func(t *testing.T) {
 			srv := apiaccountserverfake.NewServer()
 			defer srv.Close()
 			srv.GrantFactionFn = func(_ apiaccount.FactionGrantRequest) (int, any) { return http.StatusBadRequest, nil }
@@ -358,7 +358,7 @@ func TestClient_GrantFaction(t *testing.T) {
 
 func TestClient_SelectInitialFaction(t *testing.T) {
 	t.Run("SelectInitialFaction", func(t *testing.T) {
-		t.Run("200 を受けたとき、エラーにならない", func(t *testing.T) {
+		t.Run("200を受けたとき、エラーにならない", func(t *testing.T) {
 			srv := apiaccountserverfake.NewServer()
 			defer srv.Close()
 			srv.SelectInitialFactionFn = func(_ apiaccount.SelectInitialFactionRequest) (int, any) { return http.StatusOK, nil }
@@ -368,7 +368,7 @@ func TestClient_SelectInitialFaction(t *testing.T) {
 			require.NoError(t, err)
 		})
 
-		t.Run("400 を受けたとき、ErrBadRequest になる", func(t *testing.T) {
+		t.Run("400を受けたとき、ErrBadRequestになる", func(t *testing.T) {
 			srv := apiaccountserverfake.NewServer()
 			defer srv.Close()
 			srv.SelectInitialFactionFn = func(_ apiaccount.SelectInitialFactionRequest) (int, any) { return http.StatusBadRequest, nil }
@@ -382,7 +382,7 @@ func TestClient_SelectInitialFaction(t *testing.T) {
 
 func TestClient_GetPlayerSettings(t *testing.T) {
 	t.Run("GetPlayerSettings", func(t *testing.T) {
-		t.Run("401 を受けたとき、ErrUnauthorized になる", func(t *testing.T) {
+		t.Run("401を受けたとき、ErrUnauthorizedになる", func(t *testing.T) {
 			srv := apiaccountserverfake.NewServer()
 			defer srv.Close()
 			srv.GetSettingsFn = func() (int, any) { return http.StatusUnauthorized, nil }
@@ -396,7 +396,7 @@ func TestClient_GetPlayerSettings(t *testing.T) {
 
 func TestClient_UpdatePlayerSettings(t *testing.T) {
 	t.Run("UpdatePlayerSettings", func(t *testing.T) {
-		t.Run("400 を受けたとき、ErrBadRequest になる", func(t *testing.T) {
+		t.Run("400を受けたとき、ErrBadRequestになる", func(t *testing.T) {
 			srv := apiaccountserverfake.NewServer()
 			defer srv.Close()
 			srv.UpdateSettingsFn = func(_ apiaccount.UpdateSettingsRequest) (int, any) { return http.StatusBadRequest, nil }

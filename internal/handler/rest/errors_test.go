@@ -89,7 +89,7 @@ func newContractEngineWithGameConfig(playerID string, gameConfig *fakeGameConfig
 func TestHandlerErrorStatusContract(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	t.Run("エラー種別の HTTP ステータス写像", func(t *testing.T) {
+	t.Run("エラー種別のHTTPステータス写像", func(t *testing.T) {
 		tests := []struct {
 			name             string
 			seed             func(t *testing.T)
@@ -102,7 +102,7 @@ func TestHandlerErrorStatusContract(t *testing.T) {
 			wantBodyContains string
 		}{
 			{
-				name:       "存在するプレイヤーを取得するとき、200 になる",
+				name:       "存在するプレイヤーを取得するとき、200になる",
 				seed:       func(t *testing.T) { seedPlayer(t, contractPlayerID, "uid-1") },
 				playerID:   contractPlayerID,
 				method:     http.MethodGet,
@@ -110,7 +110,7 @@ func TestHandlerErrorStatusContract(t *testing.T) {
 				wantStatus: http.StatusOK,
 			},
 			{
-				name:             "存在しないプレイヤーを取得するとき、not-found を 404 に写像する",
+				name:             "存在しないプレイヤーを取得するとき、not-foundを404に写像する",
 				seed:             func(t *testing.T) {},
 				playerID:         missingPlayerID,
 				method:           http.MethodGet,
@@ -119,7 +119,7 @@ func TestHandlerErrorStatusContract(t *testing.T) {
 				wantBodyContains: port.ErrNotFound.Error(),
 			},
 			{
-				name:             "更新対象のフィールドを一つも指定しない設定更新のとき、400 になり、応答本文に \"at least one settings field is required\" が含まれる",
+				name:             "更新対象のフィールドを一つも指定しない設定更新のとき、400になり、応答本文に \"at least one settings field is required\" が含まれる",
 				seed:             func(t *testing.T) {},
 				playerID:         contractPlayerID,
 				method:           http.MethodPut,
@@ -129,7 +129,7 @@ func TestHandlerErrorStatusContract(t *testing.T) {
 				wantBodyContains: "at least one settings field is required",
 			},
 			{
-				name: "初期陣営選択済みで再選択するとき、conflict を 409 に写像する",
+				name: "初期陣営選択済みで再選択するとき、conflictを409に写像する",
 				seed: func(t *testing.T) {
 					seedPlayer(t, contractPlayerID, "uid-1")
 					first := httptest.NewRequest(http.MethodPost, "/me/factions/select", strings.NewReader(`{"faction_id":"SHE"}`))
@@ -146,7 +146,7 @@ func TestHandlerErrorStatusContract(t *testing.T) {
 				wantBodyContains: usecase.ErrFactionAlreadySelected.Error(),
 			},
 			{
-				name:             "選択不可の Neutral を初期陣営に選ぶと、400 になる",
+				name:             "選択不可のNeutralを初期陣営に選ぶと、400になる",
 				seed:             func(t *testing.T) {},
 				playerID:         contractPlayerID,
 				method:           http.MethodPost,
@@ -156,7 +156,7 @@ func TestHandlerErrorStatusContract(t *testing.T) {
 				wantBodyContains: usecase.ErrInvalidFaction.Error(),
 			},
 			{
-				name:             "空白だけの表示名に更新すると、400 になる",
+				name:             "空白だけの表示名に更新すると、400になる",
 				seed:             func(t *testing.T) {},
 				playerID:         contractPlayerID,
 				method:           http.MethodPut,
@@ -166,7 +166,7 @@ func TestHandlerErrorStatusContract(t *testing.T) {
 				wantBodyContains: domain.ErrInvalidName.Error(),
 			},
 			{
-				name:     "どの種別にも分類されないエラーのとき、500 になる",
+				name:     "どの種別にも分類されないエラーのとき、500になる",
 				seed:     func(t *testing.T) { seedPlayer(t, contractPlayerID, "uid-1") },
 				playerID: contractPlayerID,
 				method:   http.MethodGet,
@@ -199,7 +199,7 @@ func TestHandlerErrorStatusContract(t *testing.T) {
 		}
 	})
 
-	t.Run("設定した無料上限まで対戦済みのとき、さらに対戦回数を増やすと 429 になり回数は増えない", func(t *testing.T) {
+	t.Run("設定した無料上限まで対戦済みのとき、さらに対戦回数を増やすと429になり回数は増えない", func(t *testing.T) {
 		sharedPg.Truncate(t)
 		seedPlayer(t, contractPlayerID, "uid-1")
 
@@ -225,7 +225,7 @@ func TestHandlerErrorStatusContract(t *testing.T) {
 		assert.Contains(t, getW.Body.String(), `"daily_battle_count":1`)
 	})
 
-	t.Run("bgm_volume だけを指定して更新すると、応答ボディの bgm_volume が更新され他の設定は維持される", func(t *testing.T) {
+	t.Run("bgm_volumeだけを指定して更新すると、応答ボディのbgm_volumeが更新され他の設定は維持される", func(t *testing.T) {
 		sharedPg.Truncate(t)
 		seedPlayer(t, contractPlayerID, "uid-1")
 		seedPlayerSettings(t, contractPlayerID, "en", 20, 40, false)
@@ -246,7 +246,7 @@ func TestHandlerErrorStatusContract(t *testing.T) {
 func TestHandlerInputGuards(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	t.Run("必須フィールド空文字ガードの 400 応答", func(t *testing.T) {
+	t.Run("必須フィールド空文字ガードの400応答", func(t *testing.T) {
 		tests := []struct {
 			name             string
 			method           string
@@ -255,56 +255,56 @@ func TestHandlerInputGuards(t *testing.T) {
 			wantBodyContains string
 		}{
 			{
-				name:             "firebase_uid が空文字の登録要求は、400 になる",
+				name:             "firebase_uidが空文字の登録要求は、400になる",
 				method:           http.MethodPost,
 				path:             "/auth/register",
 				body:             `{"firebase_uid":""}`,
 				wantBodyContains: "firebase_uid is required",
 			},
 			{
-				name:             "firebase_uid が空文字のログイン要求は、400 になる",
+				name:             "firebase_uidが空文字のログイン要求は、400になる",
 				method:           http.MethodPost,
 				path:             "/auth/login",
 				body:             `{"firebase_uid":""}`,
 				wantBodyContains: "firebase_uid is required",
 			},
 			{
-				name:             "faction_id が空文字の初期陣営選択は、400 になる",
+				name:             "faction_idが空文字の初期陣営選択は、400になる",
 				method:           http.MethodPost,
 				path:             "/me/factions/select",
 				body:             `{"faction_id":""}`,
 				wantBodyContains: "faction_id is required",
 			},
 			{
-				name:             "faction が空文字の陣営付与は、400 になる",
+				name:             "factionが空文字の陣営付与は、400になる",
 				method:           http.MethodPost,
 				path:             "/me/factions",
 				body:             `{"faction":""}`,
 				wantBodyContains: "faction is required",
 			},
 			{
-				name:             "game_id が空文字の消費バトル回数返却は、400 になる",
+				name:             "game_idが空文字の消費バトル回数返却は、400になる",
 				method:           http.MethodPost,
 				path:             "/internal/v1/players/revert-battle-count",
 				body:             `{"game_id":"","player1_id":"p1","player2_id":"p2","consumed_at_millis":1700000000000}`,
 				wantBodyContains: "game_id is required",
 			},
 			{
-				name:             "player1_id が空文字の消費バトル回数返却は、400 になる",
+				name:             "player1_idが空文字の消費バトル回数返却は、400になる",
 				method:           http.MethodPost,
 				path:             "/internal/v1/players/revert-battle-count",
 				body:             `{"game_id":"g1","player1_id":"","player2_id":"p2","consumed_at_millis":1700000000000}`,
 				wantBodyContains: "player1_id is required",
 			},
 			{
-				name:             "player2_id が空文字の消費バトル回数返却は、400 になる",
+				name:             "player2_idが空文字の消費バトル回数返却は、400になる",
 				method:           http.MethodPost,
 				path:             "/internal/v1/players/revert-battle-count",
 				body:             `{"game_id":"g1","player1_id":"p1","player2_id":"","consumed_at_millis":1700000000000}`,
 				wantBodyContains: "player2_id is required",
 			},
 			{
-				name:             "consumed_at_millis が 0 の消費バトル回数返却は、400 になる",
+				name:             "consumed_at_millisが0の消費バトル回数返却は、400になる",
 				method:           http.MethodPost,
 				path:             "/internal/v1/players/revert-battle-count",
 				body:             `{"game_id":"g1","player1_id":"p1","player2_id":"p2","consumed_at_millis":0}`,
@@ -325,7 +325,7 @@ func TestHandlerInputGuards(t *testing.T) {
 		}
 	})
 
-	t.Run("壊れた JSON を送ったときの 400 応答", func(t *testing.T) {
+	t.Run("壊れたJSONを送ったときの400応答", func(t *testing.T) {
 		tests := []struct {
 			name   string
 			method string

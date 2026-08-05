@@ -13,7 +13,7 @@ import (
 )
 
 func TestHandleMessagePremiumUpdated(t *testing.T) {
-	t.Run("premium_updated イベントの処理", func(t *testing.T) {
+	t.Run("premium_updatedイベントの処理", func(t *testing.T) {
 		const existingEventID = "aaaaaaaa-1111-1111-1111-aaaaaaaaaaaa"
 		expiry := time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC)
 
@@ -30,7 +30,7 @@ func TestHandleMessagePremiumUpdated(t *testing.T) {
 			assertRepos     func(t *testing.T, premiumRepo *fakePremiumRepo)
 		}{
 			{
-				name: "premium=true + expiry を受けたとき、players に反映して成功になる",
+				name: "premium=true + expiryを受けたとき、playersに反映して成功になる",
 				payload: mustMarshal(t, apishop.PremiumUpdatedEvent{
 					EventType:        apishop.EventTypePremiumUpdated,
 					EventID:          "bbbbbbbb-0001-0001-0001-000000000001",
@@ -48,7 +48,7 @@ func TestHandleMessagePremiumUpdated(t *testing.T) {
 				},
 			},
 			{
-				name: "premium=false を受けたとき、players に反映して成功になる",
+				name: "premium=falseを受けたとき、playersに反映して成功になる",
 				payload: mustMarshal(t, apishop.PremiumUpdatedEvent{
 					EventType: apishop.EventTypePremiumUpdated,
 					EventID:   "bbbbbbbb-0002-0002-0002-000000000002",
@@ -64,7 +64,7 @@ func TestHandleMessagePremiumUpdated(t *testing.T) {
 				},
 			},
 			{
-				name: "同一 event_id が processed_events に既にあるとき、副作用なしで成功になる",
+				name: "同一event_idがprocessed_eventsに既にあるとき、副作用なしで成功になる",
 				payload: mustMarshal(t, apishop.PremiumUpdatedEvent{
 					EventType: apishop.EventTypePremiumUpdated,
 					EventID:   existingEventID,
@@ -79,7 +79,7 @@ func TestHandleMessagePremiumUpdated(t *testing.T) {
 				},
 			},
 			{
-				name:            "不正な JSON のとき、握りつぶさず失敗になる",
+				name:            "不正なJSONのとき、握りつぶさず失敗になる",
 				payload:         []byte("{malformed"),
 				wantErr:         true,
 				wantErrContains: "premium-updated: bad payload",
@@ -88,7 +88,7 @@ func TestHandleMessagePremiumUpdated(t *testing.T) {
 				},
 			},
 			{
-				name: "未知の event_type のとき、責務外として副作用なく成功になる",
+				name: "未知のevent_typeのとき、責務外として副作用なく成功になる",
 				payload: mustMarshal(t, apishop.PremiumUpdatedEvent{
 					EventType: "unknown",
 					EventID:   "bbbbbbbb-0003-0003-0003-000000000003",
@@ -101,7 +101,7 @@ func TestHandleMessagePremiumUpdated(t *testing.T) {
 				},
 			},
 			{
-				name: "processed_events への INSERT が失敗するとき、UpdatePremium まで到達せず失敗になる",
+				name: "processed_eventsへのINSERTが失敗するとき、UpdatePremiumまで到達せず失敗になる",
 				payload: mustMarshal(t, apishop.PremiumUpdatedEvent{
 					EventType: apishop.EventTypePremiumUpdated,
 					EventID:   "bbbbbbbb-0004-0004-0004-000000000004",
@@ -116,7 +116,7 @@ func TestHandleMessagePremiumUpdated(t *testing.T) {
 				},
 			},
 			{
-				name: "UpdatePremium が失敗するとき、tx rollback で副作用を残さず失敗になる",
+				name: "UpdatePremiumが失敗するとき、tx rollbackで副作用を残さず失敗になる",
 				payload: mustMarshal(t, apishop.PremiumUpdatedEvent{
 					EventType: apishop.EventTypePremiumUpdated,
 					EventID:   "bbbbbbbb-0005-0005-0005-000000000005",

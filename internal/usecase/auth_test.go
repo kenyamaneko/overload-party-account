@@ -46,11 +46,11 @@ func TestRegister(t *testing.T) {
 			firebaseUID string
 		}{
 			{
-				name:        "firebase_uid=firebase-uid-1 で新規登録するとき、name 未設定・level=1 の player が作られる",
+				name:        "firebase_uid=firebase-uid-1で新規登録するとき、name未設定・level=1のplayerが作られる",
 				firebaseUID: "firebase-uid-1",
 			},
 			{
-				name:        "firebase_uid=firebase-uid-2 で新規登録するとき、name 未設定・level=1 の player が作られる",
+				name:        "firebase_uid=firebase-uid-2で新規登録するとき、name未設定・level=1のplayerが作られる",
 				firebaseUID: "firebase-uid-2",
 			},
 		}
@@ -103,7 +103,7 @@ func TestRegister(t *testing.T) {
 			})
 		}
 
-		t.Run("同一 firebase_uid で再登録するとき、ErrPlayerAlreadyRegistered になる", func(t *testing.T) {
+		t.Run("同一firebase_uidで再登録するとき、ErrPlayerAlreadyRegisteredになる", func(t *testing.T) {
 			sharedPg.Truncate(t)
 			svc := newAuthTestInteractor()
 
@@ -137,7 +137,7 @@ func TestRegister(t *testing.T) {
 
 func TestLogin(t *testing.T) {
 	t.Run("プレイヤーログイン", func(t *testing.T) {
-		t.Run("登録済み firebase_uid でログインするとき、同じ player を返す", func(t *testing.T) {
+		t.Run("登録済みfirebase_uidでログインするとき、同じplayerを返す", func(t *testing.T) {
 			ctx := context.Background()
 			sharedPg.Truncate(t)
 			svc := newAuthTestInteractor()
@@ -152,7 +152,7 @@ func TestLogin(t *testing.T) {
 			assert.Nil(t, loggedIn.Name)
 		})
 
-		t.Run("未登録 firebase_uid でログインするとき、ErrPlayerNotFound になる", func(t *testing.T) {
+		t.Run("未登録firebase_uidでログインするとき、ErrPlayerNotFoundになる", func(t *testing.T) {
 			sharedPg.Truncate(t)
 			svc := newAuthTestInteractor()
 
@@ -180,8 +180,8 @@ func TestLogin(t *testing.T) {
 func TestFindByFirebaseUID(t *testing.T) {
 	ctx := context.Background()
 
-	t.Run("firebase_uid によるプレイヤー参照", func(t *testing.T) {
-		t.Run("登録済みの firebase_uid で参照すると、そのプレイヤーが返る", func(t *testing.T) {
+	t.Run("firebase_uidによるプレイヤー参照", func(t *testing.T) {
+		t.Run("登録済みのfirebase_uidで参照すると、そのプレイヤーが返る", func(t *testing.T) {
 			sharedPg.Truncate(t)
 			svc := newAuthTestInteractor()
 			registered, err := svc.Register(ctx, "firebase-uid-find")
@@ -192,7 +192,7 @@ func TestFindByFirebaseUID(t *testing.T) {
 			assert.Equal(t, registered.PlayerID, found.PlayerID)
 		})
 
-		t.Run("未登録の firebase_uid で参照すると、port.ErrNotFound になる", func(t *testing.T) {
+		t.Run("未登録のfirebase_uidで参照すると、port.ErrNotFoundになる", func(t *testing.T) {
 			sharedPg.Truncate(t)
 			svc := newAuthTestInteractor()
 
@@ -204,7 +204,7 @@ func TestFindByFirebaseUID(t *testing.T) {
 
 func TestRegisterThenUpdateName(t *testing.T) {
 	t.Run("オンボーディング動線 (Register→UpdateName→Login)", func(t *testing.T) {
-		t.Run("Register で name 未設定の行を作り、UpdateName で表示名が確定して Login 後も残る", func(t *testing.T) {
+		t.Run("Registerでname未設定の行を作り、UpdateNameで表示名が確定してLogin後も残る", func(t *testing.T) {
 			// 途中でゲームを落として再起動しても Register をやり直さない設計の基礎として、
 			// Register が name 未設定の行を作り、確定は後続の UpdateName に委ねることを固定する。
 			ctx := context.Background()

@@ -129,7 +129,7 @@ func TestNewAuthFreeRoutesReachRealHandler(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	t.Run("認証不要の内部ルート", func(t *testing.T) {
-		t.Run("新規 Firebase UID で登録すると、採番されたプレイヤーID と登録した UID が返る", func(t *testing.T) {
+		t.Run("新規Firebase UIDで登録すると、採番されたプレイヤーIDと登録したUIDが返る", func(t *testing.T) {
 			sharedPg.Truncate(t)
 			r := newIntegrationRouter()
 
@@ -142,7 +142,7 @@ func TestNewAuthFreeRoutesReachRealHandler(t *testing.T) {
 			assert.Equal(t, "uid-register", got.FirebaseUID)
 		})
 
-		t.Run("登録済みの Firebase UID でログインすると、そのプレイヤーが返る", func(t *testing.T) {
+		t.Run("登録済みのFirebase UIDでログインすると、そのプレイヤーが返る", func(t *testing.T) {
 			sharedPg.Truncate(t)
 			r := newIntegrationRouter()
 			seedPlayer(t, routerTestPlayerLogin, "uid-login")
@@ -155,7 +155,7 @@ func TestNewAuthFreeRoutesReachRealHandler(t *testing.T) {
 			assert.Equal(t, routerTestPlayerLogin, got.PlayerID)
 		})
 
-		t.Run("登録済みの Firebase UID を照会すると、そのプレイヤーが返る", func(t *testing.T) {
+		t.Run("登録済みのFirebase UIDを照会すると、そのプレイヤーが返る", func(t *testing.T) {
 			sharedPg.Truncate(t)
 			r := newIntegrationRouter()
 			seedPlayer(t, routerTestPlayerLookup, "uid-lookup")
@@ -199,7 +199,7 @@ func TestNewAuthFreeRoutesReachRealHandler(t *testing.T) {
 			assert.Positive(t, winnerExp)
 		})
 
-		t.Run("停止で無効になった対戦の消費バトル回数を戻すと、両プレイヤーの当日カウントが 1 減る", func(t *testing.T) {
+		t.Run("停止で無効になった対戦の消費バトル回数を戻すと、両プレイヤーの当日カウントが1減る", func(t *testing.T) {
 			sharedPg.Truncate(t)
 			r := newIntegrationRouter()
 			seedPlayer(t, routerTestPlayerRevert1, "uid-revert-1")
@@ -235,8 +235,8 @@ func TestNewAuthFreeRoutesReachRealHandler(t *testing.T) {
 func TestNewPubsubPushRoutesReachRealHandler(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	t.Run("認証不要の Pub/Sub push 受け口", func(t *testing.T) {
-		t.Run("faction-acquired の push を受けると、player_factions に is_initial=FALSE で追加される", func(t *testing.T) {
+	t.Run("認証不要のPub/Sub push受け口", func(t *testing.T) {
+		t.Run("faction-acquiredのpushを受けると、player_factionsにis_initial=FALSEで追加される", func(t *testing.T) {
 			sharedPg.Truncate(t)
 			r := newIntegrationRouter()
 			seedPlayer(t, routerTestPlayerFactionAcquired, "uid-push-faction-acquired")
@@ -256,7 +256,7 @@ func TestNewPubsubPushRoutesReachRealHandler(t *testing.T) {
 			assert.False(t, isInitial)
 		})
 
-		t.Run("faction-acquired の push を同じ event_id で内容の異なる push として二度受けても、最初の内容だけが反映される", func(t *testing.T) {
+		t.Run("faction-acquiredのpushを同じevent_idで内容の異なるpushとして二度受けても、最初の内容だけが反映される", func(t *testing.T) {
 			sharedPg.Truncate(t)
 			r := newIntegrationRouter()
 			seedPlayer(t, routerTestPlayerFactionAcquiredDup, "uid-push-faction-acquired-dup")
@@ -292,7 +292,7 @@ func TestNewPubsubPushRoutesReachRealHandler(t *testing.T) {
 			assert.Equal(t, "SHE", faction, "最初の push の内容だけが反映される")
 		})
 
-		t.Run("premium-updated の push を受けると、players.is_premium が更新される", func(t *testing.T) {
+		t.Run("premium-updatedのpushを受けると、players.is_premiumが更新される", func(t *testing.T) {
 			sharedPg.Truncate(t)
 			r := newIntegrationRouter()
 			seedPlayer(t, routerTestPlayerPremiumUpdated, "uid-push-premium-updated")
@@ -312,7 +312,7 @@ func TestNewPubsubPushRoutesReachRealHandler(t *testing.T) {
 			assert.True(t, isPremium)
 		})
 
-		t.Run("onboarding-name-set の push を受けると、players.name が更新される", func(t *testing.T) {
+		t.Run("onboarding-name-setのpushを受けると、players.nameが更新される", func(t *testing.T) {
 			sharedPg.Truncate(t)
 			r := newIntegrationRouter()
 			seedPlayer(t, routerTestPlayerOnboardingNameSet, "uid-push-onboarding-name-set")
@@ -332,7 +332,7 @@ func TestNewPubsubPushRoutesReachRealHandler(t *testing.T) {
 			assert.Equal(t, "PushName", name)
 		})
 
-		t.Run("onboarding-faction-set の push を受けると、player_factions に is_initial=TRUE で追加される", func(t *testing.T) {
+		t.Run("onboarding-faction-setのpushを受けると、player_factionsにis_initial=TRUEで追加される", func(t *testing.T) {
 			sharedPg.Truncate(t)
 			r := newIntegrationRouter()
 			seedPlayer(t, routerTestPlayerOnboardingFactionSet, "uid-push-onboarding-faction-set")
@@ -352,7 +352,7 @@ func TestNewPubsubPushRoutesReachRealHandler(t *testing.T) {
 			assert.True(t, isInitial)
 		})
 
-		t.Run("player-onboarded の push を受けると、onboarding_status が completed になる", func(t *testing.T) {
+		t.Run("player-onboardedのpushを受けると、onboarding_statusがcompletedになる", func(t *testing.T) {
 			sharedPg.Truncate(t)
 			r := newIntegrationRouter()
 			seedPlayer(t, routerTestPlayerPlayerOnboarded, "uid-push-player-onboarded")

@@ -14,7 +14,7 @@ import (
 
 func TestServer(t *testing.T) {
 	t.Run("サーバフェイク", func(t *testing.T) {
-		t.Run("RegisterFn は request body を typed で受け取り、name 未設定の Player を返す", func(t *testing.T) {
+		t.Run("RegisterFnはrequest bodyをtypedで受け取り、name未設定のPlayerを返す", func(t *testing.T) {
 			srv := apiaccountserverfake.NewServer()
 			defer srv.Close()
 
@@ -45,7 +45,7 @@ func TestServer(t *testing.T) {
 			assert.Nil(t, decoded.Name)
 		})
 
-		t.Run("FindByFirebaseUID は path variable から Firebase UID を抽出して Fn に渡す", func(t *testing.T) {
+		t.Run("FindByFirebaseUIDはpath variableからFirebase UIDを抽出してFnに渡す", func(t *testing.T) {
 			srv := apiaccountserverfake.NewServer()
 			defer srv.Close()
 
@@ -64,7 +64,7 @@ func TestServer(t *testing.T) {
 			assert.Equal(t, "uid-xyz", gotUID)
 		})
 
-		t.Run("UpdateNameFn は body のみを typed で受け取る", func(t *testing.T) {
+		t.Run("UpdateNameFnはbodyのみをtypedで受け取る", func(t *testing.T) {
 			// player-scoped endpoint の playerID は path になく JWT sub から取得する規約のため、
 			// fake の Fn には露出せず body だけを受け取る。
 			srv := apiaccountserverfake.NewServer()
@@ -88,7 +88,7 @@ func TestServer(t *testing.T) {
 			assert.Equal(t, "bob", gotReq.Name)
 		})
 
-		t.Run("AwardGameExpFn は playerID を持たず body のみで player 2 名を受け取る", func(t *testing.T) {
+		t.Run("AwardGameExpFnはplayerIDを持たずbodyのみでplayer 2名を受け取る", func(t *testing.T) {
 			// award-game-exp は battle が直接呼ぶサーバー間バッチのため /internal 配下に置き、
 			// player 2 名を body で渡す。
 			srv := apiaccountserverfake.NewServer()
@@ -115,7 +115,7 @@ func TestServer(t *testing.T) {
 			assert.Equal(t, int64(1), gotReq.WinnerNum)
 		})
 
-		t.Run("RevertBattleCountFn は playerID を持たず body のみで player 2 名と対戦識別子を受け取る", func(t *testing.T) {
+		t.Run("RevertBattleCountFnはplayerIDを持たずbodyのみでplayer 2名と対戦識別子を受け取る", func(t *testing.T) {
 			// revert-battle-count は gateway の停止時処理が直接呼ぶサーバー間バッチのため
 			// /internal 配下に置き、player 2 名を body で渡す。
 			srv := apiaccountserverfake.NewServer()

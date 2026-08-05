@@ -43,7 +43,7 @@ func (f *fakeOnboardingFactionSetApplier) ApplyFactionSet(
 }
 
 func TestHandleMessageOnboardingFactionSet(t *testing.T) {
-	t.Run("onboarding_faction_set イベントの処理", func(t *testing.T) {
+	t.Run("onboarding_faction_setイベントの処理", func(t *testing.T) {
 		const validEventID = "11111111-1111-1111-1111-111111111111"
 		validPayload := mustMarshal(t, apiscenario.OnboardingFactionSetEvent{
 			EventType:        apiscenario.EventTypeOnboardingFactionSet,
@@ -62,7 +62,7 @@ func TestHandleMessageOnboardingFactionSet(t *testing.T) {
 			assertApplier   func(t *testing.T, a *fakeOnboardingFactionSetApplier)
 		}{
 			{
-				name:            "usecase が processed=true を返すとき、applier に委譲して成功になる",
+				name:            "usecaseがprocessed=trueを返すとき、applierに委譲して成功になる",
 				payload:         validPayload,
 				returnProcessed: true,
 				wantErr:         false,
@@ -75,7 +75,7 @@ func TestHandleMessageOnboardingFactionSet(t *testing.T) {
 				},
 			},
 			{
-				name:            "usecase が processed=false を返すとき、副作用なしで成功になる",
+				name:            "usecaseがprocessed=falseを返すとき、副作用なしで成功になる",
 				payload:         validPayload,
 				returnProcessed: false,
 				wantErr:         false,
@@ -84,7 +84,7 @@ func TestHandleMessageOnboardingFactionSet(t *testing.T) {
 				},
 			},
 			{
-				name:            "不正な JSON のとき、applier に到達せず失敗になる",
+				name:            "不正なJSONのとき、applierに到達せず失敗になる",
 				payload:         []byte("broken"),
 				wantErr:         true,
 				wantErrContains: "onboarding-faction-set: bad payload",
@@ -93,7 +93,7 @@ func TestHandleMessageOnboardingFactionSet(t *testing.T) {
 				},
 			},
 			{
-				name: "未知の event_type のとき、applier に到達せず責務外として成功になる",
+				name: "未知のevent_typeのとき、applierに到達せず責務外として成功になる",
 				payload: mustMarshal(t, apiscenario.OnboardingFactionSetEvent{
 					EventType:        "unknown",
 					EventID:          "22222222-2222-2222-2222-222222222222",
@@ -106,7 +106,7 @@ func TestHandleMessageOnboardingFactionSet(t *testing.T) {
 				},
 			},
 			{
-				name: "player_id が欠落するとき、applier に到達せず失敗になる",
+				name: "player_idが欠落するとき、applierに到達せず失敗になる",
 				payload: mustMarshal(t, apiscenario.OnboardingFactionSetEvent{
 					EventType:        apiscenario.EventTypeOnboardingFactionSet,
 					EventID:          "33333333-3333-3333-3333-333333333333",
@@ -119,7 +119,7 @@ func TestHandleMessageOnboardingFactionSet(t *testing.T) {
 				},
 			},
 			{
-				name: "initial_faction_id が欠落するとき、applier に到達せず失敗になる",
+				name: "initial_faction_idが欠落するとき、applierに到達せず失敗になる",
 				payload: mustMarshal(t, apiscenario.OnboardingFactionSetEvent{
 					EventType: apiscenario.EventTypeOnboardingFactionSet,
 					EventID:   "44444444-4444-4444-4444-444444444444",
@@ -132,7 +132,7 @@ func TestHandleMessageOnboardingFactionSet(t *testing.T) {
 				},
 			},
 			{
-				name:            "usecase が汎用エラーを返すとき、失敗になる",
+				name:            "usecaseが汎用エラーを返すとき、失敗になる",
 				payload:         validPayload,
 				returnErr:       errors.New("db error"),
 				wantErr:         true,
@@ -142,7 +142,7 @@ func TestHandleMessageOnboardingFactionSet(t *testing.T) {
 				},
 			},
 			{
-				name:            "既に別の初期ファクションが設定済みで usecase が ErrFactionConflict を返すとき、publisher バグとして失敗になる",
+				name:            "既に別の初期ファクションが設定済みでusecaseがErrFactionConflictを返すとき、publisherバグとして失敗になる",
 				payload:         validPayload,
 				returnErr:       usecase.ErrFactionConflict,
 				wantErr:         true,
