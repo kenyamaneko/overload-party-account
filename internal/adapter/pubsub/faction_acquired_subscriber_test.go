@@ -12,7 +12,7 @@ import (
 )
 
 func TestHandleMessageFactionAcquired(t *testing.T) {
-	t.Run("faction_acquired イベントの処理", func(t *testing.T) {
+	t.Run("faction_acquiredイベントの処理", func(t *testing.T) {
 		const existingEventID = "11111111-1111-1111-1111-111111111111"
 
 		// 契約検証は apishop 側の型をそのまま使う。shop が schema を変えたら本テストが
@@ -28,7 +28,7 @@ func TestHandleMessageFactionAcquired(t *testing.T) {
 			assertRepos     func(t *testing.T, factionRepo *fakeFactionRepo, eventRepo *fakeProcessedEventRepo)
 		}{
 			{
-				name: "有効な faction_acquired を受けたとき、player_factions に is_initial=FALSE で追加して成功になる",
+				name: "有効なfaction_acquiredを受けたとき、player_factionsにis_initial=FALSEで追加して成功になる",
 				payload: mustMarshal(t, apishop.FactionAcquiredEvent{
 					EventType: apishop.EventTypeFactionAcquired,
 					EventID:   "aaaaaaaa-0001-0001-0001-000000000001",
@@ -44,7 +44,7 @@ func TestHandleMessageFactionAcquired(t *testing.T) {
 				},
 			},
 			{
-				name: "同一 event_id が processed_events に既にあるとき、副作用なしで成功になる",
+				name: "同一event_idがprocessed_eventsに既にあるとき、副作用なしで成功になる",
 				payload: mustMarshal(t, apishop.FactionAcquiredEvent{
 					EventType: apishop.EventTypeFactionAcquired,
 					EventID:   existingEventID,
@@ -58,7 +58,7 @@ func TestHandleMessageFactionAcquired(t *testing.T) {
 				},
 			},
 			{
-				name:            "不正な JSON のとき、握りつぶさず失敗になる",
+				name:            "不正なJSONのとき、握りつぶさず失敗になる",
 				payload:         []byte("{not-json"),
 				wantErr:         true,
 				wantErrContains: "faction-acquired: bad payload",
@@ -67,7 +67,7 @@ func TestHandleMessageFactionAcquired(t *testing.T) {
 				},
 			},
 			{
-				name: "未知の event_type のとき、責務外として副作用なく成功になる",
+				name: "未知のevent_typeのとき、責務外として副作用なく成功になる",
 				payload: mustMarshal(t, apishop.FactionAcquiredEvent{
 					EventType: "unknown",
 					EventID:   "aaaaaaaa-0002-0002-0002-000000000002",
@@ -80,7 +80,7 @@ func TestHandleMessageFactionAcquired(t *testing.T) {
 				},
 			},
 			{
-				name: "processed_events への INSERT が失敗するとき、失敗になる",
+				name: "processed_eventsへのINSERTが失敗するとき、失敗になる",
 				payload: mustMarshal(t, apishop.FactionAcquiredEvent{
 					EventType: apishop.EventTypeFactionAcquired,
 					EventID:   "aaaaaaaa-0003-0003-0003-000000000003",
@@ -95,7 +95,7 @@ func TestHandleMessageFactionAcquired(t *testing.T) {
 				},
 			},
 			{
-				name: "player_factions への追加が失敗するとき、副作用を残さず失敗になる",
+				name: "player_factionsへの追加が失敗するとき、副作用を残さず失敗になる",
 				payload: mustMarshal(t, apishop.FactionAcquiredEvent{
 					EventType: apishop.EventTypeFactionAcquired,
 					EventID:   "aaaaaaaa-0004-0004-0004-000000000004",

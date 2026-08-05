@@ -20,7 +20,7 @@ func TestInsert_ProcessedEvent(t *testing.T) {
 	repo := postgres.NewProcessedEventRepository(sharedPg.Pool)
 	ctx := context.Background()
 
-	t.Run("processed_events への INSERT", func(t *testing.T) {
+	t.Run("processed_eventsへのINSERT", func(t *testing.T) {
 		// 冪等性ガード: 初回は created=true、重複 event_id は ON CONFLICT DO NOTHING で
 		// created=false を返し、Pub/Sub の重複配信を検出する。
 		noPreInsert := func(*testing.T) {}
@@ -37,12 +37,12 @@ func TestInsert_ProcessedEvent(t *testing.T) {
 			wantCreated bool
 		}{
 			{
-				name:        "初回挿入のとき、created=true になる",
+				name:        "初回挿入のとき、created=trueになる",
 				preInsert:   noPreInsert,
 				wantCreated: true,
 			},
 			{
-				name:        "既存 event_id のとき、created=false になる (冪等ガード)",
+				name:        "既存event_idのとき、created=falseになる (冪等ガード)",
 				preInsert:   preInsertSameEvent,
 				wantCreated: false,
 			},

@@ -23,7 +23,7 @@ func TestAddPlayerFaction(t *testing.T) {
 	repo := postgres.NewFactionRepository(sharedPg.Pool)
 	ctx := context.Background()
 
-	t.Run("player_factions への追加", func(t *testing.T) {
+	t.Run("player_factionsへの追加", func(t *testing.T) {
 		tests := []struct {
 			name      string
 			adds      []string // 追加対象 faction 名 (testPlayerID1)
@@ -206,14 +206,14 @@ func TestGetPlayerFactions(t *testing.T) {
 				wantList: []string{},
 			},
 			{
-				name: "単一ファクションを所持するとき、その 1 件を返す",
+				name: "単一ファクションを所持するとき、その1件を返す",
 				seed: []factionAdd{
 					{playerID: testPlayerID1, faction: "SHE", isInitial: true},
 				},
 				wantList: []string{"SHE"},
 			},
 			{
-				name: "initial と非 initial が混在して所持するとき、全件を返す",
+				name: "initialと非initialが混在して所持するとき、全件を返す",
 				seed: []factionAdd{
 					{playerID: testPlayerID1, faction: "SHE", isInitial: true},
 					{playerID: testPlayerID1, faction: "Tenki", isInitial: false},
@@ -250,19 +250,19 @@ func TestGetInitialFaction(t *testing.T) {
 			want *string
 		}{
 			{
-				name: "未選択のとき、nil を返す",
+				name: "未選択のとき、nilを返す",
 				seed: nil,
 				want: nil,
 			},
 			{
-				name: "is_initial=FALSE の行のみのとき、nil を返す",
+				name: "is_initial=FALSEの行のみのとき、nilを返す",
 				seed: []factionAdd{
 					{playerID: testPlayerID1, faction: "SHE", isInitial: false},
 				},
 				want: nil,
 			},
 			{
-				name: "is_initial=TRUE の行があるとき、その faction 名を返す",
+				name: "is_initial=TRUEの行があるとき、そのfaction名を返す",
 				seed: []factionAdd{
 					{playerID: testPlayerID1, faction: "SHE", isInitial: false},
 					{playerID: testPlayerID1, faction: "Tenki", isInitial: true},

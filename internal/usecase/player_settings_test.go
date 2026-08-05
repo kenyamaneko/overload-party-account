@@ -66,7 +66,7 @@ func TestGet(t *testing.T) {
 			})
 		}
 
-		t.Run("player_settings 行が無いとき、port.ErrNotFound になる", func(t *testing.T) {
+		t.Run("player_settings行が無いとき、port.ErrNotFoundになる", func(t *testing.T) {
 			// Register と同一 Tx で必ず INSERT される契約なので、行が無いのは未実施または
 			// 不整合の症状であり、デフォルト値で隠さずエラーにする。
 			sharedPg.Truncate(t)
@@ -93,7 +93,7 @@ func TestUpdate(t *testing.T) {
 			wantPush bool
 		}{
 			{
-				name:     "Language だけ指定するとき、他項目はシード値のまま維持される",
+				name:     "Languageだけ指定するとき、他項目はシード値のまま維持される",
 				patch:    &port.PlayerSettingsPatch{Language: ptr("en")},
 				wantLang: "en",
 				wantBgm:  50,
@@ -133,7 +133,7 @@ func TestUpdate(t *testing.T) {
 			})
 		}
 
-		t.Run("player_settings 行が未登録のとき、port.ErrNotFound になる", func(t *testing.T) {
+		t.Run("player_settings行が未登録のとき、port.ErrNotFoundになる", func(t *testing.T) {
 			// 通常は Register で Insert されるため発生しないが、契約として担保する。
 			sharedPg.Truncate(t)
 			seedPlayer(t, testPlayerID1, "uid-1", "Alice", false)
@@ -143,7 +143,7 @@ func TestUpdate(t *testing.T) {
 			require.ErrorIs(t, err, port.ErrNotFound)
 		})
 
-		t.Run("設定を更新するとき、updated_at が前進する", func(t *testing.T) {
+		t.Run("設定を更新するとき、updated_atが前進する", func(t *testing.T) {
 			// updated_at の前進は監査やキャッシュ無効化の基盤。実際の書き換えは
 			// BEFORE UPDATE トリガー trg_player_settings_updated_at が now() で行う。
 			sharedPg.Truncate(t)

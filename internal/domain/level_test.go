@@ -31,7 +31,7 @@ func TestComputeLevel(t *testing.T) {
 				wantLevel:    1,
 			},
 			{
-				name:         "新経験値が次レベル閾値ちょうどのとき、レベルが 1 上がる",
+				name:         "新経験値が次レベル閾値ちょうどのとき、レベルが1上がる",
 				newExp:       levelStartExp(2),
 				currentLevel: 1,
 				wantLevel:    2,
@@ -43,13 +43,13 @@ func TestComputeLevel(t *testing.T) {
 				wantLevel:    4,
 			},
 			{
-				name:         "現在レベル 3 で次レベル閾値未満のとき、レベルは 3 のまま",
+				name:         "現在レベル3で次レベル閾値未満のとき、レベルは3のまま",
 				newExp:       levelStartExp(4) - 1,
 				currentLevel: 3,
 				wantLevel:    3,
 			},
 			{
-				name:         "新経験値が 0 でも、現在レベルより下がらない",
+				name:         "新経験値が0でも、現在レベルより下がらない",
 				newExp:       0,
 				currentLevel: 5,
 				wantLevel:    5,
@@ -68,8 +68,8 @@ func TestComputeLevel(t *testing.T) {
 			newExp       int64
 			currentLevel int64
 		}{
-			{name: "currentLevel が 0 のとき、エラーになる", newExp: 0, currentLevel: 0},
-			{name: "currentLevel が -1 のとき、エラーになる", newExp: 0, currentLevel: -1},
+			{name: "currentLevelが0のとき、エラーになる", newExp: 0, currentLevel: 0},
+			{name: "currentLevelが -1のとき、エラーになる", newExp: 0, currentLevel: -1},
 		}
 		for _, tc := range invalidCases {
 			t.Run(tc.name, func(t *testing.T) {
@@ -89,19 +89,19 @@ func TestComputeExpProgress(t *testing.T) {
 			wantExp *domain.LevelProgress
 		}{
 			{
-				name:    "level=1 / exp=0 (初期状態) のとき、LevelExpCurrent=0・LevelExpRequired=240 になる",
+				name:    "level=1 / exp=0 (初期状態)のとき、LevelExpCurrent=0・LevelExpRequired=240になる",
 				level:   1,
 				exp:     0,
 				wantExp: &domain.LevelProgress{LevelExpCurrent: 0, LevelExpRequired: 240},
 			},
 			{
-				name:    "level=2 開始ちょうどのとき、LevelExpCurrent=0 になる",
+				name:    "level=2開始ちょうどのとき、LevelExpCurrent=0になる",
 				level:   2,
 				exp:     levelStartExp(2),
 				wantExp: &domain.LevelProgress{LevelExpCurrent: 0, LevelExpRequired: 300},
 			},
 			{
-				name:    "現レベル内で進捗中 (level=2 / exp=500) のとき、LevelExpCurrent=260 になる",
+				name:    "現レベル内で進捗中 (level=2 / exp=500)のとき、LevelExpCurrent=260になる",
 				level:   2,
 				exp:     500,
 				wantExp: &domain.LevelProgress{LevelExpCurrent: 260, LevelExpRequired: 300},
@@ -120,9 +120,9 @@ func TestComputeExpProgress(t *testing.T) {
 			level int64
 			exp   int64
 		}{
-			{name: "level が 0 のとき、エラーになる", level: 0, exp: 0},
-			{name: "level が -1 のとき、エラーになる", level: -1, exp: 0},
-			{name: "exp が現レベル開始閾値未満 (level=3 / exp=0) のとき、整合性エラーになる", level: 3, exp: 0},
+			{name: "levelが0のとき、エラーになる", level: 0, exp: 0},
+			{name: "levelが -1のとき、エラーになる", level: -1, exp: 0},
+			{name: "expが現レベル開始閾値未満 (level=3 / exp=0)のとき、整合性エラーになる", level: 3, exp: 0},
 		}
 		for _, tc := range invalidCases {
 			t.Run(tc.name, func(t *testing.T) {

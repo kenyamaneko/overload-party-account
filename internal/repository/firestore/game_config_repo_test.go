@@ -40,8 +40,8 @@ func TestGetInt64(t *testing.T) {
 	repo := accountfirestore.NewGameConfigRepository(sharedClient)
 	ctx := context.Background()
 
-	t.Run("game_config の取得", func(t *testing.T) {
-		t.Run("数値 42 を持つキーを読むと、42 が返る", func(t *testing.T) {
+	t.Run("game_configの取得", func(t *testing.T) {
+		t.Run("数値42を持つキーを読むと、42が返る", func(t *testing.T) {
 			key := "TST-get-int64-ok"
 			_, err := sharedClient.Collection("game_config").Doc(key).Set(ctx, map[string]any{"value": int64(42)})
 			require.NoError(t, err)
@@ -51,14 +51,14 @@ func TestGetInt64(t *testing.T) {
 			assert.Equal(t, int64(42), got)
 		})
 
-		t.Run("キーのドキュメントが無いとき、port.ErrNotFound になる", func(t *testing.T) {
+		t.Run("キーのドキュメントが無いとき、port.ErrNotFoundになる", func(t *testing.T) {
 			key := "TST-get-int64-missing"
 
 			_, err := repo.GetInt64(ctx, key)
 			require.ErrorIs(t, err, port.ErrNotFound)
 		})
 
-		t.Run("value が数値でないとき、エラーになる", func(t *testing.T) {
+		t.Run("valueが数値でないとき、エラーになる", func(t *testing.T) {
 			key := "TST-get-int64-invalid"
 			_, err := sharedClient.Collection("game_config").Doc(key).Set(ctx, map[string]any{"value": "TST-not-a-number"})
 			require.NoError(t, err)

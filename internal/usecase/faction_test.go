@@ -62,26 +62,26 @@ func TestSelectInitialFaction(t *testing.T) {
 			wantInitial *string
 		}{
 			{
-				name:        "SHE を初回選択するとき、所持 [SHE]・initial=SHE になる",
+				name:        "SHEを初回選択するとき、所持 [SHE]・initial=SHEになる",
 				faction:     "SHE",
 				wantOwned:   []string{"SHE"},
 				wantInitial: ptr("SHE"),
 			},
 			{
-				name:        "Tenki を初回選択するとき、所持 [Tenki]・initial=Tenki になる",
+				name:        "Tenkiを初回選択するとき、所持 [Tenki]・initial=Tenkiになる",
 				faction:     "Tenki",
 				wantOwned:   []string{"Tenki"},
 				wantInitial: ptr("Tenki"),
 			},
 			{
-				name:        "ショップ所持 (SHE) と別の Tenki を初回選択するとき、所持 [SHE, Tenki]・initial=Tenki になる",
+				name:        "ショップ所持 (SHE)と別のTenkiを初回選択するとき、所持 [SHE, Tenki]・initial=Tenkiになる",
 				seedShop:    []string{"SHE"},
 				faction:     "Tenki",
 				wantOwned:   []string{"SHE", "Tenki"},
 				wantInitial: ptr("Tenki"),
 			},
 			{
-				name:        "ショップ所持 (SHE) と同じ SHE を初回選択するとき、所持 [SHE]・initial=SHE になる",
+				name:        "ショップ所持 (SHE)と同じSHEを初回選択するとき、所持 [SHE]・initial=SHEになる",
 				seedShop:    []string{"SHE"},
 				faction:     "SHE",
 				wantOwned:   []string{"SHE"},
@@ -105,7 +105,7 @@ func TestSelectInitialFaction(t *testing.T) {
 			wantInitial *string
 		}{
 			{
-				name:        "既に initial 選択済みで再選択するとき、ErrFactionAlreadySelected になる",
+				name:        "既にinitial選択済みで再選択するとき、ErrFactionAlreadySelectedになる",
 				preSelect:   []string{"Tenki"},
 				playerID:    testPlayerID1,
 				faction:     "Tenki",
@@ -114,7 +114,7 @@ func TestSelectInitialFaction(t *testing.T) {
 				wantInitial: ptr("Tenki"),
 			},
 			{
-				name:        "Neutral を選択するとき、ErrInvalidFaction になる",
+				name:        "Neutralを選択するとき、ErrInvalidFactionになる",
 				playerID:    testPlayerID1,
 				faction:     "Neutral",
 				wantErr:     ErrInvalidFaction,
@@ -122,7 +122,7 @@ func TestSelectInitialFaction(t *testing.T) {
 				wantInitial: nil,
 			},
 			{
-				name:        "未知ファクションのとき、ErrInvalidFaction になる",
+				name:        "未知ファクションのとき、ErrInvalidFactionになる",
 				playerID:    testPlayerID1,
 				faction:     "bogus",
 				wantErr:     ErrInvalidFaction,
@@ -130,7 +130,7 @@ func TestSelectInitialFaction(t *testing.T) {
 				wantInitial: nil,
 			},
 			{
-				name:        "空ファクションのとき、ErrInvalidFaction になる",
+				name:        "空ファクションのとき、ErrInvalidFactionになる",
 				playerID:    testPlayerID1,
 				faction:     "",
 				wantErr:     ErrInvalidFaction,
@@ -138,7 +138,7 @@ func TestSelectInitialFaction(t *testing.T) {
 				wantInitial: nil,
 			},
 			{
-				name:        "空 playerID のとき、ErrInvalidFaction になる",
+				name:        "空playerIDのとき、ErrInvalidFactionになる",
 				playerID:    "",
 				faction:     "SHE",
 				wantErr:     ErrInvalidFaction,
@@ -146,7 +146,7 @@ func TestSelectInitialFaction(t *testing.T) {
 				wantInitial: nil,
 			},
 			{
-				name:        "存在しない playerID のとき、port.ErrNotFound になる",
+				name:        "存在しないplayerIDのとき、port.ErrNotFoundになる",
 				playerID:    unknownPID,
 				faction:     "SHE",
 				wantErr:     port.ErrNotFound,

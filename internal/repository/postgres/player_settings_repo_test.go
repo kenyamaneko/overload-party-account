@@ -21,7 +21,7 @@ func TestInsert_PlayerSettings(t *testing.T) {
 	repo := postgres.NewPlayerSettingsRepository(sharedPg.Pool)
 	ctx := context.Background()
 
-	t.Run("player_settings への INSERT", func(t *testing.T) {
+	t.Run("player_settingsへのINSERT", func(t *testing.T) {
 		t.Run("全フィールドを受け取りそのまま書き込む", func(t *testing.T) {
 			sharedPg.Truncate(t)
 			seedPlayer(t, testPlayerID1, "uid-1", "Alice", false)
@@ -50,7 +50,7 @@ func TestGet(t *testing.T) {
 	repo := postgres.NewPlayerSettingsRepository(sharedPg.Pool)
 	ctx := context.Background()
 
-	t.Run("player_settings の取得", func(t *testing.T) {
+	t.Run("player_settingsの取得", func(t *testing.T) {
 		// 未存在は常にエラーで表現し (FindByFirebaseUID と揃える)、デフォルト値での隠蔽をしない。
 		tests := []struct {
 			name    string
@@ -66,7 +66,7 @@ func TestGet(t *testing.T) {
 				want: &settingsSnapshot{Language: "ja", BgmVolume: 50, SeVolume: 60, PushEnabled: true},
 			},
 			{
-				name:    "未シードのとき、ErrNotFound になる",
+				name:    "未シードのとき、ErrNotFoundになる",
 				seeds:   nil,
 				want:    nil,
 				wantErr: port.ErrNotFound,
@@ -93,7 +93,7 @@ func TestUpdatePartial(t *testing.T) {
 	repo := postgres.NewPlayerSettingsRepository(sharedPg.Pool)
 	ctx := context.Background()
 
-	t.Run("player_settings の部分更新", func(t *testing.T) {
+	t.Run("player_settingsの部分更新", func(t *testing.T) {
 		// 非 nil フィールドだけが書き換わり、nil フィールドは COALESCE で現状維持。
 		// シード値は (ja, 50, 60, true)。want は patch 適用後の期待スナップショット、
 		// 未シードケースは want=nil で「行が無く ErrNotFound になる」を表す。
@@ -105,7 +105,7 @@ func TestUpdatePartial(t *testing.T) {
 			wantErr error
 		}{
 			{
-				name: "Language だけ指定するとき、他フィールドは COALESCE で現状維持される",
+				name: "Languageだけ指定するとき、他フィールドはCOALESCEで現状維持される",
 				seeds: []domain.PlayerSettings{
 					{Language: "ja", BgmVolume: 50, SeVolume: 60, PushEnabled: true},
 				},
@@ -113,7 +113,7 @@ func TestUpdatePartial(t *testing.T) {
 				want:  &settingsSnapshot{Language: "en", BgmVolume: 50, SeVolume: 60, PushEnabled: true},
 			},
 			{
-				name: "BgmVolume だけ指定するとき、Language はシード値のまま",
+				name: "BgmVolumeだけ指定するとき、Languageはシード値のまま",
 				seeds: []domain.PlayerSettings{
 					{Language: "ja", BgmVolume: 50, SeVolume: 60, PushEnabled: true},
 				},
@@ -134,7 +134,7 @@ func TestUpdatePartial(t *testing.T) {
 				want: &settingsSnapshot{Language: "en", BgmVolume: 0, SeVolume: 0, PushEnabled: false},
 			},
 			{
-				name:    "未シードのとき、ErrNotFound になる (行が無いまま)",
+				name:    "未シードのとき、ErrNotFoundになる (行が無いまま)",
 				seeds:   nil,
 				patch:   &port.PlayerSettingsPatch{Language: ptr("en")},
 				want:    nil,

@@ -16,7 +16,7 @@ func i64Ptr(n int64) *int64   { return &n }
 
 func TestBuildPlayerResponse(t *testing.T) {
 	t.Run("プレイヤー応答の組み立て", func(t *testing.T) {
-		t.Run("PlayerView の各フィールドと進捗が wire 応答に射影される", func(t *testing.T) {
+		t.Run("PlayerViewの各フィールドと進捗がwire応答に射影される", func(t *testing.T) {
 			// レベル進捗の算出そのものは domain.ComputeExpProgress の単体テストで網羅し、
 			// ここでは presenter が domain の結果をそのまま wire に詰めていることだけ確認する。
 			created := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)

@@ -27,7 +27,7 @@ func TestCreate(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("プレイヤーの作成", func(t *testing.T) {
-		t.Run("player と progression が作成され、name と初期 level=1 / exp=0 が読み出せる", func(t *testing.T) {
+		t.Run("playerとprogressionが作成され、nameと初期level=1 / exp=0が読み出せる", func(t *testing.T) {
 			sharedPg.Truncate(t)
 			now := time.Now().UTC()
 			alice := "Alice"
@@ -65,7 +65,7 @@ func TestFindByID(t *testing.T) {
 	repo := postgres.NewPlayerRepository(sharedPg.Pool)
 	ctx := context.Background()
 
-	t.Run("player_id によるプレイヤー取得", func(t *testing.T) {
+	t.Run("player_idによるプレイヤー取得", func(t *testing.T) {
 		tests := []struct {
 			name     string
 			lookupID string
@@ -73,13 +73,13 @@ func TestFindByID(t *testing.T) {
 			wantErr  error
 		}{
 			{
-				name:     "シード済み player_id のとき、Player を返す",
+				name:     "シード済みplayer_idのとき、Playerを返す",
 				lookupID: testPlayerID1,
 				wantName: ptr("Alice"),
 				wantErr:  nil,
 			},
 			{
-				name:     "未シード player_id のとき、ErrNotFound になる",
+				name:     "未シードplayer_idのとき、ErrNotFoundになる",
 				lookupID: testPlayerID2,
 				wantName: nil,
 				wantErr:  port.ErrNotFound,
@@ -103,7 +103,7 @@ func TestFindByFirebaseUID(t *testing.T) {
 	repo := postgres.NewPlayerRepository(sharedPg.Pool)
 	ctx := context.Background()
 
-	t.Run("firebase_uid によるプレイヤー取得", func(t *testing.T) {
+	t.Run("firebase_uidによるプレイヤー取得", func(t *testing.T) {
 		// 既登録検出などの業務分岐は呼び出し側が errors.Is(ErrNotFound) で行う契約なので、
 		// repo は一致行の有無を Player / ErrNotFound で返すだけ。
 		tests := []struct {
@@ -113,13 +113,13 @@ func TestFindByFirebaseUID(t *testing.T) {
 			wantErr   error
 		}{
 			{
-				name:      "シード済み firebase_uid のとき、Player を返す",
+				name:      "シード済みfirebase_uidのとき、Playerを返す",
 				lookupUID: "uid-1",
 				wantName:  ptr("Alice"),
 				wantErr:   nil,
 			},
 			{
-				name:      "未シード firebase_uid のとき、ErrNotFound になる",
+				name:      "未シードfirebase_uidのとき、ErrNotFoundになる",
 				lookupUID: "uid-missing",
 				wantName:  nil,
 				wantErr:   port.ErrNotFound,
@@ -143,19 +143,19 @@ func TestExists(t *testing.T) {
 	repo := postgres.NewPlayerRepository(sharedPg.Pool)
 	ctx := context.Background()
 
-	t.Run("player_id 行の存在確認", func(t *testing.T) {
+	t.Run("player_id行の存在確認", func(t *testing.T) {
 		tests := []struct {
 			name     string
 			lookupID string
 			want     bool
 		}{
 			{
-				name:     "シード済みの player_id のとき、true を返す",
+				name:     "シード済みのplayer_idのとき、trueを返す",
 				lookupID: testPlayerID1,
 				want:     true,
 			},
 			{
-				name:     "未シードの player_id のとき、false を返す (該当なしはエラーではない)",
+				name:     "未シードのplayer_idのとき、falseを返す (該当なしはエラーではない)",
 				lookupID: testPlayerID2,
 				want:     false,
 			},
@@ -196,7 +196,7 @@ func TestGetDailyBattle(t *testing.T) {
 				},
 			},
 			{
-				name:      "該当行が無いとき、(nil, nil) を返す (エラーではない)",
+				name:      "該当行が無いとき、(nil, nil)を返す (エラーではない)",
 				seedCount: nil,
 				want:      nil,
 			},
@@ -241,7 +241,7 @@ func TestGetProgressionForUpdate(t *testing.T) {
 				wantErr:   nil,
 			},
 			{
-				name:     "未シードのとき、ErrNotFound になる",
+				name:     "未シードのとき、ErrNotFoundになる",
 				lookupID: testPlayerID2,
 				wantErr:  port.ErrNotFound,
 			},
@@ -269,7 +269,7 @@ func TestUpdateName(t *testing.T) {
 	repo := postgres.NewPlayerRepository(sharedPg.Pool)
 	ctx := context.Background()
 
-	t.Run("name の更新", func(t *testing.T) {
+	t.Run("nameの更新", func(t *testing.T) {
 		// 永続化はシード済みケースのみ FindByID 経由で確認する。
 		tests := []struct {
 			name     string
@@ -278,13 +278,13 @@ func TestUpdateName(t *testing.T) {
 			wantErr  error
 		}{
 			{
-				name:     "シード済みのとき、name を更新する",
+				name:     "シード済みのとき、nameを更新する",
 				lookupID: testPlayerID1,
 				wantName: ptr("Bob"),
 				wantErr:  nil,
 			},
 			{
-				name:     "未シードのとき、ErrNotFound になる",
+				name:     "未シードのとき、ErrNotFoundになる",
 				lookupID: testPlayerID2,
 				wantName: nil,
 				wantErr:  port.ErrNotFound,
@@ -311,7 +311,7 @@ func TestUpdatePremium(t *testing.T) {
 	ctx := context.Background()
 	expiresAt := time.Now().UTC().Add(24 * time.Hour).Truncate(time.Second)
 
-	t.Run("premium 状態の更新", func(t *testing.T) {
+	t.Run("premium状態の更新", func(t *testing.T) {
 		// 永続化はシード済みケースのみ FindByID 経由で確認する。
 		tests := []struct {
 			name        string
@@ -320,13 +320,13 @@ func TestUpdatePremium(t *testing.T) {
 			wantErr     error
 		}{
 			{
-				name:        "シード済みのとき、is_premium を更新する",
+				name:        "シード済みのとき、is_premiumを更新する",
 				lookupID:    testPlayerID1,
 				wantPremium: true,
 				wantErr:     nil,
 			},
 			{
-				name:        "未シードのとき、ErrNotFound になる",
+				name:        "未シードのとき、ErrNotFoundになる",
 				lookupID:    testPlayerID2,
 				wantPremium: false,
 				wantErr:     port.ErrNotFound,
@@ -369,13 +369,13 @@ func TestIncrementDailyBattleCount(t *testing.T) {
 			calls []call
 		}{
 			{
-				name: "当日の行が無い初回のとき、1 が返る",
+				name: "当日の行が無い初回のとき、1が返る",
 				calls: []call{
 					{playerID: testPlayerID1, gameDate: today, want: 1},
 				},
 			},
 			{
-				name: "同一ゲーム日を繰り返すとき、+1 ずつ加算される",
+				name: "同一ゲーム日を繰り返すとき、+1ずつ加算される",
 				calls: []call{
 					{playerID: testPlayerID1, gameDate: today, want: 1},
 					{playerID: testPlayerID1, gameDate: today, want: 2},
@@ -383,7 +383,7 @@ func TestIncrementDailyBattleCount(t *testing.T) {
 				},
 			},
 			{
-				name: "別ゲーム日のとき、独立した行として 1 から始まる",
+				name: "別ゲーム日のとき、独立した行として1から始まる",
 				calls: []call{
 					{playerID: testPlayerID1, gameDate: today, want: 1},
 					{playerID: testPlayerID1, gameDate: yesterday, want: 1},
@@ -431,7 +431,7 @@ func TestDecrementDailyBattleCount(t *testing.T) {
 	today := civil.DateOf(time.Now().UTC())
 
 	t.Run("当日バトル数の減算", func(t *testing.T) {
-		t.Run("カウントが 2 のとき、1 に減算されて true が返る", func(t *testing.T) {
+		t.Run("カウントが2のとき、1に減算されてtrueが返る", func(t *testing.T) {
 			sharedPg.Truncate(t)
 			seedPlayer(t, testPlayerID1, "uid-1", "Alice", false)
 			seedPlayerDailyBattle(t, testPlayerID1, today, 2)
@@ -446,7 +446,7 @@ func TestDecrementDailyBattleCount(t *testing.T) {
 			assert.Equal(t, int64(1), got.DailyBattleCount)
 		})
 
-		t.Run("カウントが 0 のとき、0 のまま true が返る (負の値にならない)", func(t *testing.T) {
+		t.Run("カウントが0のとき、0のままtrueが返る (負の値にならない)", func(t *testing.T) {
 			sharedPg.Truncate(t)
 			seedPlayer(t, testPlayerID1, "uid-1", "Alice", false)
 			seedPlayerDailyBattle(t, testPlayerID1, today, 0)
@@ -461,7 +461,7 @@ func TestDecrementDailyBattleCount(t *testing.T) {
 			assert.Equal(t, int64(0), got.DailyBattleCount)
 		})
 
-		t.Run("対象日の行が無いとき、何も作らず false が返る", func(t *testing.T) {
+		t.Run("対象日の行が無いとき、何も作らずfalseが返る", func(t *testing.T) {
 			sharedPg.Truncate(t)
 			seedPlayer(t, testPlayerID1, "uid-1", "Alice", false)
 
@@ -506,14 +506,14 @@ func TestUpdateProgression(t *testing.T) {
 			wantErr   error
 		}{
 			{
-				name:      "シード済みのとき、exp / level をそのまま書き込む",
+				name:      "シード済みのとき、exp / levelをそのまま書き込む",
 				lookupID:  testPlayerID1,
 				wantLevel: 2,
 				wantExp:   150,
 				wantErr:   nil,
 			},
 			{
-				name:     "未シードのとき、ErrNotFound になる",
+				name:     "未シードのとき、ErrNotFoundになる",
 				lookupID: testPlayerID2,
 				wantErr:  port.ErrNotFound,
 			},
@@ -543,7 +543,7 @@ func TestGetOnboardingStatus(t *testing.T) {
 	repo := postgres.NewPlayerRepository(sharedPg.Pool)
 	ctx := context.Background()
 
-	t.Run("onboarding_status の取得", func(t *testing.T) {
+	t.Run("onboarding_statusの取得", func(t *testing.T) {
 		tests := []struct {
 			name       string
 			lookupID   string
@@ -551,12 +551,12 @@ func TestGetOnboardingStatus(t *testing.T) {
 			wantErr    error
 		}{
 			{
-				name:       "シード直後のとき、not_started を返す",
+				name:       "シード直後のとき、not_startedを返す",
 				lookupID:   testPlayerID1,
 				wantStatus: domain.OnboardingStatusNotStarted,
 			},
 			{
-				name:     "未シードのとき、ErrNotFound になる",
+				name:     "未シードのとき、ErrNotFoundになる",
 				lookupID: testPlayerID2,
 				wantErr:  port.ErrNotFound,
 			},
@@ -579,8 +579,8 @@ func TestUpdateOnboardingStatus(t *testing.T) {
 	repo := postgres.NewPlayerRepository(sharedPg.Pool)
 	ctx := context.Background()
 
-	t.Run("onboarding_status の更新", func(t *testing.T) {
-		t.Run("name_set に更新すると、取得で name_set が返る", func(t *testing.T) {
+	t.Run("onboarding_statusの更新", func(t *testing.T) {
+		t.Run("name_setに更新すると、取得でname_setが返る", func(t *testing.T) {
 			sharedPg.Truncate(t)
 			seedPlayer(t, testPlayerID1, "uid-1", "Alice", false)
 
@@ -591,7 +591,7 @@ func TestUpdateOnboardingStatus(t *testing.T) {
 			assert.Equal(t, domain.OnboardingStatusNameSet, got)
 		})
 
-		t.Run("未シードのとき、ErrNotFound になる", func(t *testing.T) {
+		t.Run("未シードのとき、ErrNotFoundになる", func(t *testing.T) {
 			sharedPg.Truncate(t)
 
 			err := repo.UpdateOnboardingStatus(ctx, testPlayerID2, domain.OnboardingStatusNameSet)
@@ -613,13 +613,13 @@ func TestGetProgression(t *testing.T) {
 			wantErr   error
 		}{
 			{
-				name:      "シード済みのとき、現在の level と exp を返す",
+				name:      "シード済みのとき、現在のlevelとexpを返す",
 				lookupID:  testPlayerID1,
 				wantLevel: 1,
 				wantExp:   0,
 			},
 			{
-				name:     "未シードのとき、ErrNotFound になる",
+				name:     "未シードのとき、ErrNotFoundになる",
 				lookupID: testPlayerID2,
 				wantErr:  port.ErrNotFound,
 			},

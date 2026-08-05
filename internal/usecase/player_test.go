@@ -65,7 +65,7 @@ func TestGetBattleLimit(t *testing.T) {
 			wantCanBattle bool
 		}{
 			{
-				name:          "free で当日 3 (上限 10 未満) のとき、対戦可能で count=3 になる",
+				name:          "freeで当日3 (上限10未満)のとき、対戦可能でcount=3になる",
 				isPremium:     false,
 				seedCount:     3,
 				seedDate:      today(),
@@ -74,7 +74,7 @@ func TestGetBattleLimit(t *testing.T) {
 				wantCanBattle: true,
 			},
 			{
-				name:          "free で当日 10 (上限到達) のとき、対戦不可になる",
+				name:          "freeで当日10 (上限到達)のとき、対戦不可になる",
 				isPremium:     false,
 				seedCount:     10,
 				seedDate:      today(),
@@ -85,7 +85,7 @@ func TestGetBattleLimit(t *testing.T) {
 			{
 				// premium でも実カウントを返す (limit=-1 / can_battle=true は変わらない)。
 				// データ分析のため count を 0 で潰さない。
-				name:          "premium で当日 5 のとき、上限なし (limit=-1) で対戦可能・count=5 を返す",
+				name:          "premiumで当日5のとき、上限なし (limit=-1)で対戦可能・count=5を返す",
 				isPremium:     true,
 				seedCount:     5,
 				seedDate:      today(),
@@ -94,7 +94,7 @@ func TestGetBattleLimit(t *testing.T) {
 				wantCanBattle: true,
 			},
 			{
-				name:          "free で当日行が無い (前日履歴のみ) のとき、count=0 で対戦可能になる",
+				name:          "freeで当日行が無い (前日履歴のみ)のとき、count=0で対戦可能になる",
 				isPremium:     false,
 				seedCount:     7,
 				seedDate:      yesterday(), // 別ゲーム日の履歴は当日カウントに影響しない
@@ -103,7 +103,7 @@ func TestGetBattleLimit(t *testing.T) {
 				wantCanBattle: true,
 			},
 			{
-				name:          "free で履歴自体が無いとき、count=0 で対戦可能になる",
+				name:          "freeで履歴自体が無いとき、count=0で対戦可能になる",
 				isPremium:     false,
 				seedCount:     -1,
 				wantCount:     0,
@@ -111,7 +111,7 @@ func TestGetBattleLimit(t *testing.T) {
 				wantCanBattle: true,
 			},
 			{
-				name:          "free で当日 11 (上限超過) のとき、対戦不可になる",
+				name:          "freeで当日11 (上限超過)のとき、対戦不可になる",
 				isPremium:     false,
 				seedCount:     11,
 				seedDate:      today(),
@@ -165,34 +165,34 @@ func TestIncrementBattleCount(t *testing.T) {
 			wantStored int64
 		}{
 			{
-				name:       "free で当日 5 (上限未満) のとき、6 に加算される",
+				name:       "freeで当日5 (上限未満)のとき、6に加算される",
 				isPremium:  false,
 				seedCount:  5,
 				seedDate:   today(),
 				wantStored: 6,
 			},
 			{
-				name:       "free で当日 9 → ちょうど上限 10 のとき、加算が通る",
+				name:       "freeで当日9 → ちょうど上限10のとき、加算が通る",
 				isPremium:  false,
 				seedCount:  9,
 				seedDate:   today(),
 				wantStored: 10,
 			},
 			{
-				name:       "free で当日行が無い (前日履歴のみ) のとき、1 で発生する",
+				name:       "freeで当日行が無い (前日履歴のみ)のとき、1で発生する",
 				isPremium:  false,
 				seedCount:  9,
 				seedDate:   yesterday(),
 				wantStored: 1,
 			},
 			{
-				name:       "free で履歴自体が無いとき、1 で発生する",
+				name:       "freeで履歴自体が無いとき、1で発生する",
 				isPremium:  false,
 				seedCount:  -1,
 				wantStored: 1,
 			},
 			{
-				name:       "premium で当日 29 (上限超過) のとき、30 に加算できる",
+				name:       "premiumで当日29 (上限超過)のとき、30に加算できる",
 				isPremium:  true,
 				seedCount:  29,
 				seedDate:   today(),
@@ -217,7 +217,7 @@ func TestIncrementBattleCount(t *testing.T) {
 			})
 		}
 
-		t.Run("free で当日 10 (上限到達) からインクリメントするとき、ErrBattleLimitExceeded になりカウント据え置き", func(t *testing.T) {
+		t.Run("freeで当日10 (上限到達)からインクリメントするとき、ErrBattleLimitExceededになりカウント据え置き", func(t *testing.T) {
 			sharedPg.Truncate(t)
 			seedPlayerWithState(t, testPlayerID1, "uid-1", "Alice",
 				false, 1, 0, 10, today())
@@ -233,7 +233,7 @@ func TestIncrementBattleCount(t *testing.T) {
 			assert.Equal(t, int64(10), got.DailyBattleCount)
 		})
 
-		t.Run("存在しない playerID のとき、port.ErrNotFound になる", func(t *testing.T) {
+		t.Run("存在しないplayerIDのとき、port.ErrNotFoundになる", func(t *testing.T) {
 			sharedPg.Truncate(t)
 			svc := newPlayerTestInteractor(nil)
 
@@ -247,7 +247,7 @@ func TestRevertBattleCount(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("消費バトル回数の返却", func(t *testing.T) {
-		t.Run("両プレイヤーが当日 2 回消費しているとき、消費バトル回数を戻すと両者とも 1 回戻る", func(t *testing.T) {
+		t.Run("両プレイヤーが当日2回消費しているとき、消費バトル回数を戻すと両者とも1回戻る", func(t *testing.T) {
 			sharedPg.Truncate(t)
 			seedPlayerWithState(t, testPlayerID1, "uid-1", "Alice", false, 1, 0, 2, today())
 			seedPlayerWithState(t, testPlayerID2, "uid-2", "Bob", false, 1, 0, 2, today())
@@ -267,7 +267,7 @@ func TestRevertBattleCount(t *testing.T) {
 			assert.Equal(t, int64(1), got2.DailyBattleCount)
 		})
 
-		t.Run("同一 game_id で二度消費バトル回数を戻すとき、2 回目は反映されず 1 回戻ったままになる", func(t *testing.T) {
+		t.Run("同一game_idで二度消費バトル回数を戻すとき、2回目は反映されず1回戻ったままになる", func(t *testing.T) {
 			sharedPg.Truncate(t)
 			seedPlayerWithState(t, testPlayerID1, "uid-1", "Alice", false, 1, 0, 2, today())
 			seedPlayerWithState(t, testPlayerID2, "uid-2", "Bob", false, 1, 0, 2, today())
@@ -284,7 +284,7 @@ func TestRevertBattleCount(t *testing.T) {
 			assert.Equal(t, int64(1), got1.DailyBattleCount)
 		})
 
-		t.Run("当日の消費バトル回数が 0 のとき、戻しても 0 のままになる", func(t *testing.T) {
+		t.Run("当日の消費バトル回数が0のとき、戻しても0のままになる", func(t *testing.T) {
 			sharedPg.Truncate(t)
 			seedPlayerWithState(t, testPlayerID1, "uid-1", "Alice", false, 1, 0, 0, today())
 			seedPlayerWithState(t, testPlayerID2, "uid-2", "Bob", false, 1, 0, 0, today())
@@ -338,7 +338,7 @@ func TestRevertBattleCount(t *testing.T) {
 
 func TestGetPlayer(t *testing.T) {
 	t.Run("プレイヤー応答の取得", func(t *testing.T) {
-		t.Run("プレイヤーが存在するとき、その PlayerResponse を返す", func(t *testing.T) {
+		t.Run("プレイヤーが存在するとき、そのPlayerResponseを返す", func(t *testing.T) {
 			sharedPg.Truncate(t)
 			seedPlayer(t, testPlayerID1, "uid-1", "Alice", false)
 
@@ -350,7 +350,7 @@ func TestGetPlayer(t *testing.T) {
 			assert.Equal(t, "Alice", *got.Name)
 		})
 
-		t.Run("存在しない playerID のとき、port.ErrNotFound になる", func(t *testing.T) {
+		t.Run("存在しないplayerIDのとき、port.ErrNotFoundになる", func(t *testing.T) {
 			sharedPg.Truncate(t)
 			seedPlayer(t, testPlayerID1, "uid-1", "Alice", false)
 
@@ -364,8 +364,8 @@ func TestGetPlayer(t *testing.T) {
 func TestUpdateName(t *testing.T) {
 	ctx := context.Background()
 
-	t.Run("name の更新", func(t *testing.T) {
-		t.Run("有効な name のとき、更新され再取得でも反映される", func(t *testing.T) {
+	t.Run("nameの更新", func(t *testing.T) {
+		t.Run("有効なnameのとき、更新され再取得でも反映される", func(t *testing.T) {
 			sharedPg.Truncate(t)
 			seedPlayer(t, testPlayerID1, "uid-1", "Alice", false)
 
@@ -382,7 +382,7 @@ func TestUpdateName(t *testing.T) {
 			assert.Equal(t, "Bob", *got.Name)
 		})
 
-		t.Run("空文字など無効な name のとき、repo に到達せず ErrInvalidName になる", func(t *testing.T) {
+		t.Run("空文字など無効なnameのとき、repoに到達せずErrInvalidNameになる", func(t *testing.T) {
 			// 詳細な境界値は domain/name_test.go で網羅済み。ここでは UpdateName 経路で
 			// バリデーションが効き repo に到達しないことだけを確かめる。
 			ctx := context.Background()
@@ -400,7 +400,7 @@ func TestUpdateName(t *testing.T) {
 			assert.Equal(t, "Alice", *got.Name)
 		})
 
-		t.Run("存在しない playerID のとき、port.ErrNotFound になる", func(t *testing.T) {
+		t.Run("存在しないplayerIDのとき、port.ErrNotFoundになる", func(t *testing.T) {
 			sharedPg.Truncate(t)
 			svc := newPlayerTestInteractor(nil)
 
@@ -427,7 +427,7 @@ func TestAwardExp(t *testing.T) {
 		}{
 			{
 				// レベル算出結果が DB に永続化されることを 1 ケースで担保する。
-				name:      "加算でレベルアップするとき、exp/level が永続化される",
+				name:      "加算でレベルアップするとき、exp/levelが永続化される",
 				initExp:   levelUpThreshold - testExpWin,
 				initLevel: 1,
 				gain:      testExpWin,
@@ -435,7 +435,7 @@ func TestAwardExp(t *testing.T) {
 				wantLevel: 2,
 			},
 			{
-				name:      "加算量が 0 のとき、何もしない",
+				name:      "加算量が0のとき、何もしない",
 				initExp:   100,
 				initLevel: 1,
 				gain:      0,
@@ -443,7 +443,7 @@ func TestAwardExp(t *testing.T) {
 				wantLevel: 1,
 			},
 			{
-				name:      "加算量が -10 のとき、何もしない",
+				name:      "加算量が -10のとき、何もしない",
 				initExp:   100,
 				initLevel: 1,
 				gain:      -10,
@@ -499,35 +499,35 @@ func TestAwardGameExp(t *testing.T) {
 				wantP2Exp int64
 			}{
 				{
-					name:      "プレイヤー1 が勝利するとき、P1 に exp_win・P2 に exp_loss が付与される",
+					name:      "プレイヤー1が勝利するとき、P1にexp_win・P2にexp_lossが付与される",
 					winnerNum: 1,
 					reason:    "system_down",
 					wantP1Exp: testExpWin,
 					wantP2Exp: testExpLoss,
 				},
 				{
-					name:      "プレイヤー2 が勝利するとき、P1 に exp_loss・P2 に exp_win が付与される",
+					name:      "プレイヤー2が勝利するとき、P1にexp_loss・P2にexp_winが付与される",
 					winnerNum: 2,
 					reason:    "budget_zero",
 					wantP1Exp: testExpLoss,
 					wantP2Exp: testExpWin,
 				},
 				{
-					name:      "引き分けのとき、両者に exp_draw が付与される",
+					name:      "引き分けのとき、両者にexp_drawが付与される",
 					winnerNum: 0,
 					reason:    "draw",
 					wantP1Exp: testExpDraw,
 					wantP2Exp: testExpDraw,
 				},
 				{
-					name:      "勝者番号が 1 でも理由が draw のとき、両者に exp_draw が付与される",
+					name:      "勝者番号が1でも理由がdrawのとき、両者にexp_drawが付与される",
 					winnerNum: 1,
 					reason:    "draw",
 					wantP1Exp: testExpDraw,
 					wantP2Exp: testExpDraw,
 				},
 				{
-					name:      "理由が draw 以外で勝者番号が 0 のとき、両者に exp_draw が付与される",
+					name:      "理由がdraw以外で勝者番号が0のとき、両者にexp_drawが付与される",
 					winnerNum: 0,
 					reason:    "system_down",
 					wantP1Exp: testExpDraw,
@@ -555,7 +555,7 @@ func TestAwardGameExp(t *testing.T) {
 			}
 		})
 
-		t.Run("NPC 戦", func(t *testing.T) {
+		t.Run("NPC戦", func(t *testing.T) {
 			tests := []struct {
 				name      string
 				winnerNum int64
@@ -563,19 +563,19 @@ func TestAwardGameExp(t *testing.T) {
 				wantP1Exp int64
 			}{
 				{
-					name:      "プレイヤーが勝利するとき、exp_win が付与される",
+					name:      "プレイヤーが勝利するとき、exp_winが付与される",
 					winnerNum: 1,
 					reason:    "system_down",
 					wantP1Exp: testExpWin,
 				},
 				{
-					name:      "プレイヤーが敗北するとき、exp_loss が付与される",
+					name:      "プレイヤーが敗北するとき、exp_lossが付与される",
 					winnerNum: 2,
 					reason:    "system_down",
 					wantP1Exp: testExpLoss,
 				},
 				{
-					name:      "引き分けのとき、exp_draw が付与される",
+					name:      "引き分けのとき、exp_drawが付与される",
 					winnerNum: 0,
 					reason:    "draw",
 					wantP1Exp: testExpDraw,
@@ -597,7 +597,7 @@ func TestAwardGameExp(t *testing.T) {
 			}
 		})
 
-		t.Run("対戦結果の付与時に exp_win が読めないとき、エラーになり両者の経験値は変わらない", func(t *testing.T) {
+		t.Run("対戦結果の付与時にexp_winが読めないとき、エラーになり両者の経験値は変わらない", func(t *testing.T) {
 			sharedPg.Truncate(t)
 			seedPlayerWithState(t, testPlayerID1, "uid-1", "Alice", false, 1, 0, 0, today())
 			seedPlayerWithState(t, testPlayerID2, "uid-2", "Bob", false, 1, 0, 0, today())

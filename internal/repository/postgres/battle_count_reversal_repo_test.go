@@ -22,7 +22,7 @@ func TestMarkReverted(t *testing.T) {
 	repo := postgres.NewBattleCountReversalRepository(sharedPg.Pool)
 	ctx := context.Background()
 
-	t.Run("battle_count_reversals への INSERT", func(t *testing.T) {
+	t.Run("battle_count_reversalsへのINSERT", func(t *testing.T) {
 		// 冪等性ガード: 初回は created=true、重複 game_id は ON CONFLICT DO NOTHING で
 		// created=false を返し、同一対戦への二重返却を検出する。
 		noPreInsert := func(*testing.T) {}
@@ -39,12 +39,12 @@ func TestMarkReverted(t *testing.T) {
 			wantCreated bool
 		}{
 			{
-				name:        "初回挿入のとき、created=true になる",
+				name:        "初回挿入のとき、created=trueになる",
 				preInsert:   noPreInsert,
 				wantCreated: true,
 			},
 			{
-				name:        "既存 game_id のとき、created=false になる (冪等ガード)",
+				name:        "既存game_idのとき、created=falseになる (冪等ガード)",
 				preInsert:   preInsertSameGame,
 				wantCreated: false,
 			},
