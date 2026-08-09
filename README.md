@@ -2,7 +2,7 @@
 
 プレイヤーマスター・ユーザー設定・ファクション所有・経験値・デイリーバトル制限を所有する内部マイクロサービス。ポート 9005 で起動する。
 
-詳細は [機能仕様書](docs/FEATURE_SPEC.md) / [サービス設計書](docs/ARCHITECTURE.md) / [API契約 (OpenAPI)](data/openapi.yaml) / [データ設計書](docs/DATA_DESIGN.md) を参照。
+詳細は [サービス設計書](docs/ARCHITECTURE.md) / [API契約 (OpenAPI)](data/openapi.yaml) / [データ設計書](docs/DATA_DESIGN.md) を参照。
 
 [テスト観点カタログ](https://kenyamaneko.github.io/overload-party-account/): テスト名から生成した、テスト済みの観点の一覧。
 

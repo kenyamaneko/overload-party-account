@@ -2,7 +2,7 @@
 
 本ドキュメントは **コードを読んでも一見しては分からない設計意図** だけを残す。実装詳細（エンドポイントごとのバリデーション順・SQL 文・エラー → HTTP ステータス変換・環境変数の一覧）は各ファイルの実装とコメントを一次情報とする。
 
-サービス概要・起動手順は [../README.md](../README.md)、エンドポイントは [../data/openapi.yaml](../data/openapi.yaml) (SSoT)、DB スキーマは [DATA_DESIGN.md](DATA_DESIGN.md)、ビジネス仕様は [FEATURE_SPEC.md](FEATURE_SPEC.md) を参照。
+サービス概要・起動手順は [../README.md](../README.md)、エンドポイントは [../data/openapi.yaml](../data/openapi.yaml) (SSoT)、DB スキーマは [DATA_DESIGN.md](DATA_DESIGN.md) を参照。
 
 ## account サービスの責務境界
 
@@ -312,4 +312,4 @@ account 自身はトピックを publish しない。
 
 ### Firestore の運用
 
-`game_config` コレクションは運用者が手動で値を書く（コード上には生成スクリプトを持たない）。キーのリストと意味は [FEATURE_SPEC.md](FEATURE_SPEC.md) と `usecase/player.go` の定数を参照。
+`game_config` コレクションは運用者が手動で値を書く（コード上には生成スクリプトを持たない）。キーのリストと意味は `usecase/player.go` の定数を参照。
