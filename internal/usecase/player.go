@@ -252,7 +252,6 @@ func (s *PlayerInteractor) AwardExp(ctx context.Context, playerID string, expGai
 }
 
 // AwardGameExp はゲーム終了後に両プレイヤーに経験値を付与する唯一の入口。
-// 付与ルール (winnerNum / reason / matchType による分岐) は FEATURE_SPEC を参照。
 func (s *PlayerInteractor) AwardGameExp(ctx context.Context, player1ID, player2ID string, winnerNum int64, reason, matchType string) error {
 	expWin, err := s.gameConfigRepo.GetInt64(ctx, gameConfigKeyExpWin)
 	if err != nil {
