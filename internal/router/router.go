@@ -27,6 +27,9 @@ import (
 //   - /api/v1/account/me/*: gateway / shop / scenario が JWT を付けて呼ぶ player-scoped
 //     API。VerifyInternalAuth が sub クレーム (= player_id) を context に注入し、
 //     handler は path / body から player_id を読まない
+//
+// Firebase ID Token の検証は gateway が担う前提であり、account 側には導入しない。
+// 導入すると「account の中で認証する責務」が混入し、gateway との二重管理になる。
 func New(
 	authH *rest.AuthHandler,
 	playerH *rest.PlayerHandler,
