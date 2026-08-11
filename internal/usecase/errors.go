@@ -6,6 +6,9 @@ import (
 	"github.com/kenyamaneko/overload-party-account/internal/port"
 )
 
+// usecase 層は HTTP ステータスを知らず、以下のセンチネルで業務上の意味を表現する。
+// repository は port.ErrNotFound とラップした SQL エラーだけを返し、
+// handler (rest) が errors.Is でこれらのセンチネルを分類して HTTP ステータスに変換する。
 var (
 	// ErrNotFound は port.ErrNotFound の re-export。
 	ErrNotFound = port.ErrNotFound

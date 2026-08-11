@@ -2,7 +2,7 @@
 
 プレイヤーマスター・ユーザー設定・ファクション所有・経験値・デイリーバトル制限を所有する内部マイクロサービス。ポート 9005 で起動する。
 
-詳細は [サービス設計書](docs/ARCHITECTURE.md) / [API契約 (OpenAPI)](data/openapi.yaml) / [データ設計書](docs/DATA_DESIGN.md) を参照。
+詳細は [API契約 (OpenAPI)](data/openapi.yaml) / [データ設計書](docs/DATA_DESIGN.md) を参照。設計判断 (Why) は [common の ADR](https://github.com/kenyamaneko/overload-party-common/tree/main/docs/adr) に記録する。
 
 [テスト観点カタログ](https://kenyamaneko.github.io/overload-party-account/): テスト名から生成した、テスト済みの観点の一覧。
 
@@ -21,7 +21,7 @@ Gateway (唯一の入口)
             └─ player-onboarded-account-sub        ← scenario が publish
 
 Gateway / shop / scenario → Account (player-scoped, JWT 必須)
-  └─ /api/v1/account/me/...                X-Internal-Auth (HS256 JWT) を検証し sub で player_id 解決
+  └─ /api/v1/account/me/...                X-Internal-Auth (RS256 JWT) を検証し sub で player_id 解決
 
 Battle → Account (server-to-server, JWT なし)
   └─ POST /internal/v1/players/award-game-exp
@@ -73,7 +73,7 @@ overload-party-ops / overload-party-common を兄弟ディレクトリに checko
 
 ローカルで Firestore emulator に接続する場合は `FIRESTORE_EMULATOR_HOST` を併せて設定する（`make run` の compose 定義が emulator のサービス名を渡す）。
 
-Pub/Sub の 5 購読は Cloud Run push subscription 経由で `/internal/v1/pubsub/<イベント名>` が受ける（[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) の「Pub/Sub subscriber」参照）。到達制御は Cloud Run の呼び出し IAM が担い、受け口自体はアプリ層の認証を持たない。ローカルでは IAM が挟まらないため、`curl` で直接 push envelope を投げて動作確認できる。
+Pub/Sub の 5 購読は Cloud Run push subscription 経由で `/internal/v1/pubsub/<イベント名>` が受ける。到達制御は Cloud Run の呼び出し IAM が担い、受け口自体はアプリ層の認証を持たない。ローカルでは IAM が挟まらないため、`curl` で直接 push envelope を投げて動作確認できる。
 
 ## 公開パッケージ
 

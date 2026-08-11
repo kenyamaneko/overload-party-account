@@ -9,6 +9,8 @@ account スキーマはプレイヤーの基本情報・デイリーバトル回
 
 `is_premium` / `premium_expires_at` は shop が authoritative な状態を射影しているだけで、account 内では read-only 扱い（書き込みは `premium-updated` subscriber と、運用・テスト用の `PUT /api/v1/account/me/premium` のみ）。
 
+ゲームバランス調整値 (デイリーバトル無料上限・経験値係数など) は account スキーマに持たず、Cloud Firestore `game_config` を読み取り専用で参照する（[ADR-017](https://github.com/kenyamaneko/overload-party-common/blob/main/docs/adr/017-game-config-firestore.md)）。ファクションマスターも DB に持たず、`common/data/factions.yaml` から code-generate された定数を参照する。
+
 ---
 
 ## テーブル構成
@@ -58,7 +60,7 @@ account スキーマはプレイヤーの基本情報・デイリーバトル回
 
 **設計判断:**
 - players に埋め込まず別テーブルにしているのは、バトル回数チェック / increment が高頻度で走るのに対し、players 本体の更新 (name / is_premium 等) とは独立しているため。更新競合を分離する目的
-- リセット境界は JST 05:00。`game_date` は usecase 層の `gameDayFor(t)` が算出する civil.Date。詳細は [ARCHITECTURE.md](ARCHITECTURE.md) の「ゲーム日の境界 (JST 05:00)」
+- リセット境界は JST 05:00。`game_date` は usecase 層の `gameDayFor(t)` が算出する civil.Date
 - 1 行/日で履歴を残すのは、将来 BigQuery エクスポートでプレイヤーごとの日次バトル回数を分析できるようにするため。これがアプリ内で履歴が残る唯一の場所
 - 当日の行が無ければカウント 0 とみなす (新ゲーム日でまだバトルしていない状態)。Register 時には INSERT せず、初回バトルの UPSERT で行が発生する
 
@@ -145,7 +147,7 @@ account スキーマはプレイヤーの基本情報・デイリーバトル回
 <!-- END GENERATED: player_progression -->
 
 **設計判断:**
-- かつては `players.level` / `players.exp` として同居していたが、戦闘ごとの高頻度 UPDATE が `players.updated_at` を押し上げプロフィール変更の検知を汚染する・`players` 全体の SELECT FOR UPDATE で他 UPDATE と競合する・MVCC dead tuple が `players` に集中する、などの理由で分離した（[ARCHITECTURE.md](ARCHITECTURE.md) の「`player_progression` の物理分離」）
+- かつては `players.level` / `players.exp` として同居していたが、戦闘ごとの高頻度 UPDATE が `players.updated_at` を押し上げプロフィール変更の検知を汚染する・`players` 全体の SELECT FOR UPDATE で他 UPDATE と競合する・MVCC dead tuple が `players` に集中する、などの理由で分離した（[ADR-068](https://github.com/kenyamaneko/overload-party-common/blob/main/docs/adr/068-account-player-progression-separate-table.md)）
 - API レスポンスの `Player` には引き続き `level` / `exp` を含めるため、repository 層で JOIN して Player アグリゲートに詰めて返す
 - 書き込みホットパス（`AddExp`）は `player_progression` のみを触る。`players` は静かなまま
 
