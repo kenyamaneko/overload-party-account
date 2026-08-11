@@ -3,11 +3,11 @@
 ## ローカル開発
 
 `make run` はアプリ本体とインフラ (Postgres / Firestore / Pub/Sub emulator) を compose 内で起動する。
-インフラはホストへ publish せず内部ネットワークのサービス名 DNS で参照するため、他リポのローカル
+インフラはホストへ公開せず内部ネットワークのサービス名 DNS で参照するため、他リポのローカル
 スタックやホスト上の他アプリとポートが衝突しない。ホストへ出るのは account の API ポート 9005 のみ。
 
 ```bash
-make run              # アプリ + インフラを compose で起動（ソース bind-mount）
+make run              # アプリ + インフラを compose で起動（ソースをバインドマウント）
 make down             # 停止して volume を削除
 make test             # Testcontainers でテスト実行（Docker 必須）
 make test-integration # integration タグ付きテスト（Pub/Sub emulator などを要するもの）
