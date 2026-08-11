@@ -42,6 +42,8 @@ func NewAuthInteractor(
 
 // Register は新規プレイヤーを登録する。表示名は別途 onboarding-name-set
 // イベントで確定する (オンボード途中中断後に再登録を要求しない設計)。
+// 冪等ではなく、二重登録は ErrPlayerAlreadyRegistered を返して呼び出し元に委ねる。
+// 呼び出し元が冪等にリトライしたい場合は Register ではなく Login を呼ぶ契約。
 func (s *AuthInteractor) Register(ctx context.Context, firebaseUID string) (*apiaccount.PlayerResponse, error) {
 	isRegistered, err := s.playerRepo.ExistsByFirebaseUID(ctx, firebaseUID)
 	if err != nil {

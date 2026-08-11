@@ -1,4 +1,8 @@
 // Package domain は account のエンティティと、生成 struct に手書きで昇格させた
 // 業務ロジック (level / name / onboarding_status の判定・生成) を保持する。
-// 振る舞いを domain に置く昇格基準は docs/ARCHITECTURE.md「ドメイン層の責務」を参照。
+//
+// 振る舞いを昇格させるのは、複数の usecase で同じ判定ロジックを書きそうになったとき、
+// フィールドを直接読むだけでは業務上の意図が掴めないとき、または不正値を構築できない
+// ようにする不変条件があるときに限る。1 箇所の usecase でしか使わない短絡的な判定や、
+// 永続化・外部呼び出しを含む処理 (usecase の責務) は昇格させない。
 package domain

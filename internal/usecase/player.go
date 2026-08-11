@@ -24,7 +24,6 @@ const (
 	// gameDayOffset はゲーム日リセット境界を JST 05:00 に揃えるための UTC オフセット。
 	// time.Now().UTC().Add(gameDayOffset) の日付部分が「ゲーム日」になり、
 	// 各プレイヤーの daily_battle_count はこのゲーム日単位で集計される。
-	// リセット時刻の根拠は ARCHITECTURE.md を参照。
 	gameDayOffset = 4 * time.Hour
 )
 
@@ -142,7 +141,7 @@ func (s *PlayerInteractor) GetBattleLimit(ctx context.Context, playerID string) 
 
 // IncrementBattleCount は当日のバトル回数を 1 加算する。
 // プレミアム会員も含め全プレイヤーで加算する (集計用)。free 上限の判定は
-// ensureWithinFreeBattleLimit に分離。TOCTOU の判断は ARCHITECTURE.md を参照。
+// ensureWithinFreeBattleLimit に分離。
 // FindByID (premium 判定用) と ensureWithinFreeBattleLimit 内の GetDailyBattle
 // (上限判定用) で SELECT が 2 回走るのは TOCTOU を許容する代わりに事前判定の
 // 簡潔さを優先したため。Tx で囲んで 1 回にまとめる価値はないと判断している。

@@ -157,6 +157,9 @@ func (s *OnboardingInteractor) advanceOnboardingStatus(ctx context.Context, play
 
 // IsPublisherBug は subscriber が publisher 起源の不整合を検出するためのヘルパー。
 // 再処理しても解決しないため、subscriber は ERROR ログ + NACK する責務を負う。
+// NACK は自動リトライではなく、最終的に DLQ へ滞留させて運用に気づかせるための
+// 設計。復旧は publisher 側の不整合を是正した上で、DLQ のメッセージを破棄するか
+// 正しいペイロードに差し替えて replay する。
 func IsPublisherBug(err error) bool {
 	return errors.Is(err, port.ErrNotFound) || errors.Is(err, ErrFactionConflict)
 }
