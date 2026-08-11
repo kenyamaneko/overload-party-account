@@ -74,14 +74,3 @@ overload-party-ops / overload-party-common を兄弟ディレクトリに checko
 ローカルで Firestore emulator に接続する場合は `FIRESTORE_EMULATOR_HOST` を併せて設定する（`make run` の compose 定義が emulator のサービス名を渡す）。
 
 Pub/Sub の 5 購読は Cloud Run push subscription 経由で `/internal/v1/pubsub/<イベント名>` が受ける。到達制御は Cloud Run の呼び出し IAM が担い、受け口自体はアプリ層の認証を持たない。ローカルでは IAM が挟まらないため、`curl` で直接 push envelope を投げて動作確認できる。
-
-## 公開パッケージ
-
-[packages/api-account/](packages/api-account/) に REST 契約型（`apiaccount.PlayerResponse` 等）を公開している。
-[data/openapi.yaml](data/openapi.yaml) が SSoT。編集後に以下で `openapi_gen.go` を再生成する。
-
-```bash
-scripts/generate_types.sh
-```
-
-クライアント向け TypeScript 型は `@kenyamaneko/overload-party-api-gateway` に統合済み。
