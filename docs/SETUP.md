@@ -14,7 +14,7 @@ make test-integration # integration タグ付きテスト（Pub/Sub emulator な
 ```
 
 アプリはコンテナ内で `go run` する。ソースを編集して `docker compose restart account` すれば、
-イメージを作り直さずに反映される。private module はホストの module cache を読み取り専用でマウント
+イメージを作り直さずに反映される。プライベートモジュールはホストのモジュールキャッシュを読み取り専用でマウント
 して解決するため、`make run` は先にホスト側で `go mod download` を実行する。
 
 game_config の seed は common の SSoT yaml を ops の seed ツールで流し込むため、
