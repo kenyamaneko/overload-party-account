@@ -24,7 +24,7 @@ func init() {
 	gin.SetMode(gin.TestMode)
 }
 
-var assertVerifyError = errors.New("invalid token")
+var errVerifyFailed = errors.New("invalid token")
 
 // newTestRouter は router.New に渡す実 handler 群を、認証境界検証専用の fake 依存で組み立てる。
 // この章は認証ミドルウェアの配置のみを対象とするため (spec: internal/router 章)、
@@ -76,7 +76,7 @@ func TestRouter_AuthBoundary(t *testing.T) {
 
 		t.Run("/api/v1/account/me配下のエンドポイントは、X-Internal-Authの検証に失敗するとき、401を返す", func(t *testing.T) {
 			verifier := &internalauth.MockVerifier{VerifyFn: func(token string) (string, error) {
-				return "", assertVerifyError
+				return "", errVerifyFailed
 			}}
 			r := newTestRouter(verifier)
 
@@ -90,7 +90,7 @@ func TestRouter_AuthBoundary(t *testing.T) {
 
 		t.Run("/internal/v1/*配下は、X-Internal-Authヘッダの有無に関わらず401にならない", func(t *testing.T) {
 			verifier := &internalauth.MockVerifier{VerifyFn: func(token string) (string, error) {
-				return "", assertVerifyError
+				return "", errVerifyFailed
 			}}
 			r := newTestRouter(verifier)
 
@@ -106,7 +106,7 @@ func TestRouter_AuthBoundary(t *testing.T) {
 
 		t.Run("/healthは、X-Internal-Authヘッダの有無に関わらず401にならない", func(t *testing.T) {
 			verifier := &internalauth.MockVerifier{VerifyFn: func(token string) (string, error) {
-				return "", assertVerifyError
+				return "", errVerifyFailed
 			}}
 			r := newTestRouter(verifier)
 
@@ -119,7 +119,7 @@ func TestRouter_AuthBoundary(t *testing.T) {
 
 		t.Run("GET /healthは、認証なしで200とstatus=okを返す", func(t *testing.T) {
 			verifier := &internalauth.MockVerifier{VerifyFn: func(token string) (string, error) {
-				return "", assertVerifyError
+				return "", errVerifyFailed
 			}}
 			r := newTestRouter(verifier)
 
