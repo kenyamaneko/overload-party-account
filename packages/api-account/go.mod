@@ -1,6 +1,6 @@
 module github.com/kenyamaneko/overload-party-account/packages/api-account
 
-go 1.25.1
+go 1.25.13
 
 require (
 	github.com/oapi-codegen/runtime v1.4.0

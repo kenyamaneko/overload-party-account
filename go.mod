@@ -1,6 +1,6 @@
 module github.com/kenyamaneko/overload-party-account
 
-go 1.25.12
+go 1.25.13
 
 require (
 	cloud.google.com/go v0.123.0
