@@ -192,5 +192,64 @@ func TestOnboardingInteractor_ApplyCompleted(t *testing.T) {
 			require.NoError(t, err)
 			assert.Equal(t, domain.OnboardingStatusCompleted, status)
 		})
+
+		t.Run("同一のイベントIDが処理済みのとき、戻り値はfalseになる", func(t *testing.T) {
+			interactor := newTestOnboardingInteractor(t)
+			playerID := registerTestPlayer(t, "firebase-onb-completed-2")
+			eventID := uuid.NewString()
+			_, err := interactor.ApplyCompleted(context.Background(), eventID, apiscenario.EventTypePlayerOnboarded, playerID)
+			require.NoError(t, err)
+
+			processed, err := interactor.ApplyCompleted(context.Background(), eventID, apiscenario.EventTypePlayerOnboarded, playerID)
+
+			require.NoError(t, err)
+			assert.False(t, processed)
+		})
+
+		t.Run("同一のイベントIDが処理済みのとき、オンボーディング状態はfaction_setのままになる", func(t *testing.T) {
+			interactor := newTestOnboardingInteractor(t)
+			playerID := registerTestPlayer(t, "firebase-onb-completed-3")
+			eventID := uuid.NewString()
+			_, err := interactor.ApplyCompleted(context.Background(), eventID, apiscenario.EventTypePlayerOnboarded, playerID)
+			require.NoError(t, err)
+			require.NoError(t, postgres.NewPlayerRepository(sharedPg.Pool).UpdateOnboardingStatus(context.Background(), playerID, domain.OnboardingStatusFactionSet))
+
+			_, err = interactor.ApplyCompleted(context.Background(), eventID, apiscenario.EventTypePlayerOnboarded, playerID)
+
+			require.NoError(t, err)
+			status, err := postgres.NewPlayerRepository(sharedPg.Pool).GetOnboardingStatus(context.Background(), playerID)
+			require.NoError(t, err)
+			assert.Equal(t, domain.OnboardingStatusFactionSet, status)
+		})
+
+		t.Run("対象プレイヤーが存在せずイベント処理が一度失敗したとき、同一のイベントIDで再配信されると、戻り値はtrueになる", func(t *testing.T) {
+			interactor := newTestOnboardingInteractor(t)
+			eventID := uuid.NewString()
+			nonexistentPlayerID := uuid.NewString()
+			_, err := interactor.ApplyCompleted(context.Background(), eventID, apiscenario.EventTypePlayerOnboarded, nonexistentPlayerID)
+			require.Error(t, err)
+
+			playerID := registerTestPlayer(t, "firebase-onb-completed-4")
+			processed, err := interactor.ApplyCompleted(context.Background(), eventID, apiscenario.EventTypePlayerOnboarded, playerID)
+
+			require.NoError(t, err)
+			assert.True(t, processed)
+		})
+
+		t.Run("対象プレイヤーが存在せずイベント処理が一度失敗したとき、同一のイベントIDで再配信されると、オンボーディング状態は目標状態(completed)へ進む", func(t *testing.T) {
+			interactor := newTestOnboardingInteractor(t)
+			eventID := uuid.NewString()
+			nonexistentPlayerID := uuid.NewString()
+			_, err := interactor.ApplyCompleted(context.Background(), eventID, apiscenario.EventTypePlayerOnboarded, nonexistentPlayerID)
+			require.Error(t, err)
+
+			playerID := registerTestPlayer(t, "firebase-onb-completed-5")
+			_, err = interactor.ApplyCompleted(context.Background(), eventID, apiscenario.EventTypePlayerOnboarded, playerID)
+
+			require.NoError(t, err)
+			status, err := postgres.NewPlayerRepository(sharedPg.Pool).GetOnboardingStatus(context.Background(), playerID)
+			require.NoError(t, err)
+			assert.Equal(t, domain.OnboardingStatusCompleted, status)
+		})
 	})
 }
