@@ -41,7 +41,7 @@ func decodeBody(t *testing.T, resp *http.Response, v any) {
 
 func TestServer_DefaultResponses(t *testing.T) {
 	t.Run("Fnがnilのときの既定応答", func(t *testing.T) {
-		t.Run("Registerは既定のステータスコードとゼロ値のJSONボディを返す", func(t *testing.T) {
+		t.Run("新規プレイヤー登録は既定のステータスコードとゼロ値のJSONボディを返す", func(t *testing.T) {
 			s := apiaccountserverfake.NewServer()
 			defer s.Close()
 
@@ -53,7 +53,7 @@ func TestServer_DefaultResponses(t *testing.T) {
 			assert.Equal(t, "", body.PlayerID)
 		})
 
-		t.Run("Loginは既定のステータスコードとゼロ値のJSONボディを返す", func(t *testing.T) {
+		t.Run("プレイヤーログインは既定のステータスコードとゼロ値のJSONボディを返す", func(t *testing.T) {
 			s := apiaccountserverfake.NewServer()
 			defer s.Close()
 
@@ -65,7 +65,7 @@ func TestServer_DefaultResponses(t *testing.T) {
 			assert.Equal(t, "", body.PlayerID)
 		})
 
-		t.Run("FindByFirebaseUIDは既定のステータスコードとゼロ値のJSONボディを返す", func(t *testing.T) {
+		t.Run("Firebase UIDによるプレイヤー検索は既定のステータスコードとゼロ値のJSONボディを返す", func(t *testing.T) {
 			s := apiaccountserverfake.NewServer()
 			defer s.Close()
 
@@ -77,7 +77,7 @@ func TestServer_DefaultResponses(t *testing.T) {
 			assert.Equal(t, "", body.PlayerID)
 		})
 
-		t.Run("GetPlayerは既定のステータスコードとゼロ値のJSONボディを返す", func(t *testing.T) {
+		t.Run("認証済みプレイヤー自身の情報取得は既定のステータスコードとゼロ値のJSONボディを返す", func(t *testing.T) {
 			s := apiaccountserverfake.NewServer()
 			defer s.Close()
 
@@ -89,7 +89,7 @@ func TestServer_DefaultResponses(t *testing.T) {
 			assert.Equal(t, "", body.PlayerID)
 		})
 
-		t.Run("UpdateNameは既定のステータスコードとゼロ値のJSONボディを返す", func(t *testing.T) {
+		t.Run("プレイヤー名の変更は既定のステータスコードとゼロ値のJSONボディを返す", func(t *testing.T) {
 			s := apiaccountserverfake.NewServer()
 			defer s.Close()
 
@@ -101,7 +101,7 @@ func TestServer_DefaultResponses(t *testing.T) {
 			assert.Equal(t, "", body.PlayerID)
 		})
 
-		t.Run("GetBattleLimitは既定のステータスコードとゼロ値のJSONボディを返す", func(t *testing.T) {
+		t.Run("1日のバトル回数制限の取得は既定のステータスコードとゼロ値のJSONボディを返す", func(t *testing.T) {
 			s := apiaccountserverfake.NewServer()
 			defer s.Close()
 
@@ -113,7 +113,7 @@ func TestServer_DefaultResponses(t *testing.T) {
 			assert.Equal(t, int64(0), body.DailyBattleLimit)
 		})
 
-		t.Run("GetSettingsは既定のステータスコードとゼロ値のJSONボディを返す", func(t *testing.T) {
+		t.Run("プレイヤー設定の取得は既定のステータスコードとゼロ値のJSONボディを返す", func(t *testing.T) {
 			s := apiaccountserverfake.NewServer()
 			defer s.Close()
 
@@ -125,7 +125,7 @@ func TestServer_DefaultResponses(t *testing.T) {
 			assert.Equal(t, "", body.PlayerID)
 		})
 
-		t.Run("UpdateSettingsは既定のステータスコードとゼロ値のJSONボディを返す", func(t *testing.T) {
+		t.Run("プレイヤー設定の更新は既定のステータスコードとゼロ値のJSONボディを返す", func(t *testing.T) {
 			s := apiaccountserverfake.NewServer()
 			defer s.Close()
 
@@ -137,7 +137,7 @@ func TestServer_DefaultResponses(t *testing.T) {
 			assert.Equal(t, "", body.PlayerID)
 		})
 
-		t.Run("ListFactionsのみ、既定のレスポンスボディは空配列になる", func(t *testing.T) {
+		t.Run("所持陣営一覧の取得のみ、既定のレスポンスボディは空配列になる", func(t *testing.T) {
 			s := apiaccountserverfake.NewServer()
 			defer s.Close()
 
@@ -149,7 +149,7 @@ func TestServer_DefaultResponses(t *testing.T) {
 			assert.Equal(t, []string{}, body.Factions)
 		})
 
-		t.Run("204を返すエンドポイントは、ボディを持たない応答を返す", func(t *testing.T) {
+		t.Run("経験値の加算は既定で204を返し、ボディを持たない応答になる", func(t *testing.T) {
 			s := apiaccountserverfake.NewServer()
 			defer s.Close()
 
@@ -162,7 +162,7 @@ func TestServer_DefaultResponses(t *testing.T) {
 			assert.Empty(t, b)
 		})
 
-		t.Run("SelectInitialFaction(既定は200)は、ボディを持たない応答を返す", func(t *testing.T) {
+		t.Run("初期陣営の選択は既定で200を返し、ボディを持たない応答になる", func(t *testing.T) {
 			s := apiaccountserverfake.NewServer()
 			defer s.Close()
 
