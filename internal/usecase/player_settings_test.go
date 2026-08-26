@@ -70,20 +70,22 @@ func TestPlayerSettingsInteractor_Get(t *testing.T) {
 
 func TestPlayerSettingsInteractor_Update(t *testing.T) {
 	t.Run("PlayerSettingsInteractor", func(t *testing.T) {
-		t.Run("Updateは、patchで指定された(nilでない)フィールドのみが更新される", func(t *testing.T) {
-			interactor := newTestPlayerSettingsInteractor(t)
-			playerID := registerTestPlayer(t, "firebase-settings-update-1")
-			newLanguage := "en"
+		t.Run("Update", func(t *testing.T) {
+			t.Run("プレイヤー設定について、更新内容で値を指定したフィールドのみが更新され、指定しなかったフィールドは元の値のまま変わらない", func(t *testing.T) {
+				interactor := newTestPlayerSettingsInteractor(t)
+				playerID := registerTestPlayer(t, "firebase-settings-update-1")
+				newLanguage := "en"
 
-			err := interactor.Update(context.Background(), playerID, &port.PlayerSettingsPatch{Language: &newLanguage})
+				err := interactor.Update(context.Background(), playerID, &port.PlayerSettingsPatch{Language: &newLanguage})
 
-			require.NoError(t, err)
-			resp, err := interactor.Get(context.Background(), playerID)
-			require.NoError(t, err)
-			assert.Equal(t, "en", resp.Language)
-			assert.Equal(t, int64(50), resp.BgmVolume)
-			assert.Equal(t, int64(50), resp.SeVolume)
-			assert.True(t, resp.PushEnabled)
+				require.NoError(t, err)
+				resp, err := interactor.Get(context.Background(), playerID)
+				require.NoError(t, err)
+				assert.Equal(t, "en", resp.Language)
+				assert.Equal(t, int64(50), resp.BgmVolume)
+				assert.Equal(t, int64(50), resp.SeVolume)
+				assert.True(t, resp.PushEnabled)
+			})
 		})
 	})
 }

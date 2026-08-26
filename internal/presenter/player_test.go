@@ -72,7 +72,7 @@ func TestBuildPlayerResponse(t *testing.T) {
 			assert.Equal(t, apiaccount.OnboardingStatusFactionSet, resp.OnboardingStatus)
 		})
 
-		t.Run("レベル進捗の計算結果を用いてLevelExpCurrentとLevelExpRequiredを算出する", func(t *testing.T) {
+		t.Run("レベル進捗の計算結果を用いて、現在レベル内の経験値進捗と次レベルまでに必要な経験値の幅を算出する", func(t *testing.T) {
 			// coeff=100, level=2 の開始閾値は400、次レベル(3)必要経験値は900
 			view := &domain.PlayerView{
 				Player: domain.Player{

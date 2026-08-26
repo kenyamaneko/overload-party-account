@@ -19,7 +19,7 @@ import (
 func TestPlayerViewRepository_ReferenceMethodsNotFound(t *testing.T) {
 	t.Run("PlayerViewRepository", func(t *testing.T) {
 		t.Run("参照系メソッドに共通する仕様", func(t *testing.T) {
-			t.Run("FindByIDは、存在しないplayer_idを指定したとき、見つからないことを示すエラーを返す", func(t *testing.T) {
+			t.Run("存在しないplayer_idでプレイヤーのビューを取得しようとしたとき、見つからないことを示すエラーを返す", func(t *testing.T) {
 				sharedPg.Truncate(t)
 				repo := postgres.NewPlayerViewRepository(sharedPg.Pool)
 
@@ -28,7 +28,7 @@ func TestPlayerViewRepository_ReferenceMethodsNotFound(t *testing.T) {
 				assert.ErrorIs(t, err, port.ErrNotFound)
 			})
 
-			t.Run("FindByFirebaseUIDは、存在しないfirebase_uidを指定したとき、見つからないことを示すエラーを返す", func(t *testing.T) {
+			t.Run("存在しないfirebase_uidでプレイヤーのビューを取得しようとしたとき、見つからないことを示すエラーを返す", func(t *testing.T) {
 				sharedPg.Truncate(t)
 				repo := postgres.NewPlayerViewRepository(sharedPg.Pool)
 
@@ -42,7 +42,7 @@ func TestPlayerViewRepository_ReferenceMethodsNotFound(t *testing.T) {
 
 func TestPlayerViewRepository_JoinedFields(t *testing.T) {
 	t.Run("PlayerViewRepository", func(t *testing.T) {
-		t.Run("FindByIDは、players/player_progression/player_factions(is_initial=true)を結合した結果を返す", func(t *testing.T) {
+		t.Run("player_idでプレイヤーのビューを取得すると、players/player_progression/player_factions(is_initial=true)を結合した結果を返す", func(t *testing.T) {
 			sharedPg.Truncate(t)
 			player := createTestPlayer(t)
 			factionRepo := postgres.NewFactionRepository(sharedPg.Pool)
@@ -70,7 +70,7 @@ func TestPlayerViewRepository_JoinedFields(t *testing.T) {
 			assert.Nil(t, view.InitialFaction)
 		})
 
-		t.Run("FindByFirebaseUIDは、players/player_progression/player_factions(is_initial=true)を結合した結果を返す", func(t *testing.T) {
+		t.Run("firebase_uidでプレイヤーのビューを取得すると、players/player_progression/player_factions(is_initial=true)を結合した結果を返す", func(t *testing.T) {
 			sharedPg.Truncate(t)
 			player := createTestPlayer(t)
 			viewRepo := postgres.NewPlayerViewRepository(sharedPg.Pool)

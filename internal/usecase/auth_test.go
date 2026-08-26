@@ -98,7 +98,7 @@ func TestAuthInteractor_Login(t *testing.T) {
 				assert.Equal(t, registered.PlayerID, resp.PlayerID)
 			})
 
-			t.Run("存在しないとき、ErrPlayerNotFoundを返す(FindByFirebaseUIDとは異なるエラー値になる)", func(t *testing.T) {
+			t.Run("存在しないとき、ErrPlayerNotFoundを返す", func(t *testing.T) {
 				interactor := newTestAuthInteractor(t)
 
 				_, err := interactor.Login(context.Background(), "firebase-missing")

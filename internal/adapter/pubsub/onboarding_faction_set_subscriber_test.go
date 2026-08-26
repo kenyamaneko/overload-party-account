@@ -25,7 +25,7 @@ func TestOnboardingFactionSetSubscriber_HandleMessage(t *testing.T) {
 			require.Error(t, err)
 		})
 
-		t.Run("event_typeが一致しないとき、エラーを返さずに処理を終える", func(t *testing.T) {
+		t.Run("イベント種別が対象外(onboarding_faction_set以外)のとき、エラーにならず、オンボーディングの初期ファクション設定処理は実行されない", func(t *testing.T) {
 			applier := &fakeApplier{requireEmpty: true}
 			s := pubsub.NewOnboardingFactionSetSubscriber(applier)
 			event := apiscenario.OnboardingFactionSetEvent{
@@ -44,7 +44,7 @@ func TestOnboardingFactionSetSubscriber_HandleMessage(t *testing.T) {
 			assert.Nil(t, applier.calledWith)
 		})
 
-		t.Run("player_idが空のとき、委譲せずにエラーを返す", func(t *testing.T) {
+		t.Run("イベントに含まれる対象プレイヤーのIDが空文字のとき、エラーを返し、オンボーディングの初期ファクション設定処理は実行されない", func(t *testing.T) {
 			applier := &fakeApplier{requireEmpty: true}
 			s := pubsub.NewOnboardingFactionSetSubscriber(applier)
 			event := apiscenario.OnboardingFactionSetEvent{
@@ -60,9 +60,10 @@ func TestOnboardingFactionSetSubscriber_HandleMessage(t *testing.T) {
 			err = s.HandleMessage(context.Background(), data)
 
 			require.Error(t, err)
+			assert.Nil(t, applier.calledWith)
 		})
 
-		t.Run("初期選択ファクションIDが空のとき、委譲せずにエラーを返す", func(t *testing.T) {
+		t.Run("初期選択ファクションIDが空のとき、エラーを返し、オンボーディングの初期ファクション設定処理は実行されない", func(t *testing.T) {
 			applier := &fakeApplier{requireEmpty: true}
 			s := pubsub.NewOnboardingFactionSetSubscriber(applier)
 			event := apiscenario.OnboardingFactionSetEvent{
@@ -78,9 +79,10 @@ func TestOnboardingFactionSetSubscriber_HandleMessage(t *testing.T) {
 			err = s.HandleMessage(context.Background(), data)
 
 			require.Error(t, err)
+			assert.Nil(t, applier.calledWith)
 		})
 
-		t.Run("委譲先がエラーを返したとき、subscriberはエラーを返す", func(t *testing.T) {
+		t.Run("オンボーディングの初期ファクション設定処理がエラーを返したとき、subscriberもエラーを返す", func(t *testing.T) {
 			applier := &fakeApplier{err: errors.New("boom")}
 			s := pubsub.NewOnboardingFactionSetSubscriber(applier)
 			event := apiscenario.OnboardingFactionSetEvent{
@@ -98,7 +100,7 @@ func TestOnboardingFactionSetSubscriber_HandleMessage(t *testing.T) {
 			require.Error(t, err)
 		})
 
-		t.Run("委譲先が重複配信によりスキップされたことを示す結果を返したとき、成功として応答する", func(t *testing.T) {
+		t.Run("オンボーディングの初期ファクション設定処理が重複配信によりスキップされたことを示す結果を返したとき、subscriberはエラーにならない", func(t *testing.T) {
 			applier := &fakeApplier{processed: false}
 			s := pubsub.NewOnboardingFactionSetSubscriber(applier)
 			event := apiscenario.OnboardingFactionSetEvent{
@@ -116,7 +118,7 @@ func TestOnboardingFactionSetSubscriber_HandleMessage(t *testing.T) {
 			require.NoError(t, err)
 		})
 
-		t.Run("委譲先が正常に完了したことを示す結果を返したとき、成功として応答する", func(t *testing.T) {
+		t.Run("オンボーディングの初期ファクション設定処理が正常に完了したことを示す結果を返したとき、subscriberはエラーにならない", func(t *testing.T) {
 			applier := &fakeApplier{processed: true}
 			s := pubsub.NewOnboardingFactionSetSubscriber(applier)
 			event := apiscenario.OnboardingFactionSetEvent{

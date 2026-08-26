@@ -11,13 +11,13 @@ import (
 
 func TestCanTransitionOnboardingStatus(t *testing.T) {
 	t.Run("オンボーディング状態の前進判定", func(t *testing.T) {
-		t.Run("現在の状態が4値のいずれでもないとき、エラーを返す", func(t *testing.T) {
+		t.Run("現在の状態がnot_started/name_set/faction_set/completedのいずれでもないとき、エラーを返す", func(t *testing.T) {
 			_, err := domain.CanTransitionOnboardingStatus("bogus", domain.OnboardingStatusNameSet)
 
 			require.Error(t, err)
 		})
 
-		t.Run("遷移先の状態が4値のいずれでもないとき、エラーを返す", func(t *testing.T) {
+		t.Run("遷移先の状態がnot_started/name_set/faction_set/completedのいずれでもないとき、エラーを返す", func(t *testing.T) {
 			_, err := domain.CanTransitionOnboardingStatus(domain.OnboardingStatusNameSet, "bogus")
 
 			require.Error(t, err)

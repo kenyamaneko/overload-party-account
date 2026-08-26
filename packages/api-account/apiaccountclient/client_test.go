@@ -77,7 +77,7 @@ func TestClient_StatusToSentinelError(t *testing.T) {
 			})
 		}
 
-		t.Run("いずれにも該当しない想定外のステータスのとき、いずれのsentinelでもないエラーを返す", func(t *testing.T) {
+		t.Run("401/404/400/409/500以上のいずれでもない想定外のステータスのとき、いずれのsentinelでもないエラーを返す", func(t *testing.T) {
 			c := newTestClient(t, 418, "", nil)
 
 			_, err := c.GetPlayer(context.Background())

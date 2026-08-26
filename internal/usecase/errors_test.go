@@ -25,7 +25,7 @@ func TestIsPublisherBug(t *testing.T) {
 			assert.True(t, usecase.IsPublisherBug(err))
 		})
 
-		t.Run("上記以外のエラーのとき、falseを返す", func(t *testing.T) {
+		t.Run("port.ErrNotFoundもErrFactionConflictも包んでいないエラーのとき、falseを返す", func(t *testing.T) {
 			err := errors.New("some other error")
 
 			assert.False(t, usecase.IsPublisherBug(err))

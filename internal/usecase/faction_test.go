@@ -19,7 +19,7 @@ import (
 func TestFactionInteractor_SelectInitialFaction(t *testing.T) {
 	t.Run("FactionInteractor", func(t *testing.T) {
 		t.Run("SelectInitialFaction", func(t *testing.T) {
-			t.Run("指定したファクションが選択可能なファクションでないとき、エラーを返す", func(t *testing.T) {
+			t.Run("選択可能な4ファクション(SHE/Tenki/Sugar/Tuners)に含まれないNeutralを指定したとき、エラーを返す", func(t *testing.T) {
 				interactor := newTestFactionInteractor(t)
 				playerID := registerTestPlayer(t, "firebase-select-1")
 
@@ -70,32 +70,36 @@ func TestFactionInteractor_SelectInitialFaction(t *testing.T) {
 
 func TestFactionInteractor_GrantFaction(t *testing.T) {
 	t.Run("FactionInteractor", func(t *testing.T) {
-		t.Run("GrantFactionは、指定したプレイヤーへ指定ファクションを追加する", func(t *testing.T) {
-			interactor := newTestFactionInteractor(t)
-			playerID := registerTestPlayer(t, "firebase-grant-1")
+		t.Run("GrantFaction", func(t *testing.T) {
+			t.Run("指定したプレイヤーへ指定ファクションを追加する", func(t *testing.T) {
+				interactor := newTestFactionInteractor(t)
+				playerID := registerTestPlayer(t, "firebase-grant-1")
 
-			err := interactor.GrantFaction(context.Background(), playerID, gamedesign.FactionSugar)
+				err := interactor.GrantFaction(context.Background(), playerID, gamedesign.FactionSugar)
 
-			require.NoError(t, err)
-			factions, err := interactor.ListFactions(context.Background(), playerID)
-			require.NoError(t, err)
-			assert.Contains(t, factions, gamedesign.FactionSugar)
+				require.NoError(t, err)
+				factions, err := interactor.ListFactions(context.Background(), playerID)
+				require.NoError(t, err)
+				assert.Contains(t, factions, gamedesign.FactionSugar)
+			})
 		})
 	})
 }
 
 func TestFactionInteractor_ListFactions(t *testing.T) {
 	t.Run("FactionInteractor", func(t *testing.T) {
-		t.Run("ListFactionsは、指定したプレイヤーの所持ファクション一覧をそのまま返す", func(t *testing.T) {
-			interactor := newTestFactionInteractor(t)
-			playerID := registerTestPlayer(t, "firebase-list-1")
-			require.NoError(t, interactor.GrantFaction(context.Background(), playerID, gamedesign.FactionSHE))
-			require.NoError(t, interactor.GrantFaction(context.Background(), playerID, gamedesign.FactionTuners))
+		t.Run("ListFactions", func(t *testing.T) {
+			t.Run("指定したプレイヤーの所持ファクション一覧をそのまま返す", func(t *testing.T) {
+				interactor := newTestFactionInteractor(t)
+				playerID := registerTestPlayer(t, "firebase-list-1")
+				require.NoError(t, interactor.GrantFaction(context.Background(), playerID, gamedesign.FactionSHE))
+				require.NoError(t, interactor.GrantFaction(context.Background(), playerID, gamedesign.FactionTuners))
 
-			factions, err := interactor.ListFactions(context.Background(), playerID)
+				factions, err := interactor.ListFactions(context.Background(), playerID)
 
-			require.NoError(t, err)
-			assert.ElementsMatch(t, []string{gamedesign.FactionSHE, gamedesign.FactionTuners}, factions)
+				require.NoError(t, err)
+				assert.ElementsMatch(t, []string{gamedesign.FactionSHE, gamedesign.FactionTuners}, factions)
+			})
 		})
 	})
 }

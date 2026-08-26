@@ -21,7 +21,7 @@ import (
 func TestPlayerInteractor_UpdatePremium(t *testing.T) {
 	t.Run("PlayerInteractor", func(t *testing.T) {
 		t.Run("UpdatePremium", func(t *testing.T) {
-			t.Run("expiresAtMillisが指定されているとき、UNIXミリ秒を絶対時刻に変換してプレミアム有効期限として保存する", func(t *testing.T) {
+			t.Run("有効期限をUNIXミリ秒で指定したとき、絶対時刻に変換してプレミアム有効期限として保存する", func(t *testing.T) {
 				interactor := newTestPlayerInteractor(t, validGameConfigValues())
 				playerID := registerTestPlayer(t, "firebase-premium-1")
 				expiresAt := time.Date(2027, 6, 1, 0, 0, 0, 0, time.UTC)
@@ -36,7 +36,7 @@ func TestPlayerInteractor_UpdatePremium(t *testing.T) {
 				assert.WithinDuration(t, expiresAt, *resp.PremiumExpiresAt, time.Millisecond)
 			})
 
-			t.Run("expiresAtMillisが指定されていない(nil)とき、プレミアム有効期限は未設定(nil)として保存する", func(t *testing.T) {
+			t.Run("有効期限を指定しなかったとき、プレミアム有効期限は未設定(nil)として保存する", func(t *testing.T) {
 				interactor := newTestPlayerInteractor(t, validGameConfigValues())
 				playerID := registerTestPlayer(t, "firebase-premium-2")
 
@@ -62,13 +62,16 @@ func TestPlayerInteractor_UpdatePremium(t *testing.T) {
 func TestPlayerInteractor_UpdateName(t *testing.T) {
 	t.Run("PlayerInteractor", func(t *testing.T) {
 		t.Run("UpdateName", func(t *testing.T) {
-			t.Run("表示名が表示名バリデーションの規定に違反するとき、更新せずエラーを返す", func(t *testing.T) {
+			t.Run("表示名が無効(空文字・空白のみ・20文字超・制御文字のいずれか)なとき、更新せずエラーを返す", func(t *testing.T) {
 				interactor := newTestPlayerInteractor(t, validGameConfigValues())
 				playerID := registerTestPlayer(t, "firebase-name-1")
 
 				_, err := interactor.UpdateName(context.Background(), playerID, "")
 
 				require.Error(t, err)
+				resp, err := interactor.GetPlayerResponse(context.Background(), playerID)
+				require.NoError(t, err)
+				assert.Nil(t, resp.Name)
 			})
 
 			t.Run("表示名が有効なとき、表示名を更新し、更新後のプレイヤー情報を返す", func(t *testing.T) {
@@ -96,7 +99,7 @@ func TestPlayerInteractor_ValidateNameForOnboarding(t *testing.T) {
 				require.Error(t, err)
 			})
 
-			t.Run("プレイヤーが存在し、表示名が表示名バリデーションの規定に違反するとき、エラーを返し、対象プレイヤーの表示名は呼び出し前の値のまま変わらない", func(t *testing.T) {
+			t.Run("プレイヤーが存在し、表示名が無効(空文字・空白のみ・20文字超・制御文字のいずれか)なとき、エラーを返し、対象プレイヤーの表示名は呼び出し前の値のまま変わらない", func(t *testing.T) {
 				interactor := newTestPlayerInteractor(t, validGameConfigValues())
 				playerID := registerTestPlayer(t, "firebase-validate-1")
 				_, err := interactor.UpdateName(context.Background(), playerID, "呼び出し前の名前")

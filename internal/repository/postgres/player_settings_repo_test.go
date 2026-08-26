@@ -32,57 +32,61 @@ func createTestPlayerSettings(t *testing.T, playerID string) {
 
 func TestPlayerSettingsRepository_Get(t *testing.T) {
 	t.Run("PlayerSettingsRepository", func(t *testing.T) {
-		t.Run("Getは、存在しないplayer_idを指定したとき、見つからないことを示すエラーを返す", func(t *testing.T) {
-			sharedPg.Truncate(t)
-			repo := postgres.NewPlayerSettingsRepository(sharedPg.Pool)
+		t.Run("Get", func(t *testing.T) {
+			t.Run("存在しないplayer_idを指定したとき、見つからないことを示すエラーを返す", func(t *testing.T) {
+				sharedPg.Truncate(t)
+				repo := postgres.NewPlayerSettingsRepository(sharedPg.Pool)
 
-			_, err := repo.Get(context.Background(), uuid.NewString())
+				_, err := repo.Get(context.Background(), uuid.NewString())
 
-			assert.ErrorIs(t, err, port.ErrNotFound)
-		})
+				assert.ErrorIs(t, err, port.ErrNotFound)
+			})
 
-		t.Run("Getは、設定行が存在するとき、設定を返す", func(t *testing.T) {
-			sharedPg.Truncate(t)
-			player := createTestPlayer(t)
-			createTestPlayerSettings(t, player.PlayerID)
-			repo := postgres.NewPlayerSettingsRepository(sharedPg.Pool)
+			t.Run("設定行が存在するとき、設定を返す", func(t *testing.T) {
+				sharedPg.Truncate(t)
+				player := createTestPlayer(t)
+				createTestPlayerSettings(t, player.PlayerID)
+				repo := postgres.NewPlayerSettingsRepository(sharedPg.Pool)
 
-			settings, err := repo.Get(context.Background(), player.PlayerID)
+				settings, err := repo.Get(context.Background(), player.PlayerID)
 
-			require.NoError(t, err)
-			assert.Equal(t, "ja", settings.Language)
+				require.NoError(t, err)
+				assert.Equal(t, "ja", settings.Language)
+			})
 		})
 	})
 }
 
 func TestPlayerSettingsRepository_UpdatePartial(t *testing.T) {
 	t.Run("PlayerSettingsRepository", func(t *testing.T) {
-		t.Run("UpdatePartialは、存在しないplayer_idを指定したとき、見つからないことを示すエラーを返す", func(t *testing.T) {
-			sharedPg.Truncate(t)
-			repo := postgres.NewPlayerSettingsRepository(sharedPg.Pool)
-			lang := "en"
+		t.Run("UpdatePartial", func(t *testing.T) {
+			t.Run("存在しないplayer_idを指定したとき、見つからないことを示すエラーを返す", func(t *testing.T) {
+				sharedPg.Truncate(t)
+				repo := postgres.NewPlayerSettingsRepository(sharedPg.Pool)
+				lang := "en"
 
-			err := repo.UpdatePartial(context.Background(), uuid.NewString(), &port.PlayerSettingsPatch{Language: &lang})
+				err := repo.UpdatePartial(context.Background(), uuid.NewString(), &port.PlayerSettingsPatch{Language: &lang})
 
-			assert.ErrorIs(t, err, port.ErrNotFound)
-		})
+				assert.ErrorIs(t, err, port.ErrNotFound)
+			})
 
-		t.Run("設定の部分更新は、patchでnilを指定したフィールドは変更されず既存値が保持され、nilでないフィールドは新しい値に置き換わる", func(t *testing.T) {
-			sharedPg.Truncate(t)
-			player := createTestPlayer(t)
-			createTestPlayerSettings(t, player.PlayerID)
-			repo := postgres.NewPlayerSettingsRepository(sharedPg.Pool)
-			newBgm := int64(80)
+			t.Run("更新内容で値を指定しなかったフィールドは変更されず既存値が保持され、値を指定したフィールドは新しい値に置き換わる", func(t *testing.T) {
+				sharedPg.Truncate(t)
+				player := createTestPlayer(t)
+				createTestPlayerSettings(t, player.PlayerID)
+				repo := postgres.NewPlayerSettingsRepository(sharedPg.Pool)
+				newBgm := int64(80)
 
-			err := repo.UpdatePartial(context.Background(), player.PlayerID, &port.PlayerSettingsPatch{BgmVolume: &newBgm})
+				err := repo.UpdatePartial(context.Background(), player.PlayerID, &port.PlayerSettingsPatch{BgmVolume: &newBgm})
 
-			require.NoError(t, err)
-			settings, err := repo.Get(context.Background(), player.PlayerID)
-			require.NoError(t, err)
-			assert.Equal(t, int64(80), settings.BgmVolume)
-			assert.Equal(t, "ja", settings.Language)
-			assert.Equal(t, int64(50), settings.SeVolume)
-			assert.True(t, settings.PushEnabled)
+				require.NoError(t, err)
+				settings, err := repo.Get(context.Background(), player.PlayerID)
+				require.NoError(t, err)
+				assert.Equal(t, int64(80), settings.BgmVolume)
+				assert.Equal(t, "ja", settings.Language)
+				assert.Equal(t, int64(50), settings.SeVolume)
+				assert.True(t, settings.PushEnabled)
+			})
 		})
 	})
 }

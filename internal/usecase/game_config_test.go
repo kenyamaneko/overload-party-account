@@ -121,7 +121,7 @@ func TestValidateGameConfig(t *testing.T) {
 			assert.Error(t, err)
 		})
 
-		t.Run("上記の全条件を満たすとき、エラーを返さない", func(t *testing.T) {
+		t.Run("free_daily_battle_limitとexp_formula_coefficientが0より大きく、exp_win/exp_loss/exp_drawのキーが全て存在するとき、エラーを返さない", func(t *testing.T) {
 			repo := newFakeGameConfigRepo(validGameConfigValues())
 
 			err := usecase.ValidateGameConfig(context.Background(), repo)

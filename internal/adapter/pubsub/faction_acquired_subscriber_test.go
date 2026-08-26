@@ -25,7 +25,7 @@ func TestFactionAcquiredSubscriber_HandleMessage(t *testing.T) {
 			require.Error(t, err)
 		})
 
-		t.Run("event_typeが一致しないとき、エラーを返さずに成功として処理を終える", func(t *testing.T) {
+		t.Run("イベント種別が対象外(faction_acquired以外)のとき、エラーにならず、対象プレイヤーへのファクション追加は行われない", func(t *testing.T) {
 			factionRepo := newFakeFactionRepo()
 			s := pubsub.NewFactionAcquiredSubscriber(factionRepo, fakeTxRunner{}, newFakeProcessedEventRepo())
 			event := apishop.FactionAcquiredEvent{
@@ -44,7 +44,7 @@ func TestFactionAcquiredSubscriber_HandleMessage(t *testing.T) {
 			assert.Empty(t, factionRepo.factions["player-1"])
 		})
 
-		t.Run("event_typeが一致し、同一event_idが未処理のとき、対象プレイヤーに指定ファクションを所持ファクションとして追加する", func(t *testing.T) {
+		t.Run("イベント種別がfaction_acquiredで、同一のイベントIDを処理するのが初めてのとき、対象プレイヤーに指定ファクションを所持ファクションとして追加する", func(t *testing.T) {
 			factionRepo := newFakeFactionRepo()
 			s := pubsub.NewFactionAcquiredSubscriber(factionRepo, fakeTxRunner{}, newFakeProcessedEventRepo())
 			event := apishop.FactionAcquiredEvent{
@@ -63,7 +63,7 @@ func TestFactionAcquiredSubscriber_HandleMessage(t *testing.T) {
 			assert.Equal(t, []string{"SHE"}, factionRepo.factions["player-1"])
 		})
 
-		t.Run("同一event_idが処理済みのとき、ファクションの追加は行わず、成功として応答する", func(t *testing.T) {
+		t.Run("同一のイベントIDが処理済みのとき、ファクションの追加は行われず、エラーにならない", func(t *testing.T) {
 			factionRepo := newFakeFactionRepo()
 			eventRepo := newFakeProcessedEventRepo()
 			s := pubsub.NewFactionAcquiredSubscriber(factionRepo, fakeTxRunner{}, eventRepo)
@@ -108,7 +108,7 @@ func TestFactionAcquiredSubscriber_HandleMessage(t *testing.T) {
 			require.Error(t, err)
 		})
 
-		t.Run("ファクションの追加が失敗したとき、event_idの処理済み記録もロールバックされ、同一event_idで再配信されると再度処理が実行される", func(t *testing.T) {
+		t.Run("ファクションの追加が失敗したとき、イベントIDの処理済み記録もロールバックされ、同一のイベントIDで再配信されると再度処理が実行される", func(t *testing.T) {
 			factionRepo := newFakeFactionRepo()
 			factionRepo.addErr = errors.New("insert failed")
 			eventRepo := newFakeProcessedEventRepo()

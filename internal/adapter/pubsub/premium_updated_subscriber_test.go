@@ -25,7 +25,7 @@ func TestPremiumUpdatedSubscriber_HandleMessage(t *testing.T) {
 			require.Error(t, err)
 		})
 
-		t.Run("event_typeが一致しないとき、エラーを返さずに成功として処理を終える", func(t *testing.T) {
+		t.Run("イベント種別が対象外(premium_updated以外)のとき、エラーにならず、対象プレイヤーのプレミアムステータスは更新されない", func(t *testing.T) {
 			premiumRepo := newFakePlayerPremiumRepo()
 			s := pubsub.NewPremiumUpdatedSubscriber(premiumRepo, fakeTxRunner{}, newFakeProcessedEventRepo())
 			event := apishop.PremiumUpdatedEvent{
@@ -45,7 +45,7 @@ func TestPremiumUpdatedSubscriber_HandleMessage(t *testing.T) {
 			assert.False(t, premiumRepo.isPremium["player-1"])
 		})
 
-		t.Run("event_typeが一致し、同一event_idが未処理のとき、対象プレイヤーのプレミアムステータスと有効期限をイベントに含まれる値に更新する", func(t *testing.T) {
+		t.Run("イベント種別がpremium_updatedで、同一のイベントIDを処理するのが初めてのとき、対象プレイヤーのプレミアムステータスと有効期限を、イベントに含まれる値に更新する", func(t *testing.T) {
 			premiumRepo := newFakePlayerPremiumRepo()
 			s := pubsub.NewPremiumUpdatedSubscriber(premiumRepo, fakeTxRunner{}, newFakeProcessedEventRepo())
 			expiresAt := time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC)
@@ -68,7 +68,7 @@ func TestPremiumUpdatedSubscriber_HandleMessage(t *testing.T) {
 			assert.Equal(t, &expiresAt, premiumRepo.expiresAt["player-1"])
 		})
 
-		t.Run("同一event_idが処理済みのとき、プレミアムステータスの更新は行わず、成功として応答する", func(t *testing.T) {
+		t.Run("同一のイベントIDが処理済みのとき、プレミアムステータスの更新は行われず、エラーにならない", func(t *testing.T) {
 			premiumRepo := newFakePlayerPremiumRepo()
 			eventRepo := newFakeProcessedEventRepo()
 			s := pubsub.NewPremiumUpdatedSubscriber(premiumRepo, fakeTxRunner{}, eventRepo)
@@ -115,7 +115,7 @@ func TestPremiumUpdatedSubscriber_HandleMessage(t *testing.T) {
 			require.Error(t, err)
 		})
 
-		t.Run("プレミアムステータスの更新が失敗したとき、event_idの処理済み記録もロールバックされ、同一event_idで再配信されると再度処理が実行される", func(t *testing.T) {
+		t.Run("プレミアムステータスの更新が失敗したとき、イベントIDの処理済み記録もロールバックされ、同一のイベントIDで再配信されると再度処理が実行される", func(t *testing.T) {
 			premiumRepo := newFakePlayerPremiumRepo()
 			premiumRepo.updateErr = errors.New("update failed")
 			eventRepo := newFakeProcessedEventRepo()

@@ -21,7 +21,7 @@ import (
 func TestOnboardingInteractor_ApplyNameSet(t *testing.T) {
 	t.Run("OnboardingInteractor", func(t *testing.T) {
 		t.Run("ApplyNameSetに共通する仕様", func(t *testing.T) {
-			t.Run("同一event_idが未処理のとき、処理を実行し、戻り値のprocessedはtrueになり、オンボーディング状態は目標状態(name_set)へ進む", func(t *testing.T) {
+			t.Run("同一のイベントIDを処理するのが初めてのとき、処理を実行し、戻り値はtrueになり、オンボーディング状態は目標状態(name_set)へ進む", func(t *testing.T) {
 				interactor := newTestOnboardingInteractor(t)
 				playerID := registerTestPlayer(t, "firebase-onb-1")
 
@@ -34,7 +34,7 @@ func TestOnboardingInteractor_ApplyNameSet(t *testing.T) {
 				assert.Equal(t, domain.OnboardingStatusNameSet, status)
 			})
 
-			t.Run("同一event_idが処理済みのとき、追加の副作用を起こさず、戻り値のprocessedはfalseになる", func(t *testing.T) {
+			t.Run("同一のイベントIDが処理済みのとき、追加の副作用を起こさず、戻り値はfalseになる", func(t *testing.T) {
 				interactor := newTestOnboardingInteractor(t)
 				playerID := registerTestPlayer(t, "firebase-onb-2")
 				eventID := uuid.NewString()
@@ -51,7 +51,7 @@ func TestOnboardingInteractor_ApplyNameSet(t *testing.T) {
 				assert.Equal(t, "最初の名前", *player.Name)
 			})
 
-			t.Run("処理本体の途中でエラーが起きたとき、event_idの処理済み記録もロールバックされ、同一event_idで再配信されると再度処理が実行される", func(t *testing.T) {
+			t.Run("処理本体の途中でエラーが起きたとき、イベントIDの処理済み記録もロールバックされ、同一のイベントIDで再配信されると再度処理が実行される", func(t *testing.T) {
 				interactor := newTestOnboardingInteractor(t)
 				eventID := uuid.NewString()
 				nonexistentPlayerID := uuid.NewString()
@@ -81,13 +81,16 @@ func TestOnboardingInteractor_ApplyNameSet(t *testing.T) {
 		})
 
 		t.Run("ApplyNameSet固有の仕様", func(t *testing.T) {
-			t.Run("表示名が表示名バリデーションの規定に違反するとき、処理を実行せずエラーを返す", func(t *testing.T) {
+			t.Run("表示名が無効(空文字・空白のみ・20文字超・制御文字のいずれか)なとき、処理を実行せずエラーを返す", func(t *testing.T) {
 				interactor := newTestOnboardingInteractor(t)
 				playerID := registerTestPlayer(t, "firebase-onb-5")
 
 				_, err := interactor.ApplyNameSet(context.Background(), uuid.NewString(), apiscenario.EventTypeOnboardingNameSet, playerID, "")
 
 				require.Error(t, err)
+				player, err := postgres.NewPlayerRepository(sharedPg.Pool).FindByID(context.Background(), playerID)
+				require.NoError(t, err)
+				assert.Nil(t, player.Name)
 			})
 
 			t.Run("表示名が有効なとき、対象プレイヤーの表示名を指定値に更新する", func(t *testing.T) {
@@ -109,13 +112,16 @@ func TestOnboardingInteractor_ApplyNameSet(t *testing.T) {
 func TestOnboardingInteractor_ApplyFactionSet(t *testing.T) {
 	t.Run("OnboardingInteractor", func(t *testing.T) {
 		t.Run("ApplyFactionSet固有の仕様", func(t *testing.T) {
-			t.Run("初期選択ファクションIDが選択可能なファクションでないとき、処理を実行せずエラーを返す", func(t *testing.T) {
+			t.Run("初期選択ファクションIDが選択可能な4ファクション(SHE/Tenki/Sugar/Tuners)に含まれないNeutralのとき、処理を実行せずエラーを返す", func(t *testing.T) {
 				interactor := newTestOnboardingInteractor(t)
 				playerID := registerTestPlayer(t, "firebase-onb-faction-1")
 
 				_, err := interactor.ApplyFactionSet(context.Background(), uuid.NewString(), apiscenario.EventTypeOnboardingFactionSet, playerID, gamedesign.FactionNeutral)
 
 				require.Error(t, err)
+				got, err := postgres.NewFactionRepository(sharedPg.Pool).GetInitialFaction(context.Background(), playerID)
+				require.NoError(t, err)
+				assert.Nil(t, got)
 			})
 
 			t.Run("対象プレイヤーが初期ファクション未選択のとき、指定したファクションを初期ファクションとして設定する", func(t *testing.T) {
@@ -174,7 +180,7 @@ func TestOnboardingInteractor_ApplyFactionSet(t *testing.T) {
 
 func TestOnboardingInteractor_ApplyCompleted(t *testing.T) {
 	t.Run("OnboardingInteractor", func(t *testing.T) {
-		t.Run("同一event_idが未処理のとき、処理を実行し、戻り値のprocessedはtrueになり、オンボーディング状態は目標状態(completed)へ進む", func(t *testing.T) {
+		t.Run("同一のイベントIDを処理するのが初めてのとき、処理を実行し、戻り値はtrueになり、オンボーディング状態は目標状態(completed)へ進む", func(t *testing.T) {
 			interactor := newTestOnboardingInteractor(t)
 			playerID := registerTestPlayer(t, "firebase-onb-completed-1")
 
