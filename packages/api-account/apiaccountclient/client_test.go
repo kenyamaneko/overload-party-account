@@ -93,8 +93,8 @@ func TestClient_StatusToSentinelError(t *testing.T) {
 }
 
 func TestClient_SuccessResponses(t *testing.T) {
-	t.Run("各メソッドの成功時の戻り値", func(t *testing.T) {
-		t.Run("GetHealthは200のとき、ヘルスレスポンスを返す", func(t *testing.T) {
+	t.Run("各エンドポイントの成功時の戻り値", func(t *testing.T) {
+		t.Run("サービス死活監視は200のとき、ヘルスレスポンスを返す", func(t *testing.T) {
 			c := newTestClient(t, 200, "application/json", mustJSON(t, apiaccount.HealthResponse{Status: "ok"}))
 
 			resp, err := c.GetHealth(context.Background())
@@ -103,7 +103,7 @@ func TestClient_SuccessResponses(t *testing.T) {
 			assert.Equal(t, "ok", resp.Status)
 		})
 
-		t.Run("RegisterPlayerは201のとき、登録されたプレイヤー情報を返す", func(t *testing.T) {
+		t.Run("新規プレイヤー登録は201のとき、登録されたプレイヤー情報を返す", func(t *testing.T) {
 			c := newTestClient(t, 201, "application/json", mustJSON(t, apiaccount.PlayerResponse{PlayerID: "player-1"}))
 
 			resp, err := c.RegisterPlayer(context.Background(), apiaccount.RegisterRequest{FirebaseUID: "fb-1"})
@@ -112,7 +112,7 @@ func TestClient_SuccessResponses(t *testing.T) {
 			assert.Equal(t, "player-1", resp.PlayerID)
 		})
 
-		t.Run("LoginPlayerは200のとき、プレイヤー情報を返す", func(t *testing.T) {
+		t.Run("プレイヤーログインは200のとき、プレイヤー情報を返す", func(t *testing.T) {
 			c := newTestClient(t, 200, "application/json", mustJSON(t, apiaccount.PlayerResponse{PlayerID: "player-1"}))
 
 			resp, err := c.LoginPlayer(context.Background(), apiaccount.LoginRequest{FirebaseUID: "fb-1"})
@@ -121,7 +121,7 @@ func TestClient_SuccessResponses(t *testing.T) {
 			assert.Equal(t, "player-1", resp.PlayerID)
 		})
 
-		t.Run("GetPlayerByFirebaseUIDは200のとき、プレイヤー情報を返す", func(t *testing.T) {
+		t.Run("Firebase UIDによるプレイヤー検索は200のとき、プレイヤー情報を返す", func(t *testing.T) {
 			c := newTestClient(t, 200, "application/json", mustJSON(t, apiaccount.PlayerResponse{PlayerID: "player-1"}))
 
 			resp, err := c.GetPlayerByFirebaseUID(context.Background(), "fb-1")
@@ -130,7 +130,7 @@ func TestClient_SuccessResponses(t *testing.T) {
 			assert.Equal(t, "player-1", resp.PlayerID)
 		})
 
-		t.Run("AwardGameExpは204のとき、エラーを返さない", func(t *testing.T) {
+		t.Run("対戦終了後の経験値付与は204のとき、エラーを返さない", func(t *testing.T) {
 			c := newTestClient(t, 204, "", nil)
 
 			err := c.AwardGameExp(context.Background(), apiaccount.AwardGameExpRequest{
@@ -140,7 +140,7 @@ func TestClient_SuccessResponses(t *testing.T) {
 			require.NoError(t, err)
 		})
 
-		t.Run("RevertBattleCountは204のとき、エラーを返さない", func(t *testing.T) {
+		t.Run("対戦停止時のバトル回数取消は204のとき、エラーを返さない", func(t *testing.T) {
 			c := newTestClient(t, 204, "", nil)
 
 			err := c.RevertBattleCount(context.Background(), apiaccount.RevertBattleCountRequest{
@@ -150,7 +150,7 @@ func TestClient_SuccessResponses(t *testing.T) {
 			require.NoError(t, err)
 		})
 
-		t.Run("GetPlayerは200のとき、プレイヤー情報を返す", func(t *testing.T) {
+		t.Run("認証済みプレイヤー自身の情報取得は200のとき、プレイヤー情報を返す", func(t *testing.T) {
 			c := newTestClient(t, 200, "application/json", mustJSON(t, apiaccount.PlayerResponse{PlayerID: "player-1"}))
 
 			resp, err := c.GetPlayer(context.Background())
@@ -159,7 +159,7 @@ func TestClient_SuccessResponses(t *testing.T) {
 			assert.Equal(t, "player-1", resp.PlayerID)
 		})
 
-		t.Run("UpdateNameは200のとき、更新後のプレイヤー情報を返す", func(t *testing.T) {
+		t.Run("プレイヤー名の変更は200のとき、更新後のプレイヤー情報を返す", func(t *testing.T) {
 			c := newTestClient(t, 200, "application/json", mustJSON(t, apiaccount.PlayerResponse{PlayerID: "player-1"}))
 
 			resp, err := c.UpdateName(context.Background(), apiaccount.UpdateNameRequest{Name: "新しい名前"})
@@ -168,7 +168,7 @@ func TestClient_SuccessResponses(t *testing.T) {
 			assert.Equal(t, "player-1", resp.PlayerID)
 		})
 
-		t.Run("ValidateNameForOnboardingは204のとき、エラーを返さない", func(t *testing.T) {
+		t.Run("オンボーディングでの表示名バリデーションは204のとき、エラーを返さない", func(t *testing.T) {
 			c := newTestClient(t, 204, "", nil)
 
 			err := c.ValidateNameForOnboarding(context.Background(), apiaccount.ValidateNameForOnboardingRequest{Name: "名前"})
@@ -176,7 +176,7 @@ func TestClient_SuccessResponses(t *testing.T) {
 			require.NoError(t, err)
 		})
 
-		t.Run("GetBattleLimitは200のとき、バトル制限情報を返す", func(t *testing.T) {
+		t.Run("1日のバトル回数制限の取得は200のとき、バトル制限情報を返す", func(t *testing.T) {
 			c := newTestClient(t, 200, "application/json", mustJSON(t, apiaccount.BattleLimitResponse{
 				DailyBattleCount: 2, DailyBattleLimit: 5, CanBattle: true,
 			}))
@@ -187,7 +187,7 @@ func TestClient_SuccessResponses(t *testing.T) {
 			assert.Equal(t, int64(2), resp.DailyBattleCount)
 		})
 
-		t.Run("IncrementBattleCountは204のとき、エラーを返さない", func(t *testing.T) {
+		t.Run("バトル回数の加算は204のとき、エラーを返さない", func(t *testing.T) {
 			c := newTestClient(t, 204, "", nil)
 
 			err := c.IncrementBattleCount(context.Background())
@@ -195,7 +195,7 @@ func TestClient_SuccessResponses(t *testing.T) {
 			require.NoError(t, err)
 		})
 
-		t.Run("UpdatePremiumは204のとき、エラーを返さない", func(t *testing.T) {
+		t.Run("プレミアムステータスの更新は204のとき、エラーを返さない", func(t *testing.T) {
 			c := newTestClient(t, 204, "", nil)
 
 			err := c.UpdatePremium(context.Background(), apiaccount.UpdatePremiumRequest{IsPremium: true})
@@ -203,7 +203,7 @@ func TestClient_SuccessResponses(t *testing.T) {
 			require.NoError(t, err)
 		})
 
-		t.Run("AddExpは204のとき、エラーを返さない", func(t *testing.T) {
+		t.Run("経験値の加算は204のとき、エラーを返さない", func(t *testing.T) {
 			c := newTestClient(t, 204, "", nil)
 
 			err := c.AddExp(context.Background(), apiaccount.AddExpRequest{ExpGain: 10})
@@ -211,7 +211,7 @@ func TestClient_SuccessResponses(t *testing.T) {
 			require.NoError(t, err)
 		})
 
-		t.Run("ListFactionsは200のとき、所持ファクション一覧を返す", func(t *testing.T) {
+		t.Run("所持陣営一覧の取得は200のとき、所持陣営一覧を返す", func(t *testing.T) {
 			c := newTestClient(t, 200, "application/json", mustJSON(t, apiaccount.FactionListing{Factions: []string{"SHE"}}))
 
 			resp, err := c.ListFactions(context.Background())
@@ -220,7 +220,7 @@ func TestClient_SuccessResponses(t *testing.T) {
 			assert.Equal(t, []string{"SHE"}, resp.Factions)
 		})
 
-		t.Run("GrantFactionは204のとき、エラーを返さない", func(t *testing.T) {
+		t.Run("陣営所有権の付与は204のとき、エラーを返さない", func(t *testing.T) {
 			c := newTestClient(t, 204, "", nil)
 
 			err := c.GrantFaction(context.Background(), apiaccount.FactionGrantRequest{Faction: "SHE"})
@@ -228,7 +228,7 @@ func TestClient_SuccessResponses(t *testing.T) {
 			require.NoError(t, err)
 		})
 
-		t.Run("SelectInitialFactionは200(204ではない)のとき、エラーを返さない", func(t *testing.T) {
+		t.Run("初期陣営の選択は200(204ではない)のとき、エラーを返さない", func(t *testing.T) {
 			c := newTestClient(t, 200, "", nil)
 
 			err := c.SelectInitialFaction(context.Background(), apiaccount.SelectInitialFactionRequest{FactionID: "SHE"})
@@ -236,7 +236,7 @@ func TestClient_SuccessResponses(t *testing.T) {
 			require.NoError(t, err)
 		})
 
-		t.Run("GetPlayerSettingsは200のとき、設定情報を返す", func(t *testing.T) {
+		t.Run("プレイヤー設定の取得は200のとき、設定情報を返す", func(t *testing.T) {
 			c := newTestClient(t, 200, "application/json", mustJSON(t, apiaccount.PlayerSettingsResponse{PlayerID: "player-1", Language: "ja"}))
 
 			resp, err := c.GetPlayerSettings(context.Background())
@@ -245,7 +245,7 @@ func TestClient_SuccessResponses(t *testing.T) {
 			assert.Equal(t, "player-1", resp.PlayerID)
 		})
 
-		t.Run("UpdatePlayerSettingsは200のとき、更新後の設定情報を返す", func(t *testing.T) {
+		t.Run("プレイヤー設定の更新は200のとき、更新後の設定情報を返す", func(t *testing.T) {
 			c := newTestClient(t, 200, "application/json", mustJSON(t, apiaccount.PlayerSettingsResponse{PlayerID: "player-1", Language: "en"}))
 
 			lang := "en"
@@ -263,63 +263,63 @@ func TestClient_NonSuccessAppliesCommonConversion(t *testing.T) {
 			name   string
 			invoke func(c *apiaccountclient.Client) error
 		}{
-			{"RegisterPlayer", func(c *apiaccountclient.Client) error {
+			{"新規プレイヤー登録", func(c *apiaccountclient.Client) error {
 				_, err := c.RegisterPlayer(context.Background(), apiaccount.RegisterRequest{FirebaseUID: "fb-1"})
 				return err
 			}},
-			{"LoginPlayer", func(c *apiaccountclient.Client) error {
+			{"プレイヤーログイン", func(c *apiaccountclient.Client) error {
 				_, err := c.LoginPlayer(context.Background(), apiaccount.LoginRequest{FirebaseUID: "fb-1"})
 				return err
 			}},
-			{"GetPlayerByFirebaseUID", func(c *apiaccountclient.Client) error {
+			{"Firebase UIDによるプレイヤー検索", func(c *apiaccountclient.Client) error {
 				_, err := c.GetPlayerByFirebaseUID(context.Background(), "fb-1")
 				return err
 			}},
-			{"AwardGameExp", func(c *apiaccountclient.Client) error {
+			{"対戦終了後の経験値付与", func(c *apiaccountclient.Client) error {
 				return c.AwardGameExp(context.Background(), apiaccount.AwardGameExpRequest{Player1ID: "p1", Player2ID: "p2", WinnerNum: 1, Reason: "normal", MatchType: "pvp"})
 			}},
-			{"RevertBattleCount", func(c *apiaccountclient.Client) error {
+			{"対戦停止時のバトル回数取消", func(c *apiaccountclient.Client) error {
 				return c.RevertBattleCount(context.Background(), apiaccount.RevertBattleCountRequest{GameID: "g1", Player1ID: "p1", Player2ID: "p2", ConsumedAtMillis: 1000})
 			}},
-			{"GetHealth", func(c *apiaccountclient.Client) error {
+			{"サービス死活監視", func(c *apiaccountclient.Client) error {
 				_, err := c.GetHealth(context.Background())
 				return err
 			}},
-			{"UpdateName", func(c *apiaccountclient.Client) error {
+			{"プレイヤー名の変更", func(c *apiaccountclient.Client) error {
 				_, err := c.UpdateName(context.Background(), apiaccount.UpdateNameRequest{Name: "名前"})
 				return err
 			}},
-			{"ValidateNameForOnboarding", func(c *apiaccountclient.Client) error {
+			{"オンボーディングでの表示名バリデーション", func(c *apiaccountclient.Client) error {
 				return c.ValidateNameForOnboarding(context.Background(), apiaccount.ValidateNameForOnboardingRequest{Name: "名前"})
 			}},
-			{"GetBattleLimit", func(c *apiaccountclient.Client) error {
+			{"1日のバトル回数制限の取得", func(c *apiaccountclient.Client) error {
 				_, err := c.GetBattleLimit(context.Background())
 				return err
 			}},
-			{"IncrementBattleCount", func(c *apiaccountclient.Client) error {
+			{"バトル回数の加算", func(c *apiaccountclient.Client) error {
 				return c.IncrementBattleCount(context.Background())
 			}},
-			{"UpdatePremium", func(c *apiaccountclient.Client) error {
+			{"プレミアムステータスの更新", func(c *apiaccountclient.Client) error {
 				return c.UpdatePremium(context.Background(), apiaccount.UpdatePremiumRequest{IsPremium: true})
 			}},
-			{"AddExp", func(c *apiaccountclient.Client) error {
+			{"経験値の加算", func(c *apiaccountclient.Client) error {
 				return c.AddExp(context.Background(), apiaccount.AddExpRequest{ExpGain: 10})
 			}},
-			{"ListFactions", func(c *apiaccountclient.Client) error {
+			{"所持陣営一覧の取得", func(c *apiaccountclient.Client) error {
 				_, err := c.ListFactions(context.Background())
 				return err
 			}},
-			{"GrantFaction", func(c *apiaccountclient.Client) error {
+			{"陣営所有権の付与", func(c *apiaccountclient.Client) error {
 				return c.GrantFaction(context.Background(), apiaccount.FactionGrantRequest{Faction: "SHE"})
 			}},
-			{"SelectInitialFaction", func(c *apiaccountclient.Client) error {
+			{"初期陣営の選択", func(c *apiaccountclient.Client) error {
 				return c.SelectInitialFaction(context.Background(), apiaccount.SelectInitialFactionRequest{FactionID: "SHE"})
 			}},
-			{"GetPlayerSettings", func(c *apiaccountclient.Client) error {
+			{"プレイヤー設定の取得", func(c *apiaccountclient.Client) error {
 				_, err := c.GetPlayerSettings(context.Background())
 				return err
 			}},
-			{"UpdatePlayerSettings", func(c *apiaccountclient.Client) error {
+			{"プレイヤー設定の更新", func(c *apiaccountclient.Client) error {
 				_, err := c.UpdatePlayerSettings(context.Background(), apiaccount.UpdateSettingsRequest{})
 				return err
 			}},
@@ -338,8 +338,8 @@ func TestClient_NonSuccessAppliesCommonConversion(t *testing.T) {
 }
 
 func TestClient_EndpointSpecificSuccessStatusIsNotInterchangeable(t *testing.T) {
-	t.Run("成功ステータスはメソッドごとに固有で、他の2xxを成功として扱わない", func(t *testing.T) {
-		t.Run("RegisterPlayerは200を受け取ったとき、成功として扱わずエラーを返す", func(t *testing.T) {
+	t.Run("成功ステータスはエンドポイントごとに固有で、他の2xxを成功として扱わない", func(t *testing.T) {
+		t.Run("新規プレイヤー登録は200を受け取ったとき、成功として扱わずエラーを返す", func(t *testing.T) {
 			c := newTestClient(t, 200, "application/json", mustJSON(t, apiaccount.PlayerResponse{PlayerID: "player-1"}))
 
 			_, err := c.RegisterPlayer(context.Background(), apiaccount.RegisterRequest{FirebaseUID: "fb-1"})
@@ -347,7 +347,7 @@ func TestClient_EndpointSpecificSuccessStatusIsNotInterchangeable(t *testing.T) 
 			require.Error(t, err)
 		})
 
-		t.Run("SelectInitialFactionは204を受け取ったとき、成功として扱わずエラーを返す", func(t *testing.T) {
+		t.Run("初期陣営の選択は204を受け取ったとき、成功として扱わずエラーを返す", func(t *testing.T) {
 			c := newTestClient(t, 204, "", nil)
 
 			err := c.SelectInitialFaction(context.Background(), apiaccount.SelectInitialFactionRequest{FactionID: "SHE"})
