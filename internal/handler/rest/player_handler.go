@@ -7,6 +7,7 @@ import (
 
 	"github.com/kenyamaneko/overload-party-account/internal/usecase"
 	apiaccount "github.com/kenyamaneko/overload-party-account/packages/api-account"
+	gamedesign "github.com/kenyamaneko/overload-party-common/packages/game-design-constants"
 
 	internalauth "github.com/kenyamaneko/overload-party-gateway/packages/internalauth-go"
 )
@@ -127,6 +128,14 @@ func (h *PlayerHandler) AwardGameExp(c *gin.Context) {
 	var req apiaccount.AwardGameExpRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if req.Player1ID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "player1_id is required"})
+		return
+	}
+	if req.Player2ID == "" && req.MatchType != gamedesign.MatchTypeNpc {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "player2_id is required"})
 		return
 	}
 	if err := h.playerInteractor.AwardGameExp(c.Request.Context(), req.Player1ID, req.Player2ID, req.WinnerNum, req.Reason, req.MatchType); err != nil {

@@ -38,7 +38,7 @@ func TestPlayerHandler_AwardGameExp(t *testing.T) {
 			assert.Equal(t, 204, w.Code)
 		})
 
-		t.Run("exp_win/exp_loss/exp_drawが正の値で設定されているとき、player1_idが空文字だと500を返す", func(t *testing.T) {
+		t.Run("player1_idが空文字のとき、400を返す", func(t *testing.T) {
 			r, _ := newTestRouter(t, validGameConfigValues())
 			p2 := registerPlayer(t, r)
 
@@ -46,10 +46,10 @@ func TestPlayerHandler_AwardGameExp(t *testing.T) {
 				Player1ID: "", Player2ID: p2.PlayerID, WinnerNum: 1, Reason: "normal", MatchType: gamedesign.MatchTypePvp,
 			}, nil)
 
-			assert.Equal(t, 500, w.Code)
+			assert.Equal(t, 400, w.Code)
 		})
 
-		t.Run("exp_win/exp_loss/exp_drawが正の値で設定されており、match_typeがnpcでないとき、player2_idが空文字だと500を返す", func(t *testing.T) {
+		t.Run("match_typeがnpcでないとき、player2_idが空文字だと400を返す", func(t *testing.T) {
 			r, _ := newTestRouter(t, validGameConfigValues())
 			p1 := registerPlayer(t, r)
 
@@ -57,7 +57,7 @@ func TestPlayerHandler_AwardGameExp(t *testing.T) {
 				Player1ID: p1.PlayerID, Player2ID: "", WinnerNum: 1, Reason: "normal", MatchType: gamedesign.MatchTypePvp,
 			}, nil)
 
-			assert.Equal(t, 500, w.Code)
+			assert.Equal(t, 400, w.Code)
 		})
 
 		t.Run("match_typeがnpcのとき、player2_idが空文字であっても204を返す", func(t *testing.T) {
