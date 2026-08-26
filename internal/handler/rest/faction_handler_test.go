@@ -113,7 +113,7 @@ func TestFactionHandler_GrantFaction(t *testing.T) {
 			assert.Equal(t, 204, w.Code)
 		})
 
-		t.Run("存在しないplayer_idに対しては、外部キー制約違反により500を返す", func(t *testing.T) {
+		t.Run("存在しないplayer_idに対しては、500を返す", func(t *testing.T) {
 			r, verifier := newTestRouter(t, validGameConfigValues())
 			verifier.VerifyFn = func(token string) (string, error) { return uuid.NewString(), nil }
 
