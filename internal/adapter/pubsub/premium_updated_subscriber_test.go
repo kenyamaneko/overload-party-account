@@ -22,12 +22,11 @@ func TestPremiumUpdatedSubscriber_HandleMessage(t *testing.T) {
 
 			err := s.HandleMessage(context.Background(), []byte("not-json"))
 
-			require.Error(t, err)
+			require.ErrorContains(t, err, "bad payload")
 		})
 
-		t.Run("イベント種別が対象外(premium_updated以外)のとき、エラーにならず、対象プレイヤーのプレミアムステータスは更新されない", func(t *testing.T) {
-			premiumRepo := newFakePlayerPremiumRepo()
-			s := pubsub.NewPremiumUpdatedSubscriber(premiumRepo, fakeTxRunner{}, newFakeProcessedEventRepo())
+		t.Run("イベント種別が対象外(premium_updated以外)のとき、unknown event_typeを含むエラーを返す", func(t *testing.T) {
+			s := pubsub.NewPremiumUpdatedSubscriber(newFakePlayerPremiumRepo(), fakeTxRunner{}, newFakeProcessedEventRepo())
 			event := apishop.PremiumUpdatedEvent{
 				EventType: "unrelated_event",
 				EventID:   "evt-1",
@@ -41,7 +40,25 @@ func TestPremiumUpdatedSubscriber_HandleMessage(t *testing.T) {
 
 			err = s.HandleMessage(context.Background(), data)
 
+			require.ErrorContains(t, err, "unknown event_type")
+		})
+
+		t.Run("イベント種別が対象外(premium_updated以外)のとき、対象プレイヤーのプレミアムステータスは更新されない", func(t *testing.T) {
+			premiumRepo := newFakePlayerPremiumRepo()
+			s := pubsub.NewPremiumUpdatedSubscriber(premiumRepo, fakeTxRunner{}, newFakeProcessedEventRepo())
+			event := apishop.PremiumUpdatedEvent{
+				EventType: "unrelated_event",
+				EventID:   "evt-1",
+				Timestamp: time.Now(),
+				PlayerID:  "player-1",
+				IsPremium: true,
+				Source:    apishop.PremiumUpdatedSourceShop,
+			}
+			data, err := json.Marshal(event)
 			require.NoError(t, err)
+
+			_ = s.HandleMessage(context.Background(), data)
+
 			assert.False(t, premiumRepo.isPremium["player-1"])
 		})
 

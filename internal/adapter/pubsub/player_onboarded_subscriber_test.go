@@ -22,12 +22,11 @@ func TestPlayerOnboardedSubscriber_HandleMessage(t *testing.T) {
 
 			err := s.HandleMessage(context.Background(), []byte("not-json"))
 
-			require.Error(t, err)
+			require.ErrorContains(t, err, "bad payload")
 		})
 
-		t.Run("イベント種別が対象外(player_onboarded以外)のとき、エラーにならず、オンボーディング完了処理は実行されない", func(t *testing.T) {
-			applier := &fakeApplier{requireEmpty: true}
-			s := pubsub.NewPlayerOnboardedSubscriber(applier)
+		t.Run("イベント種別が対象外(player_onboarded以外)のとき、unknown event_typeを含むエラーを返す", func(t *testing.T) {
+			s := pubsub.NewPlayerOnboardedSubscriber(&fakeApplier{requireEmpty: true})
 			event := apiscenario.PlayerOnboardedEvent{
 				EventType:        "unrelated_event",
 				EventID:          "evt-1",
@@ -40,7 +39,24 @@ func TestPlayerOnboardedSubscriber_HandleMessage(t *testing.T) {
 
 			err = s.HandleMessage(context.Background(), data)
 
+			require.ErrorContains(t, err, "unknown event_type")
+		})
+
+		t.Run("イベント種別が対象外(player_onboarded以外)のとき、オンボーディング完了処理は実行されない", func(t *testing.T) {
+			applier := &fakeApplier{requireEmpty: true}
+			s := pubsub.NewPlayerOnboardedSubscriber(applier)
+			event := apiscenario.PlayerOnboardedEvent{
+				EventType:        "unrelated_event",
+				EventID:          "evt-1",
+				Timestamp:        time.Now(),
+				PlayerID:         "player-1",
+				InitialFactionID: "SHE",
+			}
+			data, err := json.Marshal(event)
 			require.NoError(t, err)
+
+			_ = s.HandleMessage(context.Background(), data)
+
 			assert.Nil(t, applier.calledWith)
 		})
 

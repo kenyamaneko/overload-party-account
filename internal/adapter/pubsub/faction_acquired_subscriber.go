@@ -41,8 +41,8 @@ func (s *FactionAcquiredSubscriber) HandleMessage(ctx context.Context, data []by
 		return fmt.Errorf("faction-acquired: bad payload: %w", err)
 	}
 	if event.EventType != apishop.EventTypeFactionAcquired {
-		slog.Warn("faction-acquired subscriber: unknown event_type, skipping", "event_type", event.EventType)
-		return nil
+		slog.Error("faction-acquired subscriber: unknown event_type", "event_type", event.EventType)
+		return fmt.Errorf("faction-acquired: unknown event_type %q", event.EventType)
 	}
 
 	if err := s.txRunner.RunInTx(ctx, func(txCtx context.Context) error {

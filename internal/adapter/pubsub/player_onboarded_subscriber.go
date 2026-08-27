@@ -35,9 +35,9 @@ func (s *PlayerOnboardedSubscriber) HandleMessage(ctx context.Context, data []by
 		return fmt.Errorf("player-onboarded: bad payload: %w", err)
 	}
 	if event.EventType != apiscenario.EventTypePlayerOnboarded {
-		slog.Warn("player-onboarded subscriber: unknown event_type, skipping",
+		slog.Error("player-onboarded subscriber: unknown event_type",
 			"event_type", event.EventType, "event_id", event.EventID)
-		return nil
+		return fmt.Errorf("player-onboarded: unknown event_type %q", event.EventType)
 	}
 	if event.PlayerID == "" {
 		slog.Error("player-onboarded subscriber: missing player_id",

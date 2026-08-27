@@ -22,12 +22,11 @@ func TestOnboardingNameSetSubscriber_HandleMessage(t *testing.T) {
 
 			err := s.HandleMessage(context.Background(), []byte("not-json"))
 
-			require.Error(t, err)
+			require.ErrorContains(t, err, "bad payload")
 		})
 
-		t.Run("イベント種別が対象外(onboarding_name_set以外)のとき、エラーにならず、オンボーディングの名前設定処理は実行されない", func(t *testing.T) {
-			applier := &fakeApplier{requireEmpty: true}
-			s := pubsub.NewOnboardingNameSetSubscriber(applier)
+		t.Run("イベント種別が対象外(onboarding_name_set以外)のとき、unknown event_typeを含むエラーを返す", func(t *testing.T) {
+			s := pubsub.NewOnboardingNameSetSubscriber(&fakeApplier{requireEmpty: true})
 			event := apiscenario.OnboardingNameSetEvent{
 				EventType: "unrelated_event",
 				EventID:   "evt-1",
@@ -40,7 +39,24 @@ func TestOnboardingNameSetSubscriber_HandleMessage(t *testing.T) {
 
 			err = s.HandleMessage(context.Background(), data)
 
+			require.ErrorContains(t, err, "unknown event_type")
+		})
+
+		t.Run("イベント種別が対象外(onboarding_name_set以外)のとき、オンボーディングの名前設定処理は実行されない", func(t *testing.T) {
+			applier := &fakeApplier{requireEmpty: true}
+			s := pubsub.NewOnboardingNameSetSubscriber(applier)
+			event := apiscenario.OnboardingNameSetEvent{
+				EventType: "unrelated_event",
+				EventID:   "evt-1",
+				Timestamp: time.Now(),
+				PlayerID:  "player-1",
+				Name:      "プレイヤー",
+			}
+			data, err := json.Marshal(event)
 			require.NoError(t, err)
+
+			_ = s.HandleMessage(context.Background(), data)
+
 			assert.Nil(t, applier.calledWith)
 		})
 

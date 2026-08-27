@@ -22,12 +22,11 @@ func TestFactionAcquiredSubscriber_HandleMessage(t *testing.T) {
 
 			err := s.HandleMessage(context.Background(), []byte("not-json"))
 
-			require.Error(t, err)
+			require.ErrorContains(t, err, "bad payload")
 		})
 
-		t.Run("イベント種別が対象外(faction_acquired以外)のとき、エラーにならず、対象プレイヤーへのファクション追加は行われない", func(t *testing.T) {
-			factionRepo := newFakeFactionRepo()
-			s := pubsub.NewFactionAcquiredSubscriber(factionRepo, fakeTxRunner{}, newFakeProcessedEventRepo())
+		t.Run("イベント種別が対象外(faction_acquired以外)のとき、unknown event_typeを含むエラーを返す", func(t *testing.T) {
+			s := pubsub.NewFactionAcquiredSubscriber(newFakeFactionRepo(), fakeTxRunner{}, newFakeProcessedEventRepo())
 			event := apishop.FactionAcquiredEvent{
 				EventType: "unrelated_event",
 				EventID:   "evt-1",
@@ -40,7 +39,24 @@ func TestFactionAcquiredSubscriber_HandleMessage(t *testing.T) {
 
 			err = s.HandleMessage(context.Background(), data)
 
+			require.ErrorContains(t, err, "unknown event_type")
+		})
+
+		t.Run("イベント種別が対象外(faction_acquired以外)のとき、対象プレイヤーへのファクション追加は行われない", func(t *testing.T) {
+			factionRepo := newFakeFactionRepo()
+			s := pubsub.NewFactionAcquiredSubscriber(factionRepo, fakeTxRunner{}, newFakeProcessedEventRepo())
+			event := apishop.FactionAcquiredEvent{
+				EventType: "unrelated_event",
+				EventID:   "evt-1",
+				Timestamp: time.Now(),
+				PlayerID:  "player-1",
+				Faction:   "SHE",
+			}
+			data, err := json.Marshal(event)
 			require.NoError(t, err)
+
+			_ = s.HandleMessage(context.Background(), data)
+
 			assert.Empty(t, factionRepo.factions["player-1"])
 		})
 
