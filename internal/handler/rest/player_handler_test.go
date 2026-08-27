@@ -163,7 +163,7 @@ func TestPlayerHandler_GetPlayer(t *testing.T) {
 
 func TestPlayerHandler_UpdateName(t *testing.T) {
 	t.Run("PUT /api/v1/account/me/name", func(t *testing.T) {
-		t.Run("表示名が違反するとき、対象プレイヤーが存在しても400を返す", func(t *testing.T) {
+		t.Run("表示名が空文字のとき、対象プレイヤーが存在しても400を返す", func(t *testing.T) {
 			r, verifier := newTestRouter(t, validGameConfigValues())
 			player := registerPlayer(t, r)
 			verifier.VerifyFn = func(token string) (string, error) { return player.PlayerID, nil }
@@ -173,7 +173,7 @@ func TestPlayerHandler_UpdateName(t *testing.T) {
 			assert.Equal(t, 400, w.Code)
 		})
 
-		t.Run("表示名が違反するとき、対象プレイヤーが存在しなくても400を返す", func(t *testing.T) {
+		t.Run("表示名が空文字のとき、対象プレイヤーが存在しなくても400を返す", func(t *testing.T) {
 			r, verifier := newTestRouter(t, validGameConfigValues())
 			verifier.VerifyFn = func(token string) (string, error) { return uuid.NewString(), nil }
 
@@ -218,7 +218,7 @@ func TestPlayerHandler_ValidateNameForOnboarding(t *testing.T) {
 			assert.Equal(t, 404, w.Code)
 		})
 
-		t.Run("対象プレイヤーが存在し、表示名が違反するとき、400を返す", func(t *testing.T) {
+		t.Run("対象プレイヤーが存在し、表示名が空文字のとき、400を返す", func(t *testing.T) {
 			r, verifier := newTestRouter(t, validGameConfigValues())
 			player := registerPlayer(t, r)
 			verifier.VerifyFn = func(token string) (string, error) { return player.PlayerID, nil }

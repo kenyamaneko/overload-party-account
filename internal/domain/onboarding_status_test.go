@@ -10,7 +10,7 @@ import (
 )
 
 func TestCanTransitionOnboardingStatus(t *testing.T) {
-	t.Run("オンボーディング状態の前進判定", func(t *testing.T) {
+	t.Run("[オンボーディング状態]オンボーディング状態の前進判定", func(t *testing.T) {
 		t.Run("現在の状態がnot_started/name_set/faction_set/completedのいずれでもないとき、エラーを返す", func(t *testing.T) {
 			_, err := domain.CanTransitionOnboardingStatus("bogus", domain.OnboardingStatusNameSet)
 

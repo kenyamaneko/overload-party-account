@@ -11,7 +11,7 @@ import (
 )
 
 func TestValidateName(t *testing.T) {
-	t.Run("表示名バリデーション", func(t *testing.T) {
+	t.Run("[表示名バリデーション]表示名の妥当性検証", func(t *testing.T) {
 		t.Run("空文字のとき、エラーを返す", func(t *testing.T) {
 			err := domain.ValidateName("")
 

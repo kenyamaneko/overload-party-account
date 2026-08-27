@@ -21,7 +21,7 @@ type openapiSchemaDoc struct {
 }
 
 func TestOnboardingStatusEnumMatchesRESTContract(t *testing.T) {
-	t.Run("REST契約とのオンボーディング状態値の一致", func(t *testing.T) {
+	t.Run("[オンボーディング状態]REST契約とのオンボーディング状態値の一致", func(t *testing.T) {
 		t.Run("domainパッケージが定義するオンボーディング状態(not_started/name_set/faction_set/completed)の集合は、openapi.yamlのOnboardingStatus enumと完全に一致する", func(t *testing.T) {
 			raw, err := os.ReadFile("../../data/openapi.yaml")
 			require.NoError(t, err)

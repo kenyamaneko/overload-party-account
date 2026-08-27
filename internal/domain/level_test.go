@@ -10,30 +10,28 @@ import (
 )
 
 func TestComputeLevel(t *testing.T) {
-	t.Run("レベル進捗計算", func(t *testing.T) {
+	t.Run("[レベル進捗計算]現在レベルの算出", func(t *testing.T) {
 		t.Run("現在レベルが1未満のとき、エラーを返す", func(t *testing.T) {
 			_, err := domain.ComputeLevel(0, 0, 100)
 
 			require.Error(t, err)
 		})
 
-		t.Run("累計経験値が次レベル必要経験値未満のとき、レベルは現在レベルのまま変わらない", func(t *testing.T) {
-			// coeff=100, currentLevel=1 の次レベル必要経験値は 100*(1+1)^2=400
+		t.Run("係数を100とすると、現在レベルが1、累計経験値が399のとき、レベルは1のまま変わらない", func(t *testing.T) {
 			level, err := domain.ComputeLevel(399, 1, 100)
 
 			require.NoError(t, err)
 			assert.Equal(t, int64(1), level)
 		})
 
-		t.Run("累計経験値が次レベル必要経験値ちょうどのとき、レベルが1つ上がる", func(t *testing.T) {
+		t.Run("係数を100とすると、現在レベルが1、累計経験値が400のとき、レベルは2になる", func(t *testing.T) {
 			level, err := domain.ComputeLevel(400, 1, 100)
 
 			require.NoError(t, err)
 			assert.Equal(t, int64(2), level)
 		})
 
-		t.Run("累計経験値が2〜3レベル分の必要経験値をまとめて超えているとき、超えた分だけ一度に複数レベル上げた値を返す", func(t *testing.T) {
-			// coeff=100, currentLevel=1: レベル3必要経験値は100*(2+1)^2=900、レベル4必要経験値は100*(3+1)^2=1600
+		t.Run("係数を100とすると、現在レベルが1、累計経験値が1000のとき、複数レベル分をまとめて上げた3になる", func(t *testing.T) {
 			level, err := domain.ComputeLevel(1000, 1, 100)
 
 			require.NoError(t, err)
@@ -43,37 +41,34 @@ func TestComputeLevel(t *testing.T) {
 }
 
 func TestComputeExpProgress(t *testing.T) {
-	t.Run("レベル進捗計算", func(t *testing.T) {
+	t.Run("[レベル進捗計算]レベル内経験値進捗の算出", func(t *testing.T) {
 		t.Run("レベルが1未満のとき、エラーを返す", func(t *testing.T) {
 			_, err := domain.ComputeExpProgress(0, 0, 100)
 
 			require.Error(t, err)
 		})
 
-		t.Run("累計経験値が現在レベルの開始閾値未満のとき、エラーを返す", func(t *testing.T) {
-			// coeff=100, level=2 の開始閾値は 100*2^2=400
+		t.Run("係数を100とすると、レベルが2、累計経験値が399のとき、エラーを返す", func(t *testing.T) {
 			_, err := domain.ComputeExpProgress(2, 399, 100)
 
 			require.Error(t, err)
 		})
 
-		t.Run("累計経験値が開始閾値ちょうどのとき、現在レベル内の経験値進捗は0になる", func(t *testing.T) {
+		t.Run("係数を100とすると、レベルが2、累計経験値が400のとき、現在レベル内の経験値進捗は0になる", func(t *testing.T) {
 			progress, err := domain.ComputeExpProgress(2, 400, 100)
 
 			require.NoError(t, err)
 			assert.Equal(t, int64(0), progress.LevelExpCurrent)
 		})
 
-		t.Run("累計経験値が開始閾値を超えているとき、現在レベル内の経験値進捗は累計経験値から開始閾値を引いた値になる", func(t *testing.T) {
-			// coeff=100, level=2 の開始閾値は 400、累計経験値 450 との差は 50
+		t.Run("係数を100とすると、レベルが2、累計経験値が450のとき、現在レベル内の経験値進捗は50になる", func(t *testing.T) {
 			progress, err := domain.ComputeExpProgress(2, 450, 100)
 
 			require.NoError(t, err)
 			assert.Equal(t, int64(50), progress.LevelExpCurrent)
 		})
 
-		t.Run("次レベルまでに必要な経験値の幅は、次レベル必要経験値から現在レベルの開始閾値を引いた値になる", func(t *testing.T) {
-			// coeff=100, level=2: 次レベル(3)必要経験値は100*(2+1)^2=900、開始閾値は400、差は500
+		t.Run("係数を100とすると、レベルが2、累計経験値が450のとき、次レベルまでに必要な経験値の幅は500になる", func(t *testing.T) {
 			progress, err := domain.ComputeExpProgress(2, 450, 100)
 
 			require.NoError(t, err)

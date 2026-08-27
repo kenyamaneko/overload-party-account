@@ -16,7 +16,7 @@ import (
 )
 
 func TestPremiumUpdatedSubscriber_HandleMessage(t *testing.T) {
-	t.Run("PremiumUpdatedSubscriber", func(t *testing.T) {
+	t.Run("[プレミアム状態更新購読]イベント処理", func(t *testing.T) {
 		t.Run("ペイロードがJSONとして解析できないとき、エラーを返す", func(t *testing.T) {
 			s := pubsub.NewPremiumUpdatedSubscriber(newFakePlayerPremiumRepo(), fakeTxRunner{}, newFakeProcessedEventRepo())
 
@@ -115,7 +115,7 @@ func TestPremiumUpdatedSubscriber_HandleMessage(t *testing.T) {
 			require.Error(t, err)
 		})
 
-		t.Run("プレミアムステータスの更新が失敗したとき、イベントIDの処理済み記録もロールバックされ、同一のイベントIDで再配信されると再度処理が実行される", func(t *testing.T) {
+		t.Run("プレミアムステータスの更新が失敗した後、同一のイベントIDでメッセージが再送されると、エラーにならず対象プレイヤーのプレミアムステータスが更新される", func(t *testing.T) {
 			premiumRepo := newFakePlayerPremiumRepo()
 			premiumRepo.updateErr = errors.New("update failed")
 			eventRepo := newFakeProcessedEventRepo()

@@ -16,7 +16,7 @@ import (
 )
 
 func TestOnboardingFactionSetSubscriber_HandleMessage(t *testing.T) {
-	t.Run("OnboardingFactionSetSubscriber", func(t *testing.T) {
+	t.Run("[オンボーディング初期ファクション設定購読]イベント処理", func(t *testing.T) {
 		t.Run("ペイロードがJSONとして解析できないとき、エラーを返す", func(t *testing.T) {
 			s := pubsub.NewOnboardingFactionSetSubscriber(&fakeApplier{})
 
@@ -82,7 +82,7 @@ func TestOnboardingFactionSetSubscriber_HandleMessage(t *testing.T) {
 			assert.Nil(t, applier.calledWith)
 		})
 
-		t.Run("オンボーディングの初期ファクション設定処理がエラーを返したとき、subscriberもエラーを返す", func(t *testing.T) {
+		t.Run("オンボーディングの初期ファクション設定処理がエラーを返したとき、エラーを返す", func(t *testing.T) {
 			applier := &fakeApplier{err: errors.New("boom")}
 			s := pubsub.NewOnboardingFactionSetSubscriber(applier)
 			event := apiscenario.OnboardingFactionSetEvent{
@@ -100,40 +100,31 @@ func TestOnboardingFactionSetSubscriber_HandleMessage(t *testing.T) {
 			require.Error(t, err)
 		})
 
-		t.Run("オンボーディングの初期ファクション設定処理が重複配信によりスキップされたことを示す結果を返したとき、subscriberはエラーにならない", func(t *testing.T) {
-			applier := &fakeApplier{processed: false}
-			s := pubsub.NewOnboardingFactionSetSubscriber(applier)
-			event := apiscenario.OnboardingFactionSetEvent{
-				EventType:        apiscenario.EventTypeOnboardingFactionSet,
-				EventID:          "evt-1",
-				Timestamp:        time.Now(),
-				PlayerID:         "player-1",
-				InitialFactionID: "SHE",
-			}
-			data, err := json.Marshal(event)
-			require.NoError(t, err)
+		processedResultTests := []struct {
+			name      string
+			processed bool
+		}{
+			{"オンボーディングの初期ファクション設定処理が重複配信によりスキップされたことを示す結果を返したとき", false},
+			{"オンボーディングの初期ファクション設定処理が正常に完了したことを示す結果を返したとき", true},
+		}
+		for _, tt := range processedResultTests {
+			t.Run(tt.name+"、エラーにならない", func(t *testing.T) {
+				applier := &fakeApplier{processed: tt.processed}
+				s := pubsub.NewOnboardingFactionSetSubscriber(applier)
+				event := apiscenario.OnboardingFactionSetEvent{
+					EventType:        apiscenario.EventTypeOnboardingFactionSet,
+					EventID:          "evt-1",
+					Timestamp:        time.Now(),
+					PlayerID:         "player-1",
+					InitialFactionID: "SHE",
+				}
+				data, err := json.Marshal(event)
+				require.NoError(t, err)
 
-			err = s.HandleMessage(context.Background(), data)
+				err = s.HandleMessage(context.Background(), data)
 
-			require.NoError(t, err)
-		})
-
-		t.Run("オンボーディングの初期ファクション設定処理が正常に完了したことを示す結果を返したとき、subscriberはエラーにならない", func(t *testing.T) {
-			applier := &fakeApplier{processed: true}
-			s := pubsub.NewOnboardingFactionSetSubscriber(applier)
-			event := apiscenario.OnboardingFactionSetEvent{
-				EventType:        apiscenario.EventTypeOnboardingFactionSet,
-				EventID:          "evt-1",
-				Timestamp:        time.Now(),
-				PlayerID:         "player-1",
-				InitialFactionID: "SHE",
-			}
-			data, err := json.Marshal(event)
-			require.NoError(t, err)
-
-			err = s.HandleMessage(context.Background(), data)
-
-			require.NoError(t, err)
-		})
+				require.NoError(t, err)
+			})
+		}
 	})
 }

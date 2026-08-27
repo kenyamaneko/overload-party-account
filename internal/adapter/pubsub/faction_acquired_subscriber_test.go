@@ -16,7 +16,7 @@ import (
 )
 
 func TestFactionAcquiredSubscriber_HandleMessage(t *testing.T) {
-	t.Run("FactionAcquiredSubscriber", func(t *testing.T) {
+	t.Run("[ファクション獲得購読]イベント処理", func(t *testing.T) {
 		t.Run("ペイロードがJSONとして解析できないとき、エラーを返す", func(t *testing.T) {
 			s := pubsub.NewFactionAcquiredSubscriber(newFakeFactionRepo(), fakeTxRunner{}, newFakeProcessedEventRepo())
 
@@ -108,7 +108,7 @@ func TestFactionAcquiredSubscriber_HandleMessage(t *testing.T) {
 			require.Error(t, err)
 		})
 
-		t.Run("ファクションの追加が失敗したとき、イベントIDの処理済み記録もロールバックされ、同一のイベントIDで再配信されると再度処理が実行される", func(t *testing.T) {
+		t.Run("ファクションの追加が失敗した後、同一のイベントIDでメッセージが再送されると、エラーにならず対象プレイヤーにファクションが追加される", func(t *testing.T) {
 			factionRepo := newFakeFactionRepo()
 			factionRepo.addErr = errors.New("insert failed")
 			eventRepo := newFakeProcessedEventRepo()

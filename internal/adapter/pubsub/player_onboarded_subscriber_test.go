@@ -16,7 +16,7 @@ import (
 )
 
 func TestPlayerOnboardedSubscriber_HandleMessage(t *testing.T) {
-	t.Run("PlayerOnboardedSubscriber", func(t *testing.T) {
+	t.Run("[オンボーディング完了購読]イベント処理", func(t *testing.T) {
 		t.Run("ペイロードがJSONとして解析できないとき、エラーを返す", func(t *testing.T) {
 			s := pubsub.NewPlayerOnboardedSubscriber(&fakeApplier{})
 
@@ -63,7 +63,7 @@ func TestPlayerOnboardedSubscriber_HandleMessage(t *testing.T) {
 			assert.Nil(t, applier.calledWith)
 		})
 
-		t.Run("オンボーディング完了処理がエラーを返したとき、subscriberもエラーを返す", func(t *testing.T) {
+		t.Run("オンボーディング完了処理がエラーを返したとき、エラーを返す", func(t *testing.T) {
 			applier := &fakeApplier{err: errors.New("boom")}
 			s := pubsub.NewPlayerOnboardedSubscriber(applier)
 			event := apiscenario.PlayerOnboardedEvent{
@@ -81,40 +81,31 @@ func TestPlayerOnboardedSubscriber_HandleMessage(t *testing.T) {
 			require.Error(t, err)
 		})
 
-		t.Run("オンボーディング完了処理が重複配信によりスキップされたことを示す結果を返したとき、subscriberはエラーにならない", func(t *testing.T) {
-			applier := &fakeApplier{processed: false}
-			s := pubsub.NewPlayerOnboardedSubscriber(applier)
-			event := apiscenario.PlayerOnboardedEvent{
-				EventType:        apiscenario.EventTypePlayerOnboarded,
-				EventID:          "evt-1",
-				Timestamp:        time.Now(),
-				PlayerID:         "player-1",
-				InitialFactionID: "SHE",
-			}
-			data, err := json.Marshal(event)
-			require.NoError(t, err)
+		processedResultTests := []struct {
+			name      string
+			processed bool
+		}{
+			{"オンボーディング完了処理が重複配信によりスキップされたことを示す結果を返したとき", false},
+			{"オンボーディング完了処理が正常に完了したことを示す結果を返したとき", true},
+		}
+		for _, tt := range processedResultTests {
+			t.Run(tt.name+"、エラーにならない", func(t *testing.T) {
+				applier := &fakeApplier{processed: tt.processed}
+				s := pubsub.NewPlayerOnboardedSubscriber(applier)
+				event := apiscenario.PlayerOnboardedEvent{
+					EventType:        apiscenario.EventTypePlayerOnboarded,
+					EventID:          "evt-1",
+					Timestamp:        time.Now(),
+					PlayerID:         "player-1",
+					InitialFactionID: "SHE",
+				}
+				data, err := json.Marshal(event)
+				require.NoError(t, err)
 
-			err = s.HandleMessage(context.Background(), data)
+				err = s.HandleMessage(context.Background(), data)
 
-			require.NoError(t, err)
-		})
-
-		t.Run("オンボーディング完了処理が正常に完了したことを示す結果を返したとき、subscriberはエラーにならない", func(t *testing.T) {
-			applier := &fakeApplier{processed: true}
-			s := pubsub.NewPlayerOnboardedSubscriber(applier)
-			event := apiscenario.PlayerOnboardedEvent{
-				EventType:        apiscenario.EventTypePlayerOnboarded,
-				EventID:          "evt-1",
-				Timestamp:        time.Now(),
-				PlayerID:         "player-1",
-				InitialFactionID: "SHE",
-			}
-			data, err := json.Marshal(event)
-			require.NoError(t, err)
-
-			err = s.HandleMessage(context.Background(), data)
-
-			require.NoError(t, err)
-		})
+				require.NoError(t, err)
+			})
+		}
 	})
 }
