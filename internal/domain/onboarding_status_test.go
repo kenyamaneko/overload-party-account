@@ -23,21 +23,21 @@ func TestCanTransitionOnboardingStatus(t *testing.T) {
 			require.Error(t, err)
 		})
 
-		t.Run("現在の状態と遷移先の状態が同じとき、遷移は許可される", func(t *testing.T) {
+		t.Run("現在の状態と遷移先の状態がともにname_setのとき、遷移が許可される", func(t *testing.T) {
 			ok, err := domain.CanTransitionOnboardingStatus(domain.OnboardingStatusNameSet, domain.OnboardingStatusNameSet)
 
 			require.NoError(t, err)
 			assert.True(t, ok)
 		})
 
-		t.Run("遷移先の状態が現在の状態より前進しているとき、遷移は許可される", func(t *testing.T) {
+		t.Run("現在の状態がname_set、遷移先の状態がfaction_setのとき、遷移が許可される", func(t *testing.T) {
 			ok, err := domain.CanTransitionOnboardingStatus(domain.OnboardingStatusNameSet, domain.OnboardingStatusFactionSet)
 
 			require.NoError(t, err)
 			assert.True(t, ok)
 		})
 
-		t.Run("遷移先の状態が現在の状態より後退しているとき、遷移は許可されない", func(t *testing.T) {
+		t.Run("現在の状態がfaction_set、遷移先の状態がname_setのとき、遷移が許可されない", func(t *testing.T) {
 			ok, err := domain.CanTransitionOnboardingStatus(domain.OnboardingStatusFactionSet, domain.OnboardingStatusNameSet)
 
 			require.NoError(t, err)
