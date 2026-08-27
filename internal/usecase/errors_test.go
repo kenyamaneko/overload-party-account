@@ -12,7 +12,7 @@ import (
 )
 
 func TestIsPublisherBug(t *testing.T) {
-	t.Run("発行側不整合の判定", func(t *testing.T) {
+	t.Run("[エラー分類]発行側不整合の判定", func(t *testing.T) {
 		t.Run("エラーが見つからないことを示すエラー(port.ErrNotFound)を包んでいるとき、trueを返す", func(t *testing.T) {
 			err := fmt.Errorf("wrapped: %w", port.ErrNotFound)
 

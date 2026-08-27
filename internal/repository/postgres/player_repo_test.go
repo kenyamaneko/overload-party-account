@@ -16,7 +16,7 @@ import (
 )
 
 func TestPlayerRepository_ReferenceMethodsNotFound(t *testing.T) {
-	t.Run("PlayerRepository", func(t *testing.T) {
+	t.Run("[PlayerRepository]プレイヤーの永続化", func(t *testing.T) {
 		t.Run("参照系メソッドに共通する仕様", func(t *testing.T) {
 			t.Run("存在しないplayer_idでプレイヤーを取得したとき、見つからないことを示すエラーを返す", func(t *testing.T) {
 				sharedPg.Truncate(t)
@@ -67,7 +67,7 @@ func TestPlayerRepository_ReferenceMethodsNotFound(t *testing.T) {
 }
 
 func TestPlayerRepository_UpdateMethodsNotFound(t *testing.T) {
-	t.Run("PlayerRepository", func(t *testing.T) {
+	t.Run("[PlayerRepository]プレイヤーの永続化", func(t *testing.T) {
 		t.Run("更新系メソッドに共通する仕様", func(t *testing.T) {
 			t.Run("存在しないplayer_idで表示名を更新しようとしたとき、見つからないことを示すエラーを返す", func(t *testing.T) {
 				sharedPg.Truncate(t)
@@ -109,7 +109,7 @@ func TestPlayerRepository_UpdateMethodsNotFound(t *testing.T) {
 }
 
 func TestPlayerRepository_Create(t *testing.T) {
-	t.Run("PlayerRepository", func(t *testing.T) {
+	t.Run("[PlayerRepository]プレイヤーの永続化", func(t *testing.T) {
 		t.Run("Create", func(t *testing.T) {
 			t.Run("指定したplayerの行と、レベル1・経験値0のprogression行を1回の呼び出しで両方作成する", func(t *testing.T) {
 				sharedPg.Truncate(t)
@@ -130,7 +130,7 @@ func TestPlayerRepository_Create(t *testing.T) {
 }
 
 func TestPlayerRepository_Exists(t *testing.T) {
-	t.Run("PlayerRepository", func(t *testing.T) {
+	t.Run("[PlayerRepository]プレイヤーの永続化", func(t *testing.T) {
 		t.Run("Exists", func(t *testing.T) {
 			t.Run("対象が存在するとき、trueを返す", func(t *testing.T) {
 				sharedPg.Truncate(t)
@@ -157,7 +157,7 @@ func TestPlayerRepository_Exists(t *testing.T) {
 }
 
 func TestPlayerRepository_ExistsByFirebaseUID(t *testing.T) {
-	t.Run("PlayerRepository", func(t *testing.T) {
+	t.Run("[PlayerRepository]プレイヤーの永続化", func(t *testing.T) {
 		t.Run("ExistsByFirebaseUID", func(t *testing.T) {
 			t.Run("対象が存在するとき、trueを返す", func(t *testing.T) {
 				sharedPg.Truncate(t)
@@ -184,7 +184,7 @@ func TestPlayerRepository_ExistsByFirebaseUID(t *testing.T) {
 }
 
 func TestPlayerRepository_GetDailyBattle(t *testing.T) {
-	t.Run("PlayerRepository", func(t *testing.T) {
+	t.Run("[PlayerRepository]プレイヤーの永続化", func(t *testing.T) {
 		t.Run("GetDailyBattle", func(t *testing.T) {
 			t.Run("指定したplayer_idとgame_dateの組に一致する行が無いとき、エラーにはせずnilを返す", func(t *testing.T) {
 				sharedPg.Truncate(t)
@@ -221,7 +221,7 @@ func TestPlayerRepository_GetDailyBattle(t *testing.T) {
 }
 
 func TestPlayerRepository_IncrementDailyBattleCount(t *testing.T) {
-	t.Run("PlayerRepository", func(t *testing.T) {
+	t.Run("[PlayerRepository]プレイヤーの永続化", func(t *testing.T) {
 		t.Run("IncrementDailyBattleCount", func(t *testing.T) {
 			t.Run("対象日の記録が無いとき、新規に記録を作成しカウントを1として返す", func(t *testing.T) {
 				sharedPg.Truncate(t)
@@ -252,7 +252,7 @@ func TestPlayerRepository_IncrementDailyBattleCount(t *testing.T) {
 }
 
 func TestPlayerRepository_DecrementDailyBattleCount(t *testing.T) {
-	t.Run("PlayerRepository", func(t *testing.T) {
+	t.Run("[PlayerRepository]プレイヤーの永続化", func(t *testing.T) {
 		t.Run("対象日のカウントが1以上のとき、1減算する", func(t *testing.T) {
 			sharedPg.Truncate(t)
 			player := createTestPlayer(t)

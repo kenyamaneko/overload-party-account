@@ -48,7 +48,7 @@ func envelopeJSON(t *testing.T, data string) []byte {
 }
 
 func TestEventHandler_Handle(t *testing.T) {
-	t.Run("push受け口の応答変換", func(t *testing.T) {
+	t.Run("[Pub/Sub push受け口]push受け口の応答変換", func(t *testing.T) {
 		t.Run("リクエストボディがJSONとして解析できないとき、ステータスコード400で、メッセージ形式が不正である旨のエラー内容を返し、処理関数は呼び出されない", func(t *testing.T) {
 			called := false
 			h := pubsubpush.NewEventHandler(func(ctx context.Context, data []byte) error { called = true; return nil })

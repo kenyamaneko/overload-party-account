@@ -17,7 +17,7 @@ import (
 )
 
 func TestPlayerViewRepository_ReferenceMethodsNotFound(t *testing.T) {
-	t.Run("PlayerViewRepository", func(t *testing.T) {
+	t.Run("[PlayerViewRepository]プレイヤー参照ビューの取得", func(t *testing.T) {
 		t.Run("参照系メソッドに共通する仕様", func(t *testing.T) {
 			t.Run("存在しないplayer_idでプレイヤーのビューを取得しようとしたとき、見つからないことを示すエラーを返す", func(t *testing.T) {
 				sharedPg.Truncate(t)
@@ -41,7 +41,7 @@ func TestPlayerViewRepository_ReferenceMethodsNotFound(t *testing.T) {
 }
 
 func TestPlayerViewRepository_JoinedFields(t *testing.T) {
-	t.Run("PlayerViewRepository", func(t *testing.T) {
+	t.Run("[PlayerViewRepository]プレイヤー参照ビューの取得", func(t *testing.T) {
 		t.Run("player_idでプレイヤーのビューを取得すると、players/player_progression/player_factions(is_initial=true)を結合した結果を返す", func(t *testing.T) {
 			sharedPg.Truncate(t)
 			player := createTestPlayer(t)

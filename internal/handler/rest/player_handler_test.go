@@ -17,7 +17,7 @@ import (
 )
 
 func TestPlayerHandler_AwardGameExp(t *testing.T) {
-	t.Run("POST /internal/v1/players/award-game-exp", func(t *testing.T) {
+	t.Run("[プレイヤーAPI]POST /internal/v1/players/award-game-exp", func(t *testing.T) {
 		t.Run("リクエストボディが不正なJSONのとき、400を返す", func(t *testing.T) {
 			r, _ := newTestRouter(t, validGameConfigValues())
 
@@ -74,7 +74,7 @@ func TestPlayerHandler_AwardGameExp(t *testing.T) {
 }
 
 func TestPlayerHandler_RevertBattleCount(t *testing.T) {
-	t.Run("POST /internal/v1/players/revert-battle-count", func(t *testing.T) {
+	t.Run("[プレイヤーAPI]POST /internal/v1/players/revert-battle-count", func(t *testing.T) {
 		t.Run("game_idが空のとき、400を返す", func(t *testing.T) {
 			r, _ := newTestRouter(t, validGameConfigValues())
 			p1 := registerPlayer(t, r)
@@ -136,7 +136,7 @@ func TestPlayerHandler_RevertBattleCount(t *testing.T) {
 }
 
 func TestPlayerHandler_GetPlayer(t *testing.T) {
-	t.Run("GET /api/v1/account/me", func(t *testing.T) {
+	t.Run("[プレイヤーAPI]GET /api/v1/account/me", func(t *testing.T) {
 		t.Run("認証済みのプレイヤーの情報を200で返す", func(t *testing.T) {
 			r, verifier := newTestRouter(t, validGameConfigValues())
 			player := registerPlayer(t, r)
@@ -162,7 +162,7 @@ func TestPlayerHandler_GetPlayer(t *testing.T) {
 }
 
 func TestPlayerHandler_UpdateName(t *testing.T) {
-	t.Run("PUT /api/v1/account/me/name", func(t *testing.T) {
+	t.Run("[プレイヤーAPI]PUT /api/v1/account/me/name", func(t *testing.T) {
 		t.Run("表示名が空文字のとき、対象プレイヤーが存在しても400を返す", func(t *testing.T) {
 			r, verifier := newTestRouter(t, validGameConfigValues())
 			player := registerPlayer(t, r)
@@ -208,7 +208,7 @@ func TestPlayerHandler_UpdateName(t *testing.T) {
 }
 
 func TestPlayerHandler_ValidateNameForOnboarding(t *testing.T) {
-	t.Run("POST /api/v1/account/me/onboarding/name/validate", func(t *testing.T) {
+	t.Run("[プレイヤーAPI]POST /api/v1/account/me/onboarding/name/validate", func(t *testing.T) {
 		t.Run("対象プレイヤーが存在しないとき、表示名の内容に関わらず404を返す", func(t *testing.T) {
 			r, verifier := newTestRouter(t, validGameConfigValues())
 			verifier.VerifyFn = func(token string) (string, error) { return uuid.NewString(), nil }
@@ -249,7 +249,7 @@ func TestPlayerHandler_ValidateNameForOnboarding(t *testing.T) {
 }
 
 func TestPlayerHandler_GetBattleLimit(t *testing.T) {
-	t.Run("GET /api/v1/account/me/battle-limit", func(t *testing.T) {
+	t.Run("[プレイヤーAPI]GET /api/v1/account/me/battle-limit", func(t *testing.T) {
 		t.Run("バトル制限情報を200で返す", func(t *testing.T) {
 			r, verifier := newTestRouter(t, validGameConfigValues())
 			player := registerPlayer(t, r)
@@ -275,7 +275,7 @@ func TestPlayerHandler_GetBattleLimit(t *testing.T) {
 }
 
 func TestPlayerHandler_IncrementBattleCount(t *testing.T) {
-	t.Run("POST /api/v1/account/me/battle-limit/increment", func(t *testing.T) {
+	t.Run("[プレイヤーAPI]POST /api/v1/account/me/battle-limit/increment", func(t *testing.T) {
 		t.Run("成功したとき、204を返す", func(t *testing.T) {
 			r, verifier := newTestRouter(t, validGameConfigValues())
 			player := registerPlayer(t, r)
@@ -312,7 +312,7 @@ func TestPlayerHandler_IncrementBattleCount(t *testing.T) {
 }
 
 func TestPlayerHandler_UpdatePremium(t *testing.T) {
-	t.Run("PUT /api/v1/account/me/premium", func(t *testing.T) {
+	t.Run("[プレイヤーAPI]PUT /api/v1/account/me/premium", func(t *testing.T) {
 		t.Run("リクエストボディが不正なJSONのとき、400を返す", func(t *testing.T) {
 			r, verifier := newTestRouter(t, validGameConfigValues())
 			player := registerPlayer(t, r)
@@ -345,7 +345,7 @@ func TestPlayerHandler_UpdatePremium(t *testing.T) {
 }
 
 func TestPlayerHandler_AddExp(t *testing.T) {
-	t.Run("POST /api/v1/account/me/exp", func(t *testing.T) {
+	t.Run("[プレイヤーAPI]POST /api/v1/account/me/exp", func(t *testing.T) {
 		t.Run("リクエストボディが不正なJSONのとき、400を返す", func(t *testing.T) {
 			r, verifier := newTestRouter(t, validGameConfigValues())
 			player := registerPlayer(t, r)

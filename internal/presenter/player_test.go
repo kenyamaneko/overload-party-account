@@ -13,7 +13,7 @@ import (
 )
 
 func TestBuildPlayerResponse(t *testing.T) {
-	t.Run("BuildPlayerResponse", func(t *testing.T) {
+	t.Run("[プレイヤー応答の組み立て]プレイヤー情報の応答形式への変換", func(t *testing.T) {
 		t.Run("Read Modelの各フィールドの値を、そのままPlayerResponseの対応フィールドに複写する", func(t *testing.T) {
 			name := "テストプレイヤー"
 			iconNo := int64(7)
@@ -115,7 +115,7 @@ func TestBuildPlayerResponse(t *testing.T) {
 }
 
 func TestBuildPlayerSettingsResponse(t *testing.T) {
-	t.Run("BuildPlayerSettingsResponse", func(t *testing.T) {
+	t.Run("[プレイヤー応答の組み立て]プレイヤー設定の応答形式への変換", func(t *testing.T) {
 		t.Run("PlayerSettingsの各フィールドの値を、そのままPlayerSettingsResponseの対応フィールドに複写する", func(t *testing.T) {
 			updatedAt := time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC)
 			settings := &domain.PlayerSettings{

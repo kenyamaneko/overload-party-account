@@ -31,7 +31,7 @@ func createTestPlayerSettings(t *testing.T, playerID string) {
 }
 
 func TestPlayerSettingsRepository_Get(t *testing.T) {
-	t.Run("PlayerSettingsRepository", func(t *testing.T) {
+	t.Run("[PlayerSettingsRepository]プレイヤー設定の永続化", func(t *testing.T) {
 		t.Run("Get", func(t *testing.T) {
 			t.Run("存在しないplayer_idを指定したとき、見つからないことを示すエラーを返す", func(t *testing.T) {
 				sharedPg.Truncate(t)
@@ -58,7 +58,7 @@ func TestPlayerSettingsRepository_Get(t *testing.T) {
 }
 
 func TestPlayerSettingsRepository_UpdatePartial(t *testing.T) {
-	t.Run("PlayerSettingsRepository", func(t *testing.T) {
+	t.Run("[PlayerSettingsRepository]プレイヤー設定の永続化", func(t *testing.T) {
 		t.Run("UpdatePartial", func(t *testing.T) {
 			t.Run("存在しないplayer_idを指定したとき、見つからないことを示すエラーを返す", func(t *testing.T) {
 				sharedPg.Truncate(t)

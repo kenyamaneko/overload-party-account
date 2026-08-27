@@ -14,7 +14,7 @@ import (
 )
 
 func TestAuthHandler_Register(t *testing.T) {
-	t.Run("POST /internal/v1/auth/register", func(t *testing.T) {
+	t.Run("[認証API]POST /internal/v1/auth/register", func(t *testing.T) {
 		t.Run("firebase_uidが空のとき、400を返す", func(t *testing.T) {
 			r, _ := newTestRouter(t, validGameConfigValues())
 
@@ -53,7 +53,7 @@ func TestAuthHandler_Register(t *testing.T) {
 }
 
 func TestAuthHandler_Login(t *testing.T) {
-	t.Run("POST /internal/v1/auth/login", func(t *testing.T) {
+	t.Run("[認証API]POST /internal/v1/auth/login", func(t *testing.T) {
 		t.Run("firebase_uidが空のとき、400を返す", func(t *testing.T) {
 			r, _ := newTestRouter(t, validGameConfigValues())
 
@@ -85,7 +85,7 @@ func TestAuthHandler_Login(t *testing.T) {
 }
 
 func TestAuthHandler_GetPlayerByFirebaseUID(t *testing.T) {
-	t.Run("GET /internal/v1/auth/by-firebase-uid/{firebaseUID}", func(t *testing.T) {
+	t.Run("[認証API]GET /internal/v1/auth/by-firebase-uid/{firebaseUID}", func(t *testing.T) {
 		t.Run("指定したfirebaseUIDのプレイヤーが存在するとき、200とプレイヤー情報を返す", func(t *testing.T) {
 			r, _ := newTestRouter(t, validGameConfigValues())
 			registered := registerPlayer(t, r)

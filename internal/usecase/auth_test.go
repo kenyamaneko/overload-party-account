@@ -15,7 +15,7 @@ import (
 )
 
 func TestAuthInteractor_Register(t *testing.T) {
-	t.Run("AuthInteractor", func(t *testing.T) {
+	t.Run("[認証]認証処理", func(t *testing.T) {
 		t.Run("Register", func(t *testing.T) {
 			t.Run("同一firebase_uidで既に登録済みのとき、ErrPlayerAlreadyRegisteredを返す", func(t *testing.T) {
 				interactor := newTestAuthInteractor(t)
@@ -60,7 +60,7 @@ func TestAuthInteractor_Register(t *testing.T) {
 }
 
 func TestAuthInteractor_FindByFirebaseUID(t *testing.T) {
-	t.Run("AuthInteractor", func(t *testing.T) {
+	t.Run("[認証]認証処理", func(t *testing.T) {
 		t.Run("FindByFirebaseUID", func(t *testing.T) {
 			t.Run("指定したfirebase_uidのプレイヤーが存在するとき、プレイヤー情報を返す", func(t *testing.T) {
 				interactor := newTestAuthInteractor(t)
@@ -85,7 +85,7 @@ func TestAuthInteractor_FindByFirebaseUID(t *testing.T) {
 }
 
 func TestAuthInteractor_Login(t *testing.T) {
-	t.Run("AuthInteractor", func(t *testing.T) {
+	t.Run("[認証]認証処理", func(t *testing.T) {
 		t.Run("Login", func(t *testing.T) {
 			t.Run("指定したfirebase_uidのプレイヤーが存在するとき、プレイヤー情報を返す", func(t *testing.T) {
 				interactor := newTestAuthInteractor(t)

@@ -41,7 +41,7 @@ func setValidRequiredEnv(t *testing.T) {
 }
 
 func TestFromEnv(t *testing.T) {
-	t.Run("起動設定の構築", func(t *testing.T) {
+	t.Run("[起動設定]起動設定の構築", func(t *testing.T) {
 		t.Run("PORTが未設定のとき、エラーを返す", func(t *testing.T) {
 			setValidRequiredEnv(t)
 			t.Setenv("PORT", "")

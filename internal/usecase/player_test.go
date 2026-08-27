@@ -19,7 +19,7 @@ import (
 )
 
 func TestPlayerInteractor_UpdatePremium(t *testing.T) {
-	t.Run("PlayerInteractor", func(t *testing.T) {
+	t.Run("[プレイヤー]プレイヤーのユースケース", func(t *testing.T) {
 		t.Run("UpdatePremium", func(t *testing.T) {
 			t.Run("有効期限をUNIXミリ秒で指定したとき、絶対時刻に変換してプレミアム有効期限として保存する", func(t *testing.T) {
 				interactor := newTestPlayerInteractor(t, validGameConfigValues())
@@ -60,7 +60,7 @@ func TestPlayerInteractor_UpdatePremium(t *testing.T) {
 }
 
 func TestPlayerInteractor_UpdateName(t *testing.T) {
-	t.Run("PlayerInteractor", func(t *testing.T) {
+	t.Run("[プレイヤー]プレイヤーのユースケース", func(t *testing.T) {
 		t.Run("UpdateName", func(t *testing.T) {
 			t.Run("表示名が無効(空文字・空白のみ・20文字超・制御文字のいずれか)なとき、更新せずエラーを返す", func(t *testing.T) {
 				interactor := newTestPlayerInteractor(t, validGameConfigValues())
@@ -89,7 +89,7 @@ func TestPlayerInteractor_UpdateName(t *testing.T) {
 }
 
 func TestPlayerInteractor_ValidateNameForOnboarding(t *testing.T) {
-	t.Run("PlayerInteractor", func(t *testing.T) {
+	t.Run("[プレイヤー]プレイヤーのユースケース", func(t *testing.T) {
 		t.Run("ValidateNameForOnboarding", func(t *testing.T) {
 			t.Run("対象プレイヤーが存在しないとき、エラーを返す", func(t *testing.T) {
 				interactor := newTestPlayerInteractor(t, validGameConfigValues())
@@ -133,7 +133,7 @@ func TestPlayerInteractor_ValidateNameForOnboarding(t *testing.T) {
 }
 
 func TestPlayerInteractor_GetBattleLimit(t *testing.T) {
-	t.Run("PlayerInteractor", func(t *testing.T) {
+	t.Run("[プレイヤー]プレイヤーのユースケース", func(t *testing.T) {
 		t.Run("GetBattleLimit", func(t *testing.T) {
 			t.Run("プレミアム会員のとき、1日の対戦回数の上限は無制限(-1)になる", func(t *testing.T) {
 				interactor := newTestPlayerInteractor(t, validGameConfigValues())
@@ -222,7 +222,7 @@ func TestPlayerInteractor_GetBattleLimit(t *testing.T) {
 }
 
 func TestPlayerInteractor_IncrementBattleCount(t *testing.T) {
-	t.Run("PlayerInteractor", func(t *testing.T) {
+	t.Run("[プレイヤー]プレイヤーのユースケース", func(t *testing.T) {
 		t.Run("IncrementBattleCount", func(t *testing.T) {
 			t.Run("プレミアム会員のとき、上限判定を行わずに当日の対戦回数を1加算する", func(t *testing.T) {
 				values := validGameConfigValues()
@@ -281,7 +281,7 @@ func TestPlayerInteractor_IncrementBattleCount(t *testing.T) {
 }
 
 func TestPlayerInteractor_RevertBattleCount(t *testing.T) {
-	t.Run("PlayerInteractor", func(t *testing.T) {
+	t.Run("[プレイヤー]プレイヤーのユースケース", func(t *testing.T) {
 		t.Run("RevertBattleCount", func(t *testing.T) {
 			t.Run("同一game_idに対する初回の呼び出しでは、消費時刻から算出したゲーム日の両プレイヤーの対戦回数をそれぞれ1減算する", func(t *testing.T) {
 				interactor := newTestPlayerInteractor(t, validGameConfigValues())
@@ -327,7 +327,7 @@ func TestPlayerInteractor_RevertBattleCount(t *testing.T) {
 }
 
 func TestPlayerInteractor_AwardExp(t *testing.T) {
-	t.Run("PlayerInteractor", func(t *testing.T) {
+	t.Run("[プレイヤー]プレイヤーのユースケース", func(t *testing.T) {
 		t.Run("AwardExp", func(t *testing.T) {
 			t.Run("expGainが0以下のとき、経験値・レベルは変化しない", func(t *testing.T) {
 				interactor := newTestPlayerInteractor(t, validGameConfigValues())
@@ -392,7 +392,7 @@ func TestPlayerInteractor_AwardExp(t *testing.T) {
 }
 
 func TestPlayerInteractor_AwardGameExp(t *testing.T) {
-	t.Run("PlayerInteractor", func(t *testing.T) {
+	t.Run("[プレイヤー]プレイヤーのユースケース", func(t *testing.T) {
 		t.Run("AwardGameExp", func(t *testing.T) {
 			t.Run("reasonが引き分けのとき、winner_numの値に関わらず両プレイヤーに引き分け時経験値(exp_draw)を付与する", func(t *testing.T) {
 				interactor := newTestPlayerInteractor(t, validGameConfigValues())
@@ -478,7 +478,7 @@ func TestPlayerInteractor_AwardGameExp(t *testing.T) {
 }
 
 func TestPlayerInteractor_GetPlayerResponse(t *testing.T) {
-	t.Run("PlayerInteractor", func(t *testing.T) {
+	t.Run("[プレイヤー]プレイヤーのユースケース", func(t *testing.T) {
 		t.Run("GetPlayerResponse", func(t *testing.T) {
 			t.Run("対象プレイヤーが存在しないとき、エラーを返す", func(t *testing.T) {
 				interactor := newTestPlayerInteractor(t, validGameConfigValues())

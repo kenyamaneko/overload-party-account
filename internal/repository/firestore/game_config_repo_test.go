@@ -34,7 +34,7 @@ func newTestClient(t *testing.T) *cloudfirestore.Client {
 }
 
 func TestGameConfigRepository_GetInt64(t *testing.T) {
-	t.Run("GameConfigRepository", func(t *testing.T) {
+	t.Run("[GameConfigRepository]ゲーム設定値の取得", func(t *testing.T) {
 		t.Run("GetInt64", func(t *testing.T) {
 			t.Run("指定したキーのドキュメントが存在するとき、その値を返す", func(t *testing.T) {
 				client := newTestClient(t)

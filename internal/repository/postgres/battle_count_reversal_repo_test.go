@@ -13,7 +13,7 @@ import (
 )
 
 func TestBattleCountReversalRepository_MarkReverted(t *testing.T) {
-	t.Run("BattleCountReversalRepository", func(t *testing.T) {
+	t.Run("[BattleCountReversalRepository]バトル回数取り消しの記録", func(t *testing.T) {
 		t.Run("冪等ガード", func(t *testing.T) {
 			t.Run("新規のgame_idを指定したとき、記録を新規作成しtrueを返す", func(t *testing.T) {
 				sharedPg.Truncate(t)

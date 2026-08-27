@@ -14,7 +14,7 @@ import (
 )
 
 func TestProcessedEventRepository_Insert(t *testing.T) {
-	t.Run("ProcessedEventRepository", func(t *testing.T) {
+	t.Run("[ProcessedEventRepository]処理済みイベントの記録", func(t *testing.T) {
 		t.Run("冪等ガード", func(t *testing.T) {
 			t.Run("新規のevent_idを指定したとき、記録を新規作成しtrueを返す", func(t *testing.T) {
 				sharedPg.Truncate(t)

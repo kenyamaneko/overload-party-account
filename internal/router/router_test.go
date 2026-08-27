@@ -60,7 +60,7 @@ func newTestRouter(verifier internalauth.Verifier) *gin.Engine {
 }
 
 func TestRouter_AuthBoundary(t *testing.T) {
-	t.Run("認証ミドルウェアの配置", func(t *testing.T) {
+	t.Run("[ルーティング]認証ミドルウェアの配置", func(t *testing.T) {
 		t.Run("/api/v1/account/me配下のエンドポイントは、X-Internal-Authヘッダが無いとき、401を返す", func(t *testing.T) {
 			verifier := &internalauth.MockVerifier{VerifyFn: func(token string) (string, error) {
 				return "player-1", nil

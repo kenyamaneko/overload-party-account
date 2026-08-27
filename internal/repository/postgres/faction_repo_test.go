@@ -15,7 +15,7 @@ import (
 )
 
 func TestFactionRepository_AddPlayerFaction(t *testing.T) {
-	t.Run("FactionRepository", func(t *testing.T) {
+	t.Run("[FactionRepository]所持陣営の永続化", func(t *testing.T) {
 		t.Run("ファクションの追加", func(t *testing.T) {
 			t.Run("未所持のファクションを追加すると、is_initial=falseの所持ファクションとして記録する", func(t *testing.T) {
 				sharedPg.Truncate(t)
@@ -51,7 +51,7 @@ func TestFactionRepository_AddPlayerFaction(t *testing.T) {
 }
 
 func TestFactionRepository_SetInitialFaction(t *testing.T) {
-	t.Run("FactionRepository", func(t *testing.T) {
+	t.Run("[FactionRepository]所持陣営の永続化", func(t *testing.T) {
 		t.Run("SetInitialFaction", func(t *testing.T) {
 			t.Run("対象プレイヤーがそのファクションを未所持のとき、is_initial=trueの行を新規作成する", func(t *testing.T) {
 				sharedPg.Truncate(t)
@@ -86,7 +86,7 @@ func TestFactionRepository_SetInitialFaction(t *testing.T) {
 }
 
 func TestFactionRepository_GetInitialFaction(t *testing.T) {
-	t.Run("FactionRepository", func(t *testing.T) {
+	t.Run("[FactionRepository]所持陣営の永続化", func(t *testing.T) {
 		t.Run("GetInitialFaction", func(t *testing.T) {
 			t.Run("initialファクションが未選択のとき、エラーにはせずnilを返す", func(t *testing.T) {
 				sharedPg.Truncate(t)
@@ -116,7 +116,7 @@ func TestFactionRepository_GetInitialFaction(t *testing.T) {
 }
 
 func TestFactionRepository_GetPlayerFactions(t *testing.T) {
-	t.Run("FactionRepository", func(t *testing.T) {
+	t.Run("[FactionRepository]所持陣営の永続化", func(t *testing.T) {
 		t.Run("所持ファクション一覧の取得", func(t *testing.T) {
 			t.Run("所持ファクションが無いとき、要素数0の一覧を返す", func(t *testing.T) {
 				sharedPg.Truncate(t)

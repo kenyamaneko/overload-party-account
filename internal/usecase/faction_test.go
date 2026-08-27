@@ -17,7 +17,7 @@ import (
 )
 
 func TestFactionInteractor_SelectInitialFaction(t *testing.T) {
-	t.Run("FactionInteractor", func(t *testing.T) {
+	t.Run("[陣営]陣営のユースケース", func(t *testing.T) {
 		t.Run("SelectInitialFaction", func(t *testing.T) {
 			t.Run("選択可能な4ファクション(SHE/Tenki/Sugar/Tuners)に含まれないNeutralを指定したとき、エラーを返す", func(t *testing.T) {
 				interactor := newTestFactionInteractor(t)
@@ -69,7 +69,7 @@ func TestFactionInteractor_SelectInitialFaction(t *testing.T) {
 }
 
 func TestFactionInteractor_GrantFaction(t *testing.T) {
-	t.Run("FactionInteractor", func(t *testing.T) {
+	t.Run("[陣営]陣営のユースケース", func(t *testing.T) {
 		t.Run("GrantFaction", func(t *testing.T) {
 			t.Run("指定したプレイヤーへ指定ファクションを追加する", func(t *testing.T) {
 				interactor := newTestFactionInteractor(t)
@@ -87,7 +87,7 @@ func TestFactionInteractor_GrantFaction(t *testing.T) {
 }
 
 func TestFactionInteractor_ListFactions(t *testing.T) {
-	t.Run("FactionInteractor", func(t *testing.T) {
+	t.Run("[陣営]陣営のユースケース", func(t *testing.T) {
 		t.Run("ListFactions", func(t *testing.T) {
 			t.Run("指定したプレイヤーの所持ファクション一覧をそのまま返す", func(t *testing.T) {
 				interactor := newTestFactionInteractor(t)

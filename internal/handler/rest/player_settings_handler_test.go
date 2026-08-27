@@ -43,7 +43,7 @@ func createPlayerWithoutSettings(t *testing.T) string {
 }
 
 func TestPlayerSettingsHandler_GetSettings(t *testing.T) {
-	t.Run("GET /api/v1/account/me/settings", func(t *testing.T) {
+	t.Run("[プレイヤー設定API]GET /api/v1/account/me/settings", func(t *testing.T) {
 		t.Run("プレイヤー設定を200で返す", func(t *testing.T) {
 			r, verifier := newTestRouter(t, validGameConfigValues())
 			player := registerPlayer(t, r)
@@ -70,7 +70,7 @@ func TestPlayerSettingsHandler_GetSettings(t *testing.T) {
 }
 
 func TestPlayerSettingsHandler_UpdateSettings(t *testing.T) {
-	t.Run("PUT /api/v1/account/me/settings", func(t *testing.T) {
+	t.Run("[プレイヤー設定API]PUT /api/v1/account/me/settings", func(t *testing.T) {
 		t.Run("更新対象フィールドが1つも指定されていないとき、400を返す", func(t *testing.T) {
 			r, verifier := newTestRouter(t, validGameConfigValues())
 			player := registerPlayer(t, r)

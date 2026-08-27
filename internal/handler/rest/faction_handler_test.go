@@ -16,7 +16,7 @@ import (
 )
 
 func TestFactionHandler_ListPlayerFactions(t *testing.T) {
-	t.Run("GET /internal/v1/players/{playerID}/factions", func(t *testing.T) {
+	t.Run("[陣営API]GET /internal/v1/players/{playerID}/factions", func(t *testing.T) {
 		t.Run("指定したplayerIDの所持ファクション一覧を200で返す", func(t *testing.T) {
 			r, verifier := newTestRouter(t, validGameConfigValues())
 			player := registerPlayer(t, r)
@@ -53,7 +53,7 @@ func TestFactionHandler_ListPlayerFactions(t *testing.T) {
 }
 
 func TestFactionHandler_ListFactions(t *testing.T) {
-	t.Run("GET /api/v1/account/me/factions", func(t *testing.T) {
+	t.Run("[陣営API]GET /api/v1/account/me/factions", func(t *testing.T) {
 		t.Run("所持ファクション一覧を200で返す", func(t *testing.T) {
 			r, verifier := newTestRouter(t, validGameConfigValues())
 			player := registerPlayer(t, r)
@@ -92,7 +92,7 @@ func TestFactionHandler_ListFactions(t *testing.T) {
 }
 
 func TestFactionHandler_GrantFaction(t *testing.T) {
-	t.Run("POST /api/v1/account/me/factions", func(t *testing.T) {
+	t.Run("[陣営API]POST /api/v1/account/me/factions", func(t *testing.T) {
 		t.Run("factionが空のとき、400を返す", func(t *testing.T) {
 			r, verifier := newTestRouter(t, validGameConfigValues())
 			player := registerPlayer(t, r)
@@ -125,7 +125,7 @@ func TestFactionHandler_GrantFaction(t *testing.T) {
 }
 
 func TestFactionHandler_SelectInitialFaction(t *testing.T) {
-	t.Run("POST /api/v1/account/me/factions/select", func(t *testing.T) {
+	t.Run("[陣営API]POST /api/v1/account/me/factions/select", func(t *testing.T) {
 		t.Run("faction_idが空のとき、400を返す", func(t *testing.T) {
 			r, verifier := newTestRouter(t, validGameConfigValues())
 			player := registerPlayer(t, r)

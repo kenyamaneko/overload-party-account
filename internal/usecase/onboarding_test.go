@@ -19,7 +19,7 @@ import (
 )
 
 func TestOnboardingInteractor_ApplyNameSet(t *testing.T) {
-	t.Run("OnboardingInteractor", func(t *testing.T) {
+	t.Run("[オンボーディング]オンボーディング進行の副作用反映", func(t *testing.T) {
 		t.Run("ApplyNameSetに共通する仕様", func(t *testing.T) {
 			t.Run("同一のイベントIDを処理するのが初めてのとき、処理を実行し、戻り値はtrueになり、オンボーディング状態は目標状態(name_set)へ進む", func(t *testing.T) {
 				interactor := newTestOnboardingInteractor(t)
@@ -110,7 +110,7 @@ func TestOnboardingInteractor_ApplyNameSet(t *testing.T) {
 }
 
 func TestOnboardingInteractor_ApplyFactionSet(t *testing.T) {
-	t.Run("OnboardingInteractor", func(t *testing.T) {
+	t.Run("[オンボーディング]オンボーディング進行の副作用反映", func(t *testing.T) {
 		t.Run("ApplyFactionSet固有の仕様", func(t *testing.T) {
 			t.Run("初期選択ファクションIDが選択可能な4ファクション(SHE/Tenki/Sugar/Tuners)に含まれないNeutralのとき、処理を実行せずエラーを返す", func(t *testing.T) {
 				interactor := newTestOnboardingInteractor(t)
@@ -179,7 +179,7 @@ func TestOnboardingInteractor_ApplyFactionSet(t *testing.T) {
 }
 
 func TestOnboardingInteractor_ApplyCompleted(t *testing.T) {
-	t.Run("OnboardingInteractor", func(t *testing.T) {
+	t.Run("[オンボーディング]オンボーディング進行の副作用反映", func(t *testing.T) {
 		t.Run("同一のイベントIDを処理するのが初めてのとき、処理を実行し、戻り値はtrueになり、オンボーディング状態は目標状態(completed)へ進む", func(t *testing.T) {
 			interactor := newTestOnboardingInteractor(t)
 			playerID := registerTestPlayer(t, "firebase-onb-completed-1")

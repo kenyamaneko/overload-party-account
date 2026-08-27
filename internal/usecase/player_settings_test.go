@@ -43,7 +43,7 @@ func createPlayerWithoutSettings(t *testing.T) string {
 }
 
 func TestPlayerSettingsInteractor_Get(t *testing.T) {
-	t.Run("PlayerSettingsInteractor", func(t *testing.T) {
+	t.Run("[プレイヤー設定]プレイヤー設定のユースケース", func(t *testing.T) {
 		t.Run("Get", func(t *testing.T) {
 			t.Run("対象プレイヤーの設定行が存在しないとき、エラーを返す", func(t *testing.T) {
 				interactor := newTestPlayerSettingsInteractor(t)
@@ -69,7 +69,7 @@ func TestPlayerSettingsInteractor_Get(t *testing.T) {
 }
 
 func TestPlayerSettingsInteractor_Update(t *testing.T) {
-	t.Run("PlayerSettingsInteractor", func(t *testing.T) {
+	t.Run("[プレイヤー設定]プレイヤー設定のユースケース", func(t *testing.T) {
 		t.Run("Update", func(t *testing.T) {
 			t.Run("プレイヤー設定について、更新内容で値を指定したフィールドのみが更新され、指定しなかったフィールドは元の値のまま変わらない", func(t *testing.T) {
 				interactor := newTestPlayerSettingsInteractor(t)
