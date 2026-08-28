@@ -1,167 +1,85 @@
 package apiaccountclient_test
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"io"
 	"net/http"
-	"net/http/httptest"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	apiaccount "github.com/kenyamaneko/overload-party-account/packages/api-account"
 	"github.com/kenyamaneko/overload-party-account/packages/api-account/apiaccountclient"
-	"github.com/kenyamaneko/overload-party-account/packages/api-account/apiaccountserverfake"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
-func TestClient_RegisterPlayer(t *testing.T) {
-	t.Run("RegisterPlayer", func(t *testing.T) {
+// stubDoer は apiaccount.HttpRequestDoer を満たし、実ネットワークを介さず固定の応答を返す
+// HTTP 境界のテストダブル。
+type stubDoer struct {
+	status      int
+	contentType string
+	body        []byte
+}
+
+func (d stubDoer) Do(req *http.Request) (*http.Response, error) {
+	header := http.Header{}
+	if d.contentType != "" {
+		header.Set("Content-Type", d.contentType)
+	}
+	return &http.Response{
+		StatusCode: d.status,
+		Header:     header,
+		Body:       io.NopCloser(bytes.NewReader(d.body)),
+	}, nil
+}
+
+func newTestClient(t *testing.T, status int, contentType string, body []byte) *apiaccountclient.Client {
+	t.Helper()
+	c, err := apiaccountclient.New("http://example.invalid", apiaccountclient.WithHTTPClient(stubDoer{
+		status:      status,
+		contentType: contentType,
+		body:        body,
+	}))
+	require.NoError(t, err)
+	return c
+}
+
+func mustJSON(t *testing.T, v any) []byte {
+	t.Helper()
+	b, err := json.Marshal(v)
+	require.NoError(t, err)
+	return b
+}
+
+func TestClient_StatusToSentinelError(t *testing.T) {
+	t.Run("共通のステータス→sentinel error変換", func(t *testing.T) {
 		cases := []struct {
-			name       string
-			status     int
-			wantTarget error
+			name    string
+			status  int
+			wantErr error
 		}{
-			{
-				name:       "400を受けたとき、ErrBadRequestになる",
-				status:     http.StatusBadRequest,
-				wantTarget: apiaccountclient.ErrBadRequest,
-			},
-			{
-				name:       "409を受けたとき、ErrConflictになる",
-				status:     http.StatusConflict,
-				wantTarget: apiaccountclient.ErrConflict,
-			},
-			{
-				name:       "500を受けたとき、ErrInternalServerになる",
-				status:     http.StatusInternalServerError,
-				wantTarget: apiaccountclient.ErrInternalServer,
-			},
+			{"レスポンスが401のとき、ErrUnauthorizedを返す", 401, apiaccountclient.ErrUnauthorized},
+			{"レスポンスが404のとき、ErrNotFoundを返す", 404, apiaccountclient.ErrNotFound},
+			{"レスポンスが400のとき、ErrBadRequestを返す", 400, apiaccountclient.ErrBadRequest},
+			{"レスポンスが409のとき、ErrConflictを返す", 409, apiaccountclient.ErrConflict},
+			{"レスポンスが500のとき、ErrInternalServerを返す", 500, apiaccountclient.ErrInternalServer},
+			{"レスポンスが503(500以上)のとき、ErrInternalServerを返す", 503, apiaccountclient.ErrInternalServer},
 		}
 		for _, tc := range cases {
 			t.Run(tc.name, func(t *testing.T) {
-				srv := apiaccountserverfake.NewServer()
-				defer srv.Close()
-				srv.RegisterFn = func(_ apiaccount.RegisterRequest) (int, any) { return tc.status, nil }
+				c := newTestClient(t, tc.status, "", nil)
 
-				c := newTestClient(t, srv.URL())
-				_, err := c.RegisterPlayer(context.Background(), apiaccount.RegisterRequest{})
-				assertSentinel(t, err, tc.wantTarget)
+				_, err := c.GetPlayer(context.Background())
+
+				assert.ErrorIs(t, err, tc.wantErr)
 			})
 		}
-	})
-}
 
-func TestClient_LoginPlayer(t *testing.T) {
-	t.Run("LoginPlayer", func(t *testing.T) {
-		cases := []struct {
-			name       string
-			status     int
-			wantTarget error
-		}{
-			{
-				name:       "400を受けたとき、ErrBadRequestになる",
-				status:     http.StatusBadRequest,
-				wantTarget: apiaccountclient.ErrBadRequest,
-			},
-			{
-				name:       "404を受けたとき、ErrNotFoundになる",
-				status:     http.StatusNotFound,
-				wantTarget: apiaccountclient.ErrNotFound,
-			},
-		}
-		for _, tc := range cases {
-			t.Run(tc.name, func(t *testing.T) {
-				srv := apiaccountserverfake.NewServer()
-				defer srv.Close()
-				srv.LoginFn = func(_ apiaccount.LoginRequest) (int, any) { return tc.status, nil }
+		t.Run("401/404/400/409/500以上のいずれでもない想定外のステータスのとき、いずれのsentinelでもないエラーを返す", func(t *testing.T) {
+			c := newTestClient(t, 418, "", nil)
 
-				c := newTestClient(t, srv.URL())
-				_, err := c.LoginPlayer(context.Background(), apiaccount.LoginRequest{})
-				assertSentinel(t, err, tc.wantTarget)
-			})
-		}
-	})
-}
-
-func TestClient_GetPlayerByFirebaseUID(t *testing.T) {
-	t.Run("GetPlayerByFirebaseUID", func(t *testing.T) {
-		t.Run("404を受けたとき、ErrNotFoundになる", func(t *testing.T) {
-			srv := apiaccountserverfake.NewServer()
-			defer srv.Close()
-			srv.FindByFirebaseUIDFn = func(_ string) (int, any) { return http.StatusNotFound, nil }
-
-			c := newTestClient(t, srv.URL())
-			_, err := c.GetPlayerByFirebaseUID(context.Background(), "uid")
-			assertSentinel(t, err, apiaccountclient.ErrNotFound)
-		})
-	})
-}
-
-func TestClient_AwardGameExp(t *testing.T) {
-	t.Run("AwardGameExp", func(t *testing.T) {
-		t.Run("204を受けたとき、エラーにならない", func(t *testing.T) {
-			srv := apiaccountserverfake.NewServer()
-			defer srv.Close()
-			srv.AwardGameExpFn = func(_ apiaccount.AwardGameExpRequest) (int, any) { return http.StatusNoContent, nil }
-
-			c := newTestClient(t, srv.URL())
-			err := c.AwardGameExp(context.Background(), apiaccount.AwardGameExpRequest{})
-			require.NoError(t, err)
-		})
-
-		t.Run("400を受けたとき、ErrBadRequestになる", func(t *testing.T) {
-			srv := apiaccountserverfake.NewServer()
-			defer srv.Close()
-			srv.AwardGameExpFn = func(_ apiaccount.AwardGameExpRequest) (int, any) { return http.StatusBadRequest, nil }
-
-			c := newTestClient(t, srv.URL())
-			err := c.AwardGameExp(context.Background(), apiaccount.AwardGameExpRequest{})
-			assertSentinel(t, err, apiaccountclient.ErrBadRequest)
-		})
-	})
-}
-
-func TestClient_RevertBattleCount(t *testing.T) {
-	t.Run("RevertBattleCount", func(t *testing.T) {
-		t.Run("204を受けたとき、エラーにならない", func(t *testing.T) {
-			srv := apiaccountserverfake.NewServer()
-			defer srv.Close()
-			srv.RevertBattleCountFn = func(_ apiaccount.RevertBattleCountRequest) (int, any) { return http.StatusNoContent, nil }
-
-			c := newTestClient(t, srv.URL())
-			err := c.RevertBattleCount(context.Background(), apiaccount.RevertBattleCountRequest{})
-			require.NoError(t, err)
-		})
-
-		t.Run("400を受けたとき、ErrBadRequestになる", func(t *testing.T) {
-			srv := apiaccountserverfake.NewServer()
-			defer srv.Close()
-			srv.RevertBattleCountFn = func(_ apiaccount.RevertBattleCountRequest) (int, any) { return http.StatusBadRequest, nil }
-
-			c := newTestClient(t, srv.URL())
-			err := c.RevertBattleCount(context.Background(), apiaccount.RevertBattleCountRequest{})
-			assertSentinel(t, err, apiaccountclient.ErrBadRequest)
-		})
-	})
-}
-
-func TestClient_GetPlayer(t *testing.T) {
-	t.Run("GetPlayer", func(t *testing.T) {
-		t.Run("401を受けたとき、ErrUnauthorizedになる", func(t *testing.T) {
-			srv := apiaccountserverfake.NewServer()
-			defer srv.Close()
-			srv.GetPlayerFn = func() (int, any) { return http.StatusUnauthorized, nil }
-
-			c := newTestClient(t, srv.URL())
-			_, err := c.GetPlayer(context.Background())
-			assertSentinel(t, err, apiaccountclient.ErrUnauthorized)
-		})
-
-		t.Run("宣言されていない403を受けたとき、エラーになり定義済みのどの分類にも一致しない", func(t *testing.T) {
-			srv := apiaccountserverfake.NewServer()
-			defer srv.Close()
-			srv.GetPlayerFn = func() (int, any) { return http.StatusForbidden, nil }
-
-			c := newTestClient(t, srv.URL())
 			_, err := c.GetPlayer(context.Background())
 
 			require.Error(t, err)
@@ -174,277 +92,267 @@ func TestClient_GetPlayer(t *testing.T) {
 	})
 }
 
-func TestClient_UpdateName(t *testing.T) {
-	t.Run("UpdateName", func(t *testing.T) {
-		cases := []struct {
-			name       string
-			status     int
-			wantTarget error
-		}{
-			{
-				name:       "400を受けたとき、ErrBadRequestになる",
-				status:     http.StatusBadRequest,
-				wantTarget: apiaccountclient.ErrBadRequest,
-			},
-			{
-				name:       "401を受けたとき、ErrUnauthorizedになる",
-				status:     http.StatusUnauthorized,
-				wantTarget: apiaccountclient.ErrUnauthorized,
-			},
-		}
-		for _, tc := range cases {
-			t.Run(tc.name, func(t *testing.T) {
-				srv := apiaccountserverfake.NewServer()
-				defer srv.Close()
-				srv.UpdateNameFn = func(_ apiaccount.UpdateNameRequest) (int, any) { return tc.status, nil }
+func TestClient_SuccessResponses(t *testing.T) {
+	t.Run("各エンドポイントの成功時の戻り値", func(t *testing.T) {
+		t.Run("サービス死活監視は200のとき、ヘルスレスポンスを返す", func(t *testing.T) {
+			c := newTestClient(t, 200, "application/json", mustJSON(t, apiaccount.HealthResponse{Status: "ok"}))
 
-				c := newTestClient(t, srv.URL())
-				_, err := c.UpdateName(context.Background(), apiaccount.UpdateNameRequest{})
-				assertSentinel(t, err, tc.wantTarget)
+			resp, err := c.GetHealth(context.Background())
+
+			require.NoError(t, err)
+			assert.Equal(t, "ok", resp.Status)
+		})
+
+		t.Run("新規プレイヤー登録は201のとき、登録されたプレイヤー情報を返す", func(t *testing.T) {
+			c := newTestClient(t, 201, "application/json", mustJSON(t, apiaccount.PlayerResponse{PlayerID: "player-1"}))
+
+			resp, err := c.RegisterPlayer(context.Background(), apiaccount.RegisterRequest{FirebaseUID: "fb-1"})
+
+			require.NoError(t, err)
+			assert.Equal(t, "player-1", resp.PlayerID)
+		})
+
+		t.Run("プレイヤーログインは200のとき、プレイヤー情報を返す", func(t *testing.T) {
+			c := newTestClient(t, 200, "application/json", mustJSON(t, apiaccount.PlayerResponse{PlayerID: "player-1"}))
+
+			resp, err := c.LoginPlayer(context.Background(), apiaccount.LoginRequest{FirebaseUID: "fb-1"})
+
+			require.NoError(t, err)
+			assert.Equal(t, "player-1", resp.PlayerID)
+		})
+
+		t.Run("Firebase UIDによるプレイヤー検索は200のとき、プレイヤー情報を返す", func(t *testing.T) {
+			c := newTestClient(t, 200, "application/json", mustJSON(t, apiaccount.PlayerResponse{PlayerID: "player-1"}))
+
+			resp, err := c.GetPlayerByFirebaseUID(context.Background(), "fb-1")
+
+			require.NoError(t, err)
+			assert.Equal(t, "player-1", resp.PlayerID)
+		})
+
+		t.Run("対戦終了後の経験値付与は204のとき、エラーを返さない", func(t *testing.T) {
+			c := newTestClient(t, 204, "", nil)
+
+			err := c.AwardGameExp(context.Background(), apiaccount.AwardGameExpRequest{
+				Player1ID: "p1", Player2ID: "p2", WinnerNum: 1, Reason: "normal", MatchType: "pvp",
+			})
+
+			require.NoError(t, err)
+		})
+
+		t.Run("対戦停止時のバトル回数取消は204のとき、エラーを返さない", func(t *testing.T) {
+			c := newTestClient(t, 204, "", nil)
+
+			err := c.RevertBattleCount(context.Background(), apiaccount.RevertBattleCountRequest{
+				GameID: "game-1", Player1ID: "p1", Player2ID: "p2", ConsumedAtMillis: 1000,
+			})
+
+			require.NoError(t, err)
+		})
+
+		t.Run("認証済みプレイヤー自身の情報取得は200のとき、プレイヤー情報を返す", func(t *testing.T) {
+			c := newTestClient(t, 200, "application/json", mustJSON(t, apiaccount.PlayerResponse{PlayerID: "player-1"}))
+
+			resp, err := c.GetPlayer(context.Background())
+
+			require.NoError(t, err)
+			assert.Equal(t, "player-1", resp.PlayerID)
+		})
+
+		t.Run("プレイヤー名の変更は200のとき、更新後のプレイヤー情報を返す", func(t *testing.T) {
+			c := newTestClient(t, 200, "application/json", mustJSON(t, apiaccount.PlayerResponse{PlayerID: "player-1"}))
+
+			resp, err := c.UpdateName(context.Background(), apiaccount.UpdateNameRequest{Name: "新しい名前"})
+
+			require.NoError(t, err)
+			assert.Equal(t, "player-1", resp.PlayerID)
+		})
+
+		t.Run("オンボーディングでの表示名バリデーションは204のとき、エラーを返さない", func(t *testing.T) {
+			c := newTestClient(t, 204, "", nil)
+
+			err := c.ValidateNameForOnboarding(context.Background(), apiaccount.ValidateNameForOnboardingRequest{Name: "名前"})
+
+			require.NoError(t, err)
+		})
+
+		t.Run("1日のバトル回数制限の取得は200のとき、バトル制限情報を返す", func(t *testing.T) {
+			c := newTestClient(t, 200, "application/json", mustJSON(t, apiaccount.BattleLimitResponse{
+				DailyBattleCount: 2, DailyBattleLimit: 5, CanBattle: true,
+			}))
+
+			resp, err := c.GetBattleLimit(context.Background())
+
+			require.NoError(t, err)
+			assert.Equal(t, int64(2), resp.DailyBattleCount)
+		})
+
+		t.Run("バトル回数の加算は204のとき、エラーを返さない", func(t *testing.T) {
+			c := newTestClient(t, 204, "", nil)
+
+			err := c.IncrementBattleCount(context.Background())
+
+			require.NoError(t, err)
+		})
+
+		t.Run("プレミアムステータスの更新は204のとき、エラーを返さない", func(t *testing.T) {
+			c := newTestClient(t, 204, "", nil)
+
+			err := c.UpdatePremium(context.Background(), apiaccount.UpdatePremiumRequest{IsPremium: true})
+
+			require.NoError(t, err)
+		})
+
+		t.Run("経験値の加算は204のとき、エラーを返さない", func(t *testing.T) {
+			c := newTestClient(t, 204, "", nil)
+
+			err := c.AddExp(context.Background(), apiaccount.AddExpRequest{ExpGain: 10})
+
+			require.NoError(t, err)
+		})
+
+		t.Run("所持陣営一覧の取得は200のとき、所持陣営一覧を返す", func(t *testing.T) {
+			c := newTestClient(t, 200, "application/json", mustJSON(t, apiaccount.FactionListing{Factions: []string{"SHE"}}))
+
+			resp, err := c.ListFactions(context.Background())
+
+			require.NoError(t, err)
+			assert.Equal(t, []string{"SHE"}, resp.Factions)
+		})
+
+		t.Run("陣営所有権の付与は204のとき、エラーを返さない", func(t *testing.T) {
+			c := newTestClient(t, 204, "", nil)
+
+			err := c.GrantFaction(context.Background(), apiaccount.FactionGrantRequest{Faction: "SHE"})
+
+			require.NoError(t, err)
+		})
+
+		t.Run("初期陣営の選択は200(204ではない)のとき、エラーを返さない", func(t *testing.T) {
+			c := newTestClient(t, 200, "", nil)
+
+			err := c.SelectInitialFaction(context.Background(), apiaccount.SelectInitialFactionRequest{FactionID: "SHE"})
+
+			require.NoError(t, err)
+		})
+
+		t.Run("プレイヤー設定の取得は200のとき、設定情報を返す", func(t *testing.T) {
+			c := newTestClient(t, 200, "application/json", mustJSON(t, apiaccount.PlayerSettingsResponse{PlayerID: "player-1", Language: "ja"}))
+
+			resp, err := c.GetPlayerSettings(context.Background())
+
+			require.NoError(t, err)
+			assert.Equal(t, "player-1", resp.PlayerID)
+		})
+
+		t.Run("プレイヤー設定の更新は200のとき、更新後の設定情報を返す", func(t *testing.T) {
+			c := newTestClient(t, 200, "application/json", mustJSON(t, apiaccount.PlayerSettingsResponse{PlayerID: "player-1", Language: "en"}))
+
+			lang := "en"
+			resp, err := c.UpdatePlayerSettings(context.Background(), apiaccount.UpdateSettingsRequest{Language: &lang})
+
+			require.NoError(t, err)
+			assert.Equal(t, "en", resp.Language)
+		})
+	})
+}
+
+func TestClient_NonSuccessAppliesCommonConversion(t *testing.T) {
+	t.Run("成功ステータス以外が返ったとき、共通変換規則に従ってエラーを返す", func(t *testing.T) {
+		cases := []struct {
+			name   string
+			invoke func(c *apiaccountclient.Client) error
+		}{
+			{"新規プレイヤー登録", func(c *apiaccountclient.Client) error {
+				_, err := c.RegisterPlayer(context.Background(), apiaccount.RegisterRequest{FirebaseUID: "fb-1"})
+				return err
+			}},
+			{"プレイヤーログイン", func(c *apiaccountclient.Client) error {
+				_, err := c.LoginPlayer(context.Background(), apiaccount.LoginRequest{FirebaseUID: "fb-1"})
+				return err
+			}},
+			{"Firebase UIDによるプレイヤー検索", func(c *apiaccountclient.Client) error {
+				_, err := c.GetPlayerByFirebaseUID(context.Background(), "fb-1")
+				return err
+			}},
+			{"対戦終了後の経験値付与", func(c *apiaccountclient.Client) error {
+				return c.AwardGameExp(context.Background(), apiaccount.AwardGameExpRequest{Player1ID: "p1", Player2ID: "p2", WinnerNum: 1, Reason: "normal", MatchType: "pvp"})
+			}},
+			{"対戦停止時のバトル回数取消", func(c *apiaccountclient.Client) error {
+				return c.RevertBattleCount(context.Background(), apiaccount.RevertBattleCountRequest{GameID: "g1", Player1ID: "p1", Player2ID: "p2", ConsumedAtMillis: 1000})
+			}},
+			{"サービス死活監視", func(c *apiaccountclient.Client) error {
+				_, err := c.GetHealth(context.Background())
+				return err
+			}},
+			{"プレイヤー名の変更", func(c *apiaccountclient.Client) error {
+				_, err := c.UpdateName(context.Background(), apiaccount.UpdateNameRequest{Name: "名前"})
+				return err
+			}},
+			{"オンボーディングでの表示名バリデーション", func(c *apiaccountclient.Client) error {
+				return c.ValidateNameForOnboarding(context.Background(), apiaccount.ValidateNameForOnboardingRequest{Name: "名前"})
+			}},
+			{"1日のバトル回数制限の取得", func(c *apiaccountclient.Client) error {
+				_, err := c.GetBattleLimit(context.Background())
+				return err
+			}},
+			{"バトル回数の加算", func(c *apiaccountclient.Client) error {
+				return c.IncrementBattleCount(context.Background())
+			}},
+			{"プレミアムステータスの更新", func(c *apiaccountclient.Client) error {
+				return c.UpdatePremium(context.Background(), apiaccount.UpdatePremiumRequest{IsPremium: true})
+			}},
+			{"経験値の加算", func(c *apiaccountclient.Client) error {
+				return c.AddExp(context.Background(), apiaccount.AddExpRequest{ExpGain: 10})
+			}},
+			{"所持陣営一覧の取得", func(c *apiaccountclient.Client) error {
+				_, err := c.ListFactions(context.Background())
+				return err
+			}},
+			{"陣営所有権の付与", func(c *apiaccountclient.Client) error {
+				return c.GrantFaction(context.Background(), apiaccount.FactionGrantRequest{Faction: "SHE"})
+			}},
+			{"初期陣営の選択", func(c *apiaccountclient.Client) error {
+				return c.SelectInitialFaction(context.Background(), apiaccount.SelectInitialFactionRequest{FactionID: "SHE"})
+			}},
+			{"プレイヤー設定の取得", func(c *apiaccountclient.Client) error {
+				_, err := c.GetPlayerSettings(context.Background())
+				return err
+			}},
+			{"プレイヤー設定の更新", func(c *apiaccountclient.Client) error {
+				_, err := c.UpdatePlayerSettings(context.Background(), apiaccount.UpdateSettingsRequest{})
+				return err
+			}},
+		}
+
+		for _, tc := range cases {
+			t.Run(tc.name+"が404を受け取ったとき、ErrNotFoundを返す", func(t *testing.T) {
+				c := newTestClient(t, 404, "", nil)
+
+				err := tc.invoke(c)
+
+				assert.ErrorIs(t, err, apiaccountclient.ErrNotFound)
 			})
 		}
 	})
 }
 
-func TestClient_ValidateNameForOnboarding(t *testing.T) {
-	t.Run("ValidateNameForOnboarding", func(t *testing.T) {
-		t.Run("204を受けたとき、エラーにならない", func(t *testing.T) {
-			srv := apiaccountserverfake.NewServer()
-			defer srv.Close()
-			srv.ValidateNameForOnboardingFn = func(_ apiaccount.ValidateNameForOnboardingRequest) (int, any) {
-				return http.StatusNoContent, nil
-			}
+func TestClient_EndpointSpecificSuccessStatusIsNotInterchangeable(t *testing.T) {
+	t.Run("成功ステータスはエンドポイントごとに固有で、他の2xxを成功として扱わない", func(t *testing.T) {
+		t.Run("新規プレイヤー登録は200を受け取ったとき、成功として扱わずエラーを返す", func(t *testing.T) {
+			c := newTestClient(t, 200, "application/json", mustJSON(t, apiaccount.PlayerResponse{PlayerID: "player-1"}))
 
-			c := newTestClient(t, srv.URL())
-			err := c.ValidateNameForOnboarding(context.Background(), apiaccount.ValidateNameForOnboardingRequest{})
-			require.NoError(t, err)
+			_, err := c.RegisterPlayer(context.Background(), apiaccount.RegisterRequest{FirebaseUID: "fb-1"})
+
+			require.Error(t, err)
 		})
 
-		t.Run("400を受けたとき、ErrBadRequestになる", func(t *testing.T) {
-			srv := apiaccountserverfake.NewServer()
-			defer srv.Close()
-			srv.ValidateNameForOnboardingFn = func(_ apiaccount.ValidateNameForOnboardingRequest) (int, any) { return http.StatusBadRequest, nil }
+		t.Run("初期陣営の選択は204を受け取ったとき、成功として扱わずエラーを返す", func(t *testing.T) {
+			c := newTestClient(t, 204, "", nil)
 
-			c := newTestClient(t, srv.URL())
-			err := c.ValidateNameForOnboarding(context.Background(), apiaccount.ValidateNameForOnboardingRequest{})
-			assertSentinel(t, err, apiaccountclient.ErrBadRequest)
+			err := c.SelectInitialFaction(context.Background(), apiaccount.SelectInitialFactionRequest{FactionID: "SHE"})
+
+			require.Error(t, err)
 		})
 	})
-}
-
-func TestClient_GetBattleLimit(t *testing.T) {
-	t.Run("GetBattleLimit", func(t *testing.T) {
-		t.Run("401を受けたとき、ErrUnauthorizedになる", func(t *testing.T) {
-			srv := apiaccountserverfake.NewServer()
-			defer srv.Close()
-			srv.GetBattleLimitFn = func() (int, any) { return http.StatusUnauthorized, nil }
-
-			c := newTestClient(t, srv.URL())
-			_, err := c.GetBattleLimit(context.Background())
-			assertSentinel(t, err, apiaccountclient.ErrUnauthorized)
-		})
-	})
-}
-
-func TestClient_IncrementBattleCount(t *testing.T) {
-	t.Run("IncrementBattleCount", func(t *testing.T) {
-		t.Run("204を受けたとき、エラーにならない", func(t *testing.T) {
-			srv := apiaccountserverfake.NewServer()
-			defer srv.Close()
-			srv.IncrementBattleCountFn = func() (int, any) { return http.StatusNoContent, nil }
-
-			c := newTestClient(t, srv.URL())
-			err := c.IncrementBattleCount(context.Background())
-			require.NoError(t, err)
-		})
-
-		t.Run("401を受けたとき、ErrUnauthorizedになる", func(t *testing.T) {
-			srv := apiaccountserverfake.NewServer()
-			defer srv.Close()
-			srv.IncrementBattleCountFn = func() (int, any) { return http.StatusUnauthorized, nil }
-
-			c := newTestClient(t, srv.URL())
-			err := c.IncrementBattleCount(context.Background())
-			assertSentinel(t, err, apiaccountclient.ErrUnauthorized)
-		})
-	})
-}
-
-func TestClient_UpdatePremium(t *testing.T) {
-	t.Run("UpdatePremium", func(t *testing.T) {
-		t.Run("204を受けたとき、エラーにならない", func(t *testing.T) {
-			srv := apiaccountserverfake.NewServer()
-			defer srv.Close()
-			srv.UpdatePremiumFn = func(_ apiaccount.UpdatePremiumRequest) (int, any) { return http.StatusNoContent, nil }
-
-			c := newTestClient(t, srv.URL())
-			err := c.UpdatePremium(context.Background(), apiaccount.UpdatePremiumRequest{})
-			require.NoError(t, err)
-		})
-
-		t.Run("400を受けたとき、ErrBadRequestになる", func(t *testing.T) {
-			srv := apiaccountserverfake.NewServer()
-			defer srv.Close()
-			srv.UpdatePremiumFn = func(_ apiaccount.UpdatePremiumRequest) (int, any) { return http.StatusBadRequest, nil }
-
-			c := newTestClient(t, srv.URL())
-			err := c.UpdatePremium(context.Background(), apiaccount.UpdatePremiumRequest{})
-			assertSentinel(t, err, apiaccountclient.ErrBadRequest)
-		})
-	})
-}
-
-func TestClient_AddExp(t *testing.T) {
-	t.Run("AddExp", func(t *testing.T) {
-		t.Run("204を受けたとき、エラーにならない", func(t *testing.T) {
-			srv := apiaccountserverfake.NewServer()
-			defer srv.Close()
-			srv.AddExpFn = func(_ apiaccount.AddExpRequest) (int, any) { return http.StatusNoContent, nil }
-
-			c := newTestClient(t, srv.URL())
-			err := c.AddExp(context.Background(), apiaccount.AddExpRequest{})
-			require.NoError(t, err)
-		})
-
-		t.Run("400を受けたとき、ErrBadRequestになる", func(t *testing.T) {
-			srv := apiaccountserverfake.NewServer()
-			defer srv.Close()
-			srv.AddExpFn = func(_ apiaccount.AddExpRequest) (int, any) { return http.StatusBadRequest, nil }
-
-			c := newTestClient(t, srv.URL())
-			err := c.AddExp(context.Background(), apiaccount.AddExpRequest{})
-			assertSentinel(t, err, apiaccountclient.ErrBadRequest)
-		})
-	})
-}
-
-func TestClient_ListFactions(t *testing.T) {
-	t.Run("ListFactions", func(t *testing.T) {
-		t.Run("401を受けたとき、ErrUnauthorizedになる", func(t *testing.T) {
-			srv := apiaccountserverfake.NewServer()
-			defer srv.Close()
-			srv.ListFactionsFn = func() (int, any) { return http.StatusUnauthorized, nil }
-
-			c := newTestClient(t, srv.URL())
-			_, err := c.ListFactions(context.Background())
-			assertSentinel(t, err, apiaccountclient.ErrUnauthorized)
-		})
-	})
-}
-
-func TestClient_GrantFaction(t *testing.T) {
-	t.Run("GrantFaction", func(t *testing.T) {
-		t.Run("204を受けたとき、エラーにならない", func(t *testing.T) {
-			srv := apiaccountserverfake.NewServer()
-			defer srv.Close()
-			srv.GrantFactionFn = func(_ apiaccount.FactionGrantRequest) (int, any) { return http.StatusNoContent, nil }
-
-			c := newTestClient(t, srv.URL())
-			err := c.GrantFaction(context.Background(), apiaccount.FactionGrantRequest{})
-			require.NoError(t, err)
-		})
-
-		t.Run("400を受けたとき、ErrBadRequestになる", func(t *testing.T) {
-			srv := apiaccountserverfake.NewServer()
-			defer srv.Close()
-			srv.GrantFactionFn = func(_ apiaccount.FactionGrantRequest) (int, any) { return http.StatusBadRequest, nil }
-
-			c := newTestClient(t, srv.URL())
-			err := c.GrantFaction(context.Background(), apiaccount.FactionGrantRequest{})
-			assertSentinel(t, err, apiaccountclient.ErrBadRequest)
-		})
-	})
-}
-
-func TestClient_SelectInitialFaction(t *testing.T) {
-	t.Run("SelectInitialFaction", func(t *testing.T) {
-		t.Run("200を受けたとき、エラーにならない", func(t *testing.T) {
-			srv := apiaccountserverfake.NewServer()
-			defer srv.Close()
-			srv.SelectInitialFactionFn = func(_ apiaccount.SelectInitialFactionRequest) (int, any) { return http.StatusOK, nil }
-
-			c := newTestClient(t, srv.URL())
-			err := c.SelectInitialFaction(context.Background(), apiaccount.SelectInitialFactionRequest{})
-			require.NoError(t, err)
-		})
-
-		t.Run("400を受けたとき、ErrBadRequestになる", func(t *testing.T) {
-			srv := apiaccountserverfake.NewServer()
-			defer srv.Close()
-			srv.SelectInitialFactionFn = func(_ apiaccount.SelectInitialFactionRequest) (int, any) { return http.StatusBadRequest, nil }
-
-			c := newTestClient(t, srv.URL())
-			err := c.SelectInitialFaction(context.Background(), apiaccount.SelectInitialFactionRequest{})
-			assertSentinel(t, err, apiaccountclient.ErrBadRequest)
-		})
-	})
-}
-
-func TestClient_GetPlayerSettings(t *testing.T) {
-	t.Run("GetPlayerSettings", func(t *testing.T) {
-		t.Run("401を受けたとき、ErrUnauthorizedになる", func(t *testing.T) {
-			srv := apiaccountserverfake.NewServer()
-			defer srv.Close()
-			srv.GetSettingsFn = func() (int, any) { return http.StatusUnauthorized, nil }
-
-			c := newTestClient(t, srv.URL())
-			_, err := c.GetPlayerSettings(context.Background())
-			assertSentinel(t, err, apiaccountclient.ErrUnauthorized)
-		})
-	})
-}
-
-func TestClient_UpdatePlayerSettings(t *testing.T) {
-	t.Run("UpdatePlayerSettings", func(t *testing.T) {
-		t.Run("400を受けたとき、ErrBadRequestになる", func(t *testing.T) {
-			srv := apiaccountserverfake.NewServer()
-			defer srv.Close()
-			srv.UpdateSettingsFn = func(_ apiaccount.UpdateSettingsRequest) (int, any) { return http.StatusBadRequest, nil }
-
-			c := newTestClient(t, srv.URL())
-			_, err := c.UpdatePlayerSettings(context.Background(), apiaccount.UpdateSettingsRequest{})
-			assertSentinel(t, err, apiaccountclient.ErrBadRequest)
-		})
-	})
-}
-
-func TestClient_RequestEditor(t *testing.T) {
-	t.Run("リクエストエディタの適用", func(t *testing.T) {
-		t.Run("設定したヘッダが送信先の全リクエストに付与される", func(t *testing.T) {
-			// X-Internal-Auth header 注入の接続点として SDK が機能することを担保する。
-			var gotHeader string
-			spy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				gotHeader = r.Header.Get("X-Internal-Auth")
-				w.Header().Set("Content-Type", "application/json")
-				w.WriteHeader(http.StatusOK)
-				_, _ = w.Write([]byte(`{"factions":[]}`))
-			}))
-			defer spy.Close()
-
-			c, err := apiaccountclient.New(spy.URL,
-				apiaccountclient.WithRequestEditorFn(func(_ context.Context, req *http.Request) error {
-					req.Header.Set("X-Internal-Auth", "test-token")
-					return nil
-				}),
-			)
-			require.NoError(t, err)
-
-			_, err = c.ListFactions(context.Background())
-			require.NoError(t, err)
-			assert.Equal(t, "test-token", gotHeader)
-		})
-	})
-}
-
-func newTestClient(t *testing.T, baseURL string) *apiaccountclient.Client {
-	t.Helper()
-	c, err := apiaccountclient.New(baseURL)
-	require.NoError(t, err)
-	return c
-}
-
-func assertSentinel(t *testing.T, gotErr, wantTarget error) {
-	t.Helper()
-	require.Error(t, gotErr)
-	assert.ErrorIs(t, gotErr, wantTarget)
 }

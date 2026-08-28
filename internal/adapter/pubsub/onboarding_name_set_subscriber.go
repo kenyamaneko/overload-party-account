@@ -35,9 +35,9 @@ func (s *OnboardingNameSetSubscriber) HandleMessage(ctx context.Context, data []
 		return fmt.Errorf("onboarding-name-set: bad payload: %w", err)
 	}
 	if event.EventType != apiscenario.EventTypeOnboardingNameSet {
-		slog.Warn("onboarding-name-set subscriber: unknown event_type, skipping",
+		slog.Error("onboarding-name-set subscriber: unknown event_type",
 			"event_type", event.EventType, "event_id", event.EventID)
-		return nil
+		return fmt.Errorf("onboarding-name-set: unknown event_type %q", event.EventType)
 	}
 	if event.PlayerID == "" || event.Name == "" {
 		slog.Error("onboarding-name-set subscriber: missing required field",

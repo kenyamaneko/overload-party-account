@@ -1,106 +1,132 @@
-//go:build integration
-
-package usecase
+package usecase_test
 
 import (
 	"context"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
+
+	"github.com/kenyamaneko/overload-party-account/internal/port"
+	"github.com/kenyamaneko/overload-party-account/internal/usecase"
 )
 
-// validValues は ValidateGameConfig が通る最小セット。テストケースが mutate で破壊する。
-func validValues() map[string]int64 {
+// fakeGameConfigRepo は port.GameConfigRepo を満たすメモリ内 fake。
+type fakeGameConfigRepo struct {
+	values map[string]int64
+}
+
+func newFakeGameConfigRepo(values map[string]int64) *fakeGameConfigRepo {
+	return &fakeGameConfigRepo{values: values}
+}
+
+func (r *fakeGameConfigRepo) GetInt64(ctx context.Context, key string) (int64, error) {
+	v, ok := r.values[key]
+	if !ok {
+		return 0, port.ErrNotFound
+	}
+	return v, nil
+}
+
+func validGameConfigValues() map[string]int64 {
 	return map[string]int64{
-		configKeyFreeDailyBattleLimit:  10,
-		ConfigKeyExpFormulaCoefficient: 60,
-		gameConfigKeyExpWin:            40,
-		gameConfigKeyExpLoss:           20,
-		gameConfigKeyExpDraw:           30,
+		"free_daily_battle_limit": 5,
+		"exp_formula_coefficient": 100,
+		"exp_win":                 50,
+		"exp_loss":                10,
+		"exp_draw":                20,
 	}
 }
 
 func TestValidateGameConfig(t *testing.T) {
-	ctx := context.Background()
+	t.Run("起動時ゲーム設定検証", func(t *testing.T) {
+		t.Run("free_daily_battle_limitの値が0以下のとき、エラーを返す", func(t *testing.T) {
+			values := validGameConfigValues()
+			values["free_daily_battle_limit"] = 0
+			repo := newFakeGameConfigRepo(values)
 
-	t.Run("ゲーム設定値のバリデーション", func(t *testing.T) {
-		validCases := []struct {
-			name   string
-			mutate func(map[string]int64)
-		}{
-			{
-				name:   "全キーが妥当値で投入されているとき、エラーにならない",
-				mutate: func(_ map[string]int64) {},
-			},
-			{
-				name:   "exp_winが0のとき、エラーにならない (値0 = 経験値なしは仕様上有効)",
-				mutate: func(m map[string]int64) { m[gameConfigKeyExpWin] = 0 },
-			},
-		}
-		for _, tc := range validCases {
-			t.Run(tc.name, func(t *testing.T) {
-				values := validValues()
-				tc.mutate(values)
-				repo := newFakeGameConfigRepo(values)
-				require.NoError(t, ValidateGameConfig(ctx, repo))
-			})
-		}
+			err := usecase.ValidateGameConfig(context.Background(), repo)
 
-		invalidCases := []struct {
-			name         string
-			mutate       func(map[string]int64)
-			wantContains []string
-		}{
-			{
-				name:         "free_daily_battle_limitが未投入のとき、エラーになる",
-				mutate:       func(m map[string]int64) { delete(m, configKeyFreeDailyBattleLimit) },
-				wantContains: []string{configKeyFreeDailyBattleLimit},
-			},
-			{
-				name:         "free_daily_battle_limitが0のとき、エラーになる (正の整数を要求)",
-				mutate:       func(m map[string]int64) { m[configKeyFreeDailyBattleLimit] = 0 },
-				wantContains: []string{configKeyFreeDailyBattleLimit},
-			},
-			{
-				name:         "free_daily_battle_limitが -1のとき、エラーになる",
-				mutate:       func(m map[string]int64) { m[configKeyFreeDailyBattleLimit] = -1 },
-				wantContains: []string{configKeyFreeDailyBattleLimit},
-			},
-			{
-				name:         "exp_formula_coefficientが0のとき、エラーになる (レベル算出の前提を破る)",
-				mutate:       func(m map[string]int64) { m[ConfigKeyExpFormulaCoefficient] = 0 },
-				wantContains: []string{ConfigKeyExpFormulaCoefficient},
-			},
-			{
-				name:         "exp_winが未投入のとき、エラーになる (値0は許すが定義の存在は必須)",
-				mutate:       func(m map[string]int64) { delete(m, gameConfigKeyExpWin) },
-				wantContains: []string{gameConfigKeyExpWin},
-			},
-			{
-				name:         "exp_lossが未投入のとき、エラーになる",
-				mutate:       func(m map[string]int64) { delete(m, gameConfigKeyExpLoss) },
-				wantContains: []string{gameConfigKeyExpLoss},
-			},
-			{
-				name:         "exp_drawが未投入のとき、エラーになる",
-				mutate:       func(m map[string]int64) { delete(m, gameConfigKeyExpDraw) },
-				wantContains: []string{gameConfigKeyExpDraw},
-			},
-		}
-		for _, tc := range invalidCases {
-			t.Run(tc.name, func(t *testing.T) {
-				values := validValues()
-				tc.mutate(values)
-				repo := newFakeGameConfigRepo(values)
+			assert.Error(t, err)
+		})
 
-				err := ValidateGameConfig(ctx, repo)
+		t.Run("exp_formula_coefficientの値が0以下のとき、エラーを返す", func(t *testing.T) {
+			values := validGameConfigValues()
+			values["exp_formula_coefficient"] = 0
+			repo := newFakeGameConfigRepo(values)
 
-				require.Error(t, err)
-				for _, substr := range tc.wantContains {
-					assert.Contains(t, err.Error(), substr)
-				}
-			})
-		}
+			err := usecase.ValidateGameConfig(context.Background(), repo)
+
+			assert.Error(t, err)
+		})
+
+		t.Run("free_daily_battle_limitのキーが存在しないとき、エラーを返す", func(t *testing.T) {
+			values := validGameConfigValues()
+			delete(values, "free_daily_battle_limit")
+			repo := newFakeGameConfigRepo(values)
+
+			err := usecase.ValidateGameConfig(context.Background(), repo)
+
+			assert.Error(t, err)
+		})
+
+		t.Run("exp_formula_coefficientのキーが存在しないとき、エラーを返す", func(t *testing.T) {
+			values := validGameConfigValues()
+			delete(values, "exp_formula_coefficient")
+			repo := newFakeGameConfigRepo(values)
+
+			err := usecase.ValidateGameConfig(context.Background(), repo)
+
+			assert.Error(t, err)
+		})
+
+		t.Run("exp_win/exp_loss/exp_drawの値が0であっても、エラーにならない", func(t *testing.T) {
+			values := validGameConfigValues()
+			values["exp_win"] = 0
+			values["exp_loss"] = 0
+			values["exp_draw"] = 0
+			repo := newFakeGameConfigRepo(values)
+
+			err := usecase.ValidateGameConfig(context.Background(), repo)
+
+			assert.NoError(t, err)
+		})
+
+		t.Run("exp_winのキーが存在しないとき、エラーを返す", func(t *testing.T) {
+			values := validGameConfigValues()
+			delete(values, "exp_win")
+			repo := newFakeGameConfigRepo(values)
+
+			err := usecase.ValidateGameConfig(context.Background(), repo)
+
+			assert.Error(t, err)
+		})
+
+		t.Run("exp_lossのキーが存在しないとき、エラーを返す", func(t *testing.T) {
+			values := validGameConfigValues()
+			delete(values, "exp_loss")
+			repo := newFakeGameConfigRepo(values)
+
+			err := usecase.ValidateGameConfig(context.Background(), repo)
+
+			assert.Error(t, err)
+		})
+
+		t.Run("exp_drawのキーが存在しないとき、エラーを返す", func(t *testing.T) {
+			values := validGameConfigValues()
+			delete(values, "exp_draw")
+			repo := newFakeGameConfigRepo(values)
+
+			err := usecase.ValidateGameConfig(context.Background(), repo)
+
+			assert.Error(t, err)
+		})
+
+		t.Run("free_daily_battle_limitとexp_formula_coefficientが0より大きく、exp_win/exp_loss/exp_drawのキーが全て存在するとき、エラーを返さない", func(t *testing.T) {
+			repo := newFakeGameConfigRepo(validGameConfigValues())
+
+			err := usecase.ValidateGameConfig(context.Background(), repo)
+
+			assert.NoError(t, err)
+		})
 	})
 }

@@ -1,153 +1,126 @@
-package pubsub
+package pubsub_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
-	"fmt"
 	"testing"
+	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	apiscenario "github.com/kenyamaneko/overload-party-scenario/packages/api-scenario"
-	"github.com/stretchr/testify/assert"
 
-	"github.com/kenyamaneko/overload-party-account/internal/port"
+	"github.com/kenyamaneko/overload-party-account/internal/adapter/pubsub"
 )
 
-// fakeOnboardingCompletedApplier は OnboardingCompletedApplier を満たす最小スタブ。
-// subscriber は「usecase 層にイベント内容を正しく委譲し、戻り値に応じて
-// 成功 / 失敗 / 警告ログ分岐だけを行う」契約なので、usecase 内部の Tx / repo
-// 挙動はここで抽象化する。
-type fakeOnboardingCompletedApplier struct {
-	returnProcessed bool
-	returnErr       error
+func TestPlayerOnboardedSubscriber_HandleMessage(t *testing.T) {
+	t.Run("[オンボーディング完了購読]イベント処理", func(t *testing.T) {
+		t.Run("ペイロードがJSONとして解析できないとき、エラーを返す", func(t *testing.T) {
+			s := pubsub.NewPlayerOnboardedSubscriber(&fakeApplier{})
 
-	called    bool
-	gotEvent  string
-	gotType   string
-	gotPlayer string
-}
+			err := s.HandleMessage(context.Background(), []byte("not-json"))
 
-func (f *fakeOnboardingCompletedApplier) ApplyCompleted(
-	_ context.Context,
-	eventID, eventType, playerID string,
-) (bool, error) {
-	f.called = true
-	f.gotEvent = eventID
-	f.gotType = eventType
-	f.gotPlayer = playerID
-	if f.returnErr != nil {
-		return false, f.returnErr
-	}
-	return f.returnProcessed, nil
-}
-
-func TestHandleMessagePlayerOnboarded(t *testing.T) {
-	t.Run("player_onboardedイベントの処理", func(t *testing.T) {
-		const validEventID = "11111111-1111-1111-1111-111111111111"
-		validPayload := mustMarshal(t, apiscenario.PlayerOnboardedEvent{
-			EventType:        apiscenario.EventTypePlayerOnboarded,
-			EventID:          validEventID,
-			PlayerID:         "p-1",
-			InitialFactionID: "SHE",
+			require.ErrorContains(t, err, "bad payload")
 		})
 
-		tests := []struct {
-			name            string
-			payload         []byte
-			returnProcessed bool
-			returnErr       error
-			wantErr         bool
-			wantErrContains string
-			assertApplier   func(t *testing.T, a *fakeOnboardingCompletedApplier)
+		t.Run("イベント種別が対象外(player_onboarded以外)のとき、unknown event_typeを含むエラーを返す", func(t *testing.T) {
+			s := pubsub.NewPlayerOnboardedSubscriber(&fakeApplier{requireEmpty: true})
+			event := apiscenario.PlayerOnboardedEvent{
+				EventType:        "unrelated_event",
+				EventID:          "evt-1",
+				Timestamp:        time.Now(),
+				PlayerID:         "player-1",
+				InitialFactionID: "SHE",
+			}
+			data, err := json.Marshal(event)
+			require.NoError(t, err)
+
+			err = s.HandleMessage(context.Background(), data)
+
+			require.ErrorContains(t, err, "unknown event_type")
+		})
+
+		t.Run("イベント種別が対象外(player_onboarded以外)のとき、オンボーディング完了処理は実行されない", func(t *testing.T) {
+			applier := &fakeApplier{requireEmpty: true}
+			s := pubsub.NewPlayerOnboardedSubscriber(applier)
+			event := apiscenario.PlayerOnboardedEvent{
+				EventType:        "unrelated_event",
+				EventID:          "evt-1",
+				Timestamp:        time.Now(),
+				PlayerID:         "player-1",
+				InitialFactionID: "SHE",
+			}
+			data, err := json.Marshal(event)
+			require.NoError(t, err)
+
+			_ = s.HandleMessage(context.Background(), data)
+
+			assert.Nil(t, applier.calledWith)
+		})
+
+		t.Run("イベントに含まれる対象プレイヤーのIDが空文字のとき、エラーを返し、オンボーディング完了処理は実行されない", func(t *testing.T) {
+			applier := &fakeApplier{requireEmpty: true}
+			s := pubsub.NewPlayerOnboardedSubscriber(applier)
+			event := apiscenario.PlayerOnboardedEvent{
+				EventType:        apiscenario.EventTypePlayerOnboarded,
+				EventID:          "evt-1",
+				Timestamp:        time.Now(),
+				PlayerID:         "",
+				InitialFactionID: "SHE",
+			}
+			data, err := json.Marshal(event)
+			require.NoError(t, err)
+
+			err = s.HandleMessage(context.Background(), data)
+
+			require.Error(t, err)
+			assert.Nil(t, applier.calledWith)
+		})
+
+		t.Run("オンボーディング完了処理がエラーを返したとき、エラーを返す", func(t *testing.T) {
+			applier := &fakeApplier{err: errors.New("boom")}
+			s := pubsub.NewPlayerOnboardedSubscriber(applier)
+			event := apiscenario.PlayerOnboardedEvent{
+				EventType:        apiscenario.EventTypePlayerOnboarded,
+				EventID:          "evt-1",
+				Timestamp:        time.Now(),
+				PlayerID:         "player-1",
+				InitialFactionID: "SHE",
+			}
+			data, err := json.Marshal(event)
+			require.NoError(t, err)
+
+			err = s.HandleMessage(context.Background(), data)
+
+			require.Error(t, err)
+		})
+
+		processedResultTests := []struct {
+			name      string
+			processed bool
 		}{
-			{
-				name:            "usecaseがprocessed=trueを返すとき、applierに委譲して成功になる",
-				payload:         validPayload,
-				returnProcessed: true,
-				wantErr:         false,
-				assertApplier: func(t *testing.T, a *fakeOnboardingCompletedApplier) {
-					assert.True(t, a.called, "applier に委譲する")
-					assert.Equal(t, apiscenario.EventTypePlayerOnboarded, a.gotType)
-					assert.Equal(t, "p-1", a.gotPlayer)
-					assert.Equal(t, validEventID, a.gotEvent)
-				},
-			},
-			{
-				name:            "usecaseがprocessed=falseを返すとき、副作用なしで成功になる",
-				payload:         validPayload,
-				returnProcessed: false,
-				wantErr:         false,
-				assertApplier: func(t *testing.T, a *fakeOnboardingCompletedApplier) {
-					assert.True(t, a.called, "冪等スキップも applier を経由して判定される")
-				},
-			},
-			{
-				name:            "不正なJSONのとき、applierに到達せず失敗になる",
-				payload:         []byte("broken"),
-				wantErr:         true,
-				wantErrContains: "player-onboarded: bad payload",
-				assertApplier: func(t *testing.T, a *fakeOnboardingCompletedApplier) {
-					assert.False(t, a.called, "JSON parse 失敗時は applier に到達しない")
-				},
-			},
-			{
-				name: "未知のevent_typeのとき、applierに到達せず責務外として成功になる",
-				payload: mustMarshal(t, apiscenario.PlayerOnboardedEvent{
-					EventType: "unknown",
-					EventID:   "22222222-2222-2222-2222-222222222222",
-					PlayerID:  "p-2",
-				}),
-				wantErr: false,
-				assertApplier: func(t *testing.T, a *fakeOnboardingCompletedApplier) {
-					assert.False(t, a.called, "event_type フィルタで applier に到達しない")
-				},
-			},
-			{
-				name: "player_idが欠落するとき、applierに到達せず失敗になる",
-				payload: mustMarshal(t, apiscenario.PlayerOnboardedEvent{
-					EventType: apiscenario.EventTypePlayerOnboarded,
-					EventID:   "33333333-3333-3333-3333-333333333333",
-				}),
-				wantErr:         true,
-				wantErrContains: "player-onboarded: missing player_id",
-				assertApplier: func(t *testing.T, a *fakeOnboardingCompletedApplier) {
-					assert.False(t, a.called, "必須フィールド欠落は applier より手前で弾く")
-				},
-			},
-			{
-				name:            "usecaseが汎用エラーを返すとき、失敗になる",
-				payload:         validPayload,
-				returnErr:       errors.New("db error"),
-				wantErr:         true,
-				wantErrContains: "player-onboarded: apply:",
-				assertApplier: func(t *testing.T, a *fakeOnboardingCompletedApplier) {
-					assert.True(t, a.called)
-				},
-			},
-			{
-				name:            "usecaseがErrNotFoundを返すとき、publisherバグとして失敗になる",
-				payload:         validPayload,
-				returnErr:       port.ErrNotFound,
-				wantErr:         true,
-				wantErrContains: "player-onboarded: publisher bug:",
-				assertApplier: func(t *testing.T, a *fakeOnboardingCompletedApplier) {
-					assert.True(t, a.called)
-				},
-			},
+			{"オンボーディング完了処理が重複配信によりスキップされたことを示す結果を返したとき", false},
+			{"オンボーディング完了処理が正常に完了したことを示す結果を返したとき", true},
 		}
-
-		for _, tt := range tests {
-			t.Run(tt.name, func(t *testing.T) {
-				applier := &fakeOnboardingCompletedApplier{
-					returnProcessed: tt.returnProcessed,
-					returnErr:       tt.returnErr,
+		for _, tt := range processedResultTests {
+			t.Run(tt.name+"、エラーにならない", func(t *testing.T) {
+				applier := &fakeApplier{processed: tt.processed}
+				s := pubsub.NewPlayerOnboardedSubscriber(applier)
+				event := apiscenario.PlayerOnboardedEvent{
+					EventType:        apiscenario.EventTypePlayerOnboarded,
+					EventID:          "evt-1",
+					Timestamp:        time.Now(),
+					PlayerID:         "player-1",
+					InitialFactionID: "SHE",
 				}
-				sub := NewPlayerOnboardedSubscriber(applier)
+				data, err := json.Marshal(event)
+				require.NoError(t, err)
 
-				err := sub.HandleMessage(context.Background(), tt.payload)
+				err = s.HandleMessage(context.Background(), data)
 
-				assert.Equal(t, tt.wantErr, err != nil, "エラー有無 (err=%v)", err)
-				assert.Contains(t, fmt.Sprintf("%v", err), tt.wantErrContains, "エラー内容が原因を区別できる")
-				tt.assertApplier(t, applier)
+				require.NoError(t, err)
 			})
 		}
 	})

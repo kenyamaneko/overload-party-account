@@ -1,624 +1,502 @@
 //go:build integration
 
-package usecase
+package usecase_test
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 
-	"cloud.google.com/go/civil"
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	gamelogic "github.com/kenyamaneko/overload-party-battle/packages/game-logic-constants-go"
 	gamedesign "github.com/kenyamaneko/overload-party-common/packages/game-design-constants"
 
-	"github.com/kenyamaneko/overload-party-account/internal/domain"
-	"github.com/kenyamaneko/overload-party-account/internal/port"
+	"github.com/kenyamaneko/overload-party-account/internal/usecase"
 )
 
-// ゲームバランス変更時にこの定数のみ修正すれば全アサーションに反映される。
-const (
-	testExpCoeff = 60
-	testExpWin   = 40
-	testExpLoss  = 20
-	testExpDraw  = 30
-)
+func TestPlayerInteractor_UpdatePremium(t *testing.T) {
+	t.Run("[プレイヤー]プレイヤーのユースケース", func(t *testing.T) {
+		t.Run("UpdatePremium", func(t *testing.T) {
+			t.Run("有効期限をUNIXミリ秒で指定したとき、絶対時刻に変換してプレミアム有効期限として保存する", func(t *testing.T) {
+				interactor := newTestPlayerInteractor(t, validGameConfigValues())
+				playerID := registerTestPlayer(t, "firebase-premium-1")
+				expiresAt := time.Date(2027, 6, 1, 0, 0, 0, 0, time.UTC)
+				millis := expiresAt.UnixMilli()
 
-func today() civil.Date {
-	return civil.DateOf(time.Now().UTC().Add(4 * time.Hour))
+				err := interactor.UpdatePremium(context.Background(), playerID, true, &millis)
+
+				require.NoError(t, err)
+				resp, err := interactor.GetPlayerResponse(context.Background(), playerID)
+				require.NoError(t, err)
+				require.NotNil(t, resp.PremiumExpiresAt)
+				assert.WithinDuration(t, expiresAt, *resp.PremiumExpiresAt, time.Millisecond)
+			})
+
+			t.Run("有効期限を指定しなかったとき、プレミアム有効期限は未設定(nil)として保存する", func(t *testing.T) {
+				interactor := newTestPlayerInteractor(t, validGameConfigValues())
+				playerID := registerTestPlayer(t, "firebase-premium-2")
+
+				err := interactor.UpdatePremium(context.Background(), playerID, true, nil)
+
+				require.NoError(t, err)
+				resp, err := interactor.GetPlayerResponse(context.Background(), playerID)
+				require.NoError(t, err)
+				assert.Nil(t, resp.PremiumExpiresAt)
+			})
+
+			t.Run("対象プレイヤーが存在しないとき、見つからないことを示すエラーを返す", func(t *testing.T) {
+				interactor := newTestPlayerInteractor(t, validGameConfigValues())
+
+				err := interactor.UpdatePremium(context.Background(), uuid.NewString(), true, nil)
+
+				assert.ErrorIs(t, err, usecase.ErrNotFound)
+			})
+		})
+	})
 }
 
-func yesterday() civil.Date {
-	d := today()
-	return civil.Date{Year: d.Year, Month: d.Month, Day: d.Day - 1}
+func TestPlayerInteractor_UpdateName(t *testing.T) {
+	t.Run("[プレイヤー]プレイヤーのユースケース", func(t *testing.T) {
+		t.Run("UpdateName", func(t *testing.T) {
+			t.Run("表示名が無効(空文字・空白のみ・20文字超・制御文字のいずれか)なとき、更新せずエラーを返す", func(t *testing.T) {
+				interactor := newTestPlayerInteractor(t, validGameConfigValues())
+				playerID := registerTestPlayer(t, "firebase-name-1")
+
+				_, err := interactor.UpdateName(context.Background(), playerID, "")
+
+				require.Error(t, err)
+				resp, err := interactor.GetPlayerResponse(context.Background(), playerID)
+				require.NoError(t, err)
+				assert.Nil(t, resp.Name)
+			})
+
+			t.Run("表示名が有効なとき、表示名を更新し、更新後のプレイヤー情報を返す", func(t *testing.T) {
+				interactor := newTestPlayerInteractor(t, validGameConfigValues())
+				playerID := registerTestPlayer(t, "firebase-name-2")
+
+				resp, err := interactor.UpdateName(context.Background(), playerID, "新しい名前")
+
+				require.NoError(t, err)
+				require.NotNil(t, resp.Name)
+				assert.Equal(t, "新しい名前", *resp.Name)
+			})
+		})
+	})
 }
 
-// newPlayerTestInteractor は GameConfig fake + 実 repository で PlayerInteractor を組む。
-// defaultConfigValues をベースに overrides で上書きできる。
-func newPlayerTestInteractor(overrides map[string]int64) *PlayerInteractor {
-	defaultValues := map[string]int64{
-		configKeyFreeDailyBattleLimit:  10,
-		ConfigKeyExpFormulaCoefficient: testExpCoeff,
-		"exp_win":                      testExpWin,
-		"exp_loss":                     testExpLoss,
-		"exp_draw":                     testExpDraw,
-	}
-	for k, v := range overrides {
-		defaultValues[k] = v
-	}
-	playerRepo, playerViewRepo, _, _, tx := newRealRepos()
-	return NewPlayerInteractor(playerRepo, playerRepo, playerRepo, playerRepo, newBattleCountReversalRepo(), playerViewRepo, newFakeGameConfigRepo(defaultValues), tx)
-}
+func TestPlayerInteractor_ValidateNameForOnboarding(t *testing.T) {
+	t.Run("[プレイヤー]プレイヤーのユースケース", func(t *testing.T) {
+		t.Run("ValidateNameForOnboarding", func(t *testing.T) {
+			t.Run("対象プレイヤーが存在しないとき、エラーを返す", func(t *testing.T) {
+				interactor := newTestPlayerInteractor(t, validGameConfigValues())
 
-func TestGetBattleLimit(t *testing.T) {
-	ctx := context.Background()
+				err := interactor.ValidateNameForOnboarding(context.Background(), uuid.NewString(), "プレイヤー")
 
-	t.Run("対戦上限の取得", func(t *testing.T) {
-		tests := []struct {
-			name          string
-			isPremium     bool
-			seedCount     int64 // <0 のときは player_daily_battle に行を作らない
-			seedDate      civil.Date
-			wantCount     int64
-			wantLimit     int64
-			wantCanBattle bool
-		}{
-			{
-				name:          "freeで当日3 (上限10未満)のとき、対戦可能でcount=3になる",
-				isPremium:     false,
-				seedCount:     3,
-				seedDate:      today(),
-				wantCount:     3,
-				wantLimit:     10,
-				wantCanBattle: true,
-			},
-			{
-				name:          "freeで当日10 (上限到達)のとき、対戦不可になる",
-				isPremium:     false,
-				seedCount:     10,
-				seedDate:      today(),
-				wantCount:     10,
-				wantLimit:     10,
-				wantCanBattle: false,
-			},
-			{
-				// premium でも実カウントを返す (limit=-1 / can_battle=true は変わらない)。
-				// データ分析のため count を 0 で潰さない。
-				name:          "premiumで当日5のとき、上限なし (limit=-1)で対戦可能・count=5を返す",
-				isPremium:     true,
-				seedCount:     5,
-				seedDate:      today(),
-				wantCount:     5,
-				wantLimit:     -1,
-				wantCanBattle: true,
-			},
-			{
-				name:          "freeで当日行が無い (前日履歴のみ)のとき、count=0で対戦可能になる",
-				isPremium:     false,
-				seedCount:     7,
-				seedDate:      yesterday(), // 別ゲーム日の履歴は当日カウントに影響しない
-				wantCount:     0,
-				wantLimit:     10,
-				wantCanBattle: true,
-			},
-			{
-				name:          "freeで履歴自体が無いとき、count=0で対戦可能になる",
-				isPremium:     false,
-				seedCount:     -1,
-				wantCount:     0,
-				wantLimit:     10,
-				wantCanBattle: true,
-			},
-			{
-				name:          "freeで当日11 (上限超過)のとき、対戦不可になる",
-				isPremium:     false,
-				seedCount:     11,
-				seedDate:      today(),
-				wantCount:     11,
-				wantLimit:     10,
-				wantCanBattle: false,
-			},
-		}
+				require.Error(t, err)
+			})
 
-		for _, tt := range tests {
-			t.Run(tt.name, func(t *testing.T) {
-				sharedPg.Truncate(t)
-				seedPlayerWithState(t, testPlayerID1, "uid-1", "Alice",
-					tt.isPremium, 1, 0, tt.seedCount, tt.seedDate)
-
-				svc := newPlayerTestInteractor(nil)
-				resp, err := svc.GetBattleLimit(ctx, testPlayerID1)
+			t.Run("プレイヤーが存在し、表示名が無効(空文字・空白のみ・20文字超・制御文字のいずれか)なとき、エラーを返し、対象プレイヤーの表示名は呼び出し前の値のまま変わらない", func(t *testing.T) {
+				interactor := newTestPlayerInteractor(t, validGameConfigValues())
+				playerID := registerTestPlayer(t, "firebase-validate-1")
+				_, err := interactor.UpdateName(context.Background(), playerID, "呼び出し前の名前")
 				require.NoError(t, err)
 
-				assert.Equal(t, tt.wantCount, resp.DailyBattleCount)
-				assert.Equal(t, tt.wantLimit, resp.DailyBattleLimit)
-				assert.Equal(t, tt.wantCanBattle, resp.CanBattle)
-			})
-		}
+				err = interactor.ValidateNameForOnboarding(context.Background(), playerID, "")
 
-		t.Run("対戦上限の取得時に無料上限が読めないとき、エラーになる", func(t *testing.T) {
-			sharedPg.Truncate(t)
-			seedPlayerWithState(t, testPlayerID1, "uid-1", "Alice", false, 1, 0, 3, today())
-
-			playerRepo, playerViewRepo, _, _, tx := newRealRepos()
-			svc := NewPlayerInteractor(playerRepo, playerRepo, playerRepo, playerRepo, newBattleCountReversalRepo(), playerViewRepo,
-				newFakeGameConfigRepo(map[string]int64{ConfigKeyExpFormulaCoefficient: testExpCoeff}), tx)
-
-			_, err := svc.GetBattleLimit(ctx, testPlayerID1)
-			require.ErrorIs(t, err, port.ErrNotFound)
-		})
-	})
-}
-
-func TestIncrementBattleCount(t *testing.T) {
-	ctx := context.Background()
-
-	t.Run("対戦カウントのインクリメント", func(t *testing.T) {
-		// 当日 (computeCurrentGameDay) の行を日単位 UPSERT で加算し、別ゲーム日は独立、
-		// free は上限内なら通り、premium は上限判定をスキップする (カウントは記録)。
-		storedCases := []struct {
-			name       string
-			isPremium  bool
-			seedCount  int64 // <0 のとき seed なし
-			seedDate   civil.Date
-			wantStored int64
-		}{
-			{
-				name:       "freeで当日5 (上限未満)のとき、6に加算される",
-				isPremium:  false,
-				seedCount:  5,
-				seedDate:   today(),
-				wantStored: 6,
-			},
-			{
-				name:       "freeで当日9 → ちょうど上限10のとき、加算が通る",
-				isPremium:  false,
-				seedCount:  9,
-				seedDate:   today(),
-				wantStored: 10,
-			},
-			{
-				name:       "freeで当日行が無い (前日履歴のみ)のとき、1で発生する",
-				isPremium:  false,
-				seedCount:  9,
-				seedDate:   yesterday(),
-				wantStored: 1,
-			},
-			{
-				name:       "freeで履歴自体が無いとき、1で発生する",
-				isPremium:  false,
-				seedCount:  -1,
-				wantStored: 1,
-			},
-			{
-				name:       "premiumで当日29 (上限超過)のとき、30に加算できる",
-				isPremium:  true,
-				seedCount:  29,
-				seedDate:   today(),
-				wantStored: 30,
-			},
-		}
-
-		for _, tc := range storedCases {
-			t.Run(tc.name, func(t *testing.T) {
-				sharedPg.Truncate(t)
-				seedPlayerWithState(t, testPlayerID1, "uid-1", "Alice",
-					tc.isPremium, 1, 0, tc.seedCount, tc.seedDate)
-
-				svc := newPlayerTestInteractor(nil)
-				require.NoError(t, svc.IncrementBattleCount(ctx, testPlayerID1))
-
-				playerRepo, _, _, _, _ := newRealRepos()
-				got, err := playerRepo.GetDailyBattle(ctx, testPlayerID1, today())
+				require.Error(t, err)
+				resp, err := interactor.GetPlayerResponse(context.Background(), playerID)
 				require.NoError(t, err)
-				require.NotNil(t, got)
-				assert.Equal(t, tc.wantStored, got.DailyBattleCount)
+				require.NotNil(t, resp.Name)
+				assert.Equal(t, "呼び出し前の名前", *resp.Name)
 			})
-		}
 
-		t.Run("freeで当日10 (上限到達)からインクリメントするとき、ErrBattleLimitExceededになりカウント据え置き", func(t *testing.T) {
-			sharedPg.Truncate(t)
-			seedPlayerWithState(t, testPlayerID1, "uid-1", "Alice",
-				false, 1, 0, 10, today())
-
-			svc := newPlayerTestInteractor(nil)
-			err := svc.IncrementBattleCount(ctx, testPlayerID1)
-			require.ErrorIs(t, err, ErrBattleLimitExceeded)
-
-			playerRepo, _, _, _, _ := newRealRepos()
-			got, err := playerRepo.GetDailyBattle(ctx, testPlayerID1, today())
-			require.NoError(t, err)
-			require.NotNil(t, got)
-			assert.Equal(t, int64(10), got.DailyBattleCount)
-		})
-
-		t.Run("存在しないplayerIDのとき、port.ErrNotFoundになる", func(t *testing.T) {
-			sharedPg.Truncate(t)
-			svc := newPlayerTestInteractor(nil)
-
-			err := svc.IncrementBattleCount(context.Background(), "99999999-9999-9999-9999-999999999999")
-			require.ErrorIs(t, err, port.ErrNotFound)
-		})
-	})
-}
-
-func TestRevertBattleCount(t *testing.T) {
-	ctx := context.Background()
-
-	t.Run("消費バトル回数の返却", func(t *testing.T) {
-		t.Run("両プレイヤーが当日2回消費しているとき、消費バトル回数を戻すと両者とも1回戻る", func(t *testing.T) {
-			sharedPg.Truncate(t)
-			seedPlayerWithState(t, testPlayerID1, "uid-1", "Alice", false, 1, 0, 2, today())
-			seedPlayerWithState(t, testPlayerID2, "uid-2", "Bob", false, 1, 0, 2, today())
-
-			svc := newPlayerTestInteractor(nil)
-			require.NoError(t, svc.RevertBattleCount(ctx, "11111111-2222-3333-4444-555555555555", time.Now().UnixMilli(), testPlayerID1, testPlayerID2))
-
-			playerRepo, _, _, _, _ := newRealRepos()
-			got1, err := playerRepo.GetDailyBattle(ctx, testPlayerID1, today())
-			require.NoError(t, err)
-			require.NotNil(t, got1)
-			assert.Equal(t, int64(1), got1.DailyBattleCount)
-
-			got2, err := playerRepo.GetDailyBattle(ctx, testPlayerID2, today())
-			require.NoError(t, err)
-			require.NotNil(t, got2)
-			assert.Equal(t, int64(1), got2.DailyBattleCount)
-		})
-
-		t.Run("同一game_idで二度消費バトル回数を戻すとき、2回目は反映されず1回戻ったままになる", func(t *testing.T) {
-			sharedPg.Truncate(t)
-			seedPlayerWithState(t, testPlayerID1, "uid-1", "Alice", false, 1, 0, 2, today())
-			seedPlayerWithState(t, testPlayerID2, "uid-2", "Bob", false, 1, 0, 2, today())
-
-			svc := newPlayerTestInteractor(nil)
-			consumedAtMillis := time.Now().UnixMilli()
-			require.NoError(t, svc.RevertBattleCount(ctx, "22222222-3333-4444-5555-666666666666", consumedAtMillis, testPlayerID1, testPlayerID2))
-			require.NoError(t, svc.RevertBattleCount(ctx, "22222222-3333-4444-5555-666666666666", consumedAtMillis, testPlayerID1, testPlayerID2))
-
-			playerRepo, _, _, _, _ := newRealRepos()
-			got1, err := playerRepo.GetDailyBattle(ctx, testPlayerID1, today())
-			require.NoError(t, err)
-			require.NotNil(t, got1)
-			assert.Equal(t, int64(1), got1.DailyBattleCount)
-		})
-
-		t.Run("当日の消費バトル回数が0のとき、戻しても0のままになる", func(t *testing.T) {
-			sharedPg.Truncate(t)
-			seedPlayerWithState(t, testPlayerID1, "uid-1", "Alice", false, 1, 0, 0, today())
-			seedPlayerWithState(t, testPlayerID2, "uid-2", "Bob", false, 1, 0, 0, today())
-
-			svc := newPlayerTestInteractor(nil)
-			require.NoError(t, svc.RevertBattleCount(ctx, "33333333-4444-5555-6666-777777777777", time.Now().UnixMilli(), testPlayerID1, testPlayerID2))
-
-			playerRepo, _, _, _, _ := newRealRepos()
-			got1, err := playerRepo.GetDailyBattle(ctx, testPlayerID1, today())
-			require.NoError(t, err)
-			require.NotNil(t, got1)
-			assert.Equal(t, int64(0), got1.DailyBattleCount)
-		})
-
-		t.Run("当日にバトルの履歴が無いとき、戻しても記録は作られない", func(t *testing.T) {
-			sharedPg.Truncate(t)
-			seedPlayerWithState(t, testPlayerID1, "uid-1", "Alice", false, 1, 0, -1, civil.Date{})
-			seedPlayerWithState(t, testPlayerID2, "uid-2", "Bob", false, 1, 0, -1, civil.Date{})
-
-			svc := newPlayerTestInteractor(nil)
-			require.NoError(t, svc.RevertBattleCount(ctx, "44444444-5555-6666-7777-888888888888", time.Now().UnixMilli(), testPlayerID1, testPlayerID2))
-
-			playerRepo, _, _, _, _ := newRealRepos()
-			got1, err := playerRepo.GetDailyBattle(ctx, testPlayerID1, today())
-			require.NoError(t, err)
-			assert.Nil(t, got1)
-		})
-
-		t.Run("対戦の消費が前日に発生していたとき、前日のカウントが戻り当日の記録は作られない", func(t *testing.T) {
-			sharedPg.Truncate(t)
-			seedPlayerWithState(t, testPlayerID1, "uid-1", "Alice", false, 1, 0, 1, yesterday())
-			seedPlayerWithState(t, testPlayerID2, "uid-2", "Bob", false, 1, 0, 1, yesterday())
-
-			svc := newPlayerTestInteractor(nil)
-			y := yesterday()
-			consumedAt := time.Date(y.Year, y.Month, y.Day, 12, 0, 0, 0, time.UTC)
-			require.NoError(t, svc.RevertBattleCount(ctx, "55555555-6666-7777-8888-999999999999", consumedAt.UnixMilli(), testPlayerID1, testPlayerID2))
-
-			playerRepo, _, _, _, _ := newRealRepos()
-			gotYesterday, err := playerRepo.GetDailyBattle(ctx, testPlayerID1, yesterday())
-			require.NoError(t, err)
-			require.NotNil(t, gotYesterday)
-			assert.Equal(t, int64(0), gotYesterday.DailyBattleCount)
-
-			gotToday, err := playerRepo.GetDailyBattle(ctx, testPlayerID1, today())
-			require.NoError(t, err)
-			assert.Nil(t, gotToday)
-		})
-	})
-}
-
-func TestGetPlayer(t *testing.T) {
-	t.Run("プレイヤー応答の取得", func(t *testing.T) {
-		t.Run("プレイヤーが存在するとき、そのPlayerResponseを返す", func(t *testing.T) {
-			sharedPg.Truncate(t)
-			seedPlayer(t, testPlayerID1, "uid-1", "Alice", false)
-
-			svc := newPlayerTestInteractor(nil)
-			got, err := svc.GetPlayerResponse(context.Background(), testPlayerID1)
-			require.NoError(t, err)
-			assert.Equal(t, testPlayerID1, got.PlayerID)
-			require.NotNil(t, got.Name)
-			assert.Equal(t, "Alice", *got.Name)
-		})
-
-		t.Run("存在しないplayerIDのとき、port.ErrNotFoundになる", func(t *testing.T) {
-			sharedPg.Truncate(t)
-			seedPlayer(t, testPlayerID1, "uid-1", "Alice", false)
-
-			svc := newPlayerTestInteractor(nil)
-			_, err := svc.GetPlayerResponse(context.Background(), "99999999-9999-9999-9999-999999999999")
-			require.ErrorIs(t, err, port.ErrNotFound)
-		})
-	})
-}
-
-func TestUpdateName(t *testing.T) {
-	ctx := context.Background()
-
-	t.Run("nameの更新", func(t *testing.T) {
-		t.Run("有効なnameのとき、更新され再取得でも反映される", func(t *testing.T) {
-			sharedPg.Truncate(t)
-			seedPlayer(t, testPlayerID1, "uid-1", "Alice", false)
-
-			svc := newPlayerTestInteractor(nil)
-
-			updated, err := svc.UpdateName(ctx, testPlayerID1, "Bob")
-			require.NoError(t, err)
-			require.NotNil(t, updated.Name)
-			assert.Equal(t, "Bob", *updated.Name)
-
-			got, err := svc.GetPlayerResponse(ctx, testPlayerID1)
-			require.NoError(t, err)
-			require.NotNil(t, got.Name)
-			assert.Equal(t, "Bob", *got.Name)
-		})
-
-		t.Run("空文字など無効なnameのとき、repoに到達せずErrInvalidNameになる", func(t *testing.T) {
-			// 詳細な境界値は domain/name_test.go で網羅済み。ここでは UpdateName 経路で
-			// バリデーションが効き repo に到達しないことだけを確かめる。
-			ctx := context.Background()
-			sharedPg.Truncate(t)
-			seedPlayer(t, testPlayerID1, "uid-1", "Alice", false)
-
-			svc := newPlayerTestInteractor(nil)
-			_, err := svc.UpdateName(ctx, testPlayerID1, "")
-			require.ErrorIs(t, err, domain.ErrInvalidName)
-
-			// repo に到達していないこと: name はシード値のまま。
-			got, err := svc.GetPlayerResponse(ctx, testPlayerID1)
-			require.NoError(t, err)
-			require.NotNil(t, got.Name)
-			assert.Equal(t, "Alice", *got.Name)
-		})
-
-		t.Run("存在しないplayerIDのとき、port.ErrNotFoundになる", func(t *testing.T) {
-			sharedPg.Truncate(t)
-			svc := newPlayerTestInteractor(nil)
-
-			_, err := svc.UpdateName(context.Background(), "99999999-9999-9999-9999-999999999999", "Bob")
-			require.ErrorIs(t, err, port.ErrNotFound)
-		})
-	})
-}
-
-func TestAwardExp(t *testing.T) {
-	ctx := context.Background()
-	levelUpThreshold := int64(testExpCoeff * 2 * 2)
-
-	t.Run("経験値の付与", func(t *testing.T) {
-		// AwardExp 固有の責務 (Tx 永続化 + 加算量 0 以下の早期リターン) のみ確認する。
-		// レベル算出ロジック自体は ComputeLevel の単体テストで網羅済み。
-		tests := []struct {
-			name      string
-			initExp   int64
-			initLevel int64
-			gain      int64
-			wantExp   int64
-			wantLevel int64
-		}{
-			{
-				// レベル算出結果が DB に永続化されることを 1 ケースで担保する。
-				name:      "加算でレベルアップするとき、exp/levelが永続化される",
-				initExp:   levelUpThreshold - testExpWin,
-				initLevel: 1,
-				gain:      testExpWin,
-				wantExp:   levelUpThreshold,
-				wantLevel: 2,
-			},
-			{
-				name:      "加算量が0のとき、何もしない",
-				initExp:   100,
-				initLevel: 1,
-				gain:      0,
-				wantExp:   100,
-				wantLevel: 1,
-			},
-			{
-				name:      "加算量が -10のとき、何もしない",
-				initExp:   100,
-				initLevel: 1,
-				gain:      -10,
-				wantExp:   100,
-				wantLevel: 1,
-			},
-		}
-
-		for _, tt := range tests {
-			t.Run(tt.name, func(t *testing.T) {
-				sharedPg.Truncate(t)
-				seedPlayerWithState(t, testPlayerID1, "uid-1", "Alice",
-					false, tt.initLevel, tt.initExp, 0, today())
-
-				svc := newPlayerTestInteractor(nil)
-				require.NoError(t, svc.AwardExp(ctx, testPlayerID1, tt.gain))
-
-				got, err := svc.GetPlayerResponse(ctx, testPlayerID1)
+			t.Run("プレイヤーが存在し、呼び出し前に保存されている表示名とは異なる有効な表示名を指定したとき、エラーを返さず、対象プレイヤーの表示名は呼び出し前の値のまま変わらない", func(t *testing.T) {
+				interactor := newTestPlayerInteractor(t, validGameConfigValues())
+				playerID := registerTestPlayer(t, "firebase-validate-2")
+				_, err := interactor.UpdateName(context.Background(), playerID, "呼び出し前の名前")
 				require.NoError(t, err)
-				assert.Equal(t, tt.wantExp, got.Exp)
-				assert.Equal(t, tt.wantLevel, got.Level)
+
+				err = interactor.ValidateNameForOnboarding(context.Background(), playerID, "別の有効な名前")
+
+				require.NoError(t, err)
+				resp, err := interactor.GetPlayerResponse(context.Background(), playerID)
+				require.NoError(t, err)
+				require.NotNil(t, resp.Name)
+				assert.Equal(t, "呼び出し前の名前", *resp.Name)
 			})
-		}
-
-		t.Run("経験値付与時に係数が読めないとき、エラーになり経験値は変わらない", func(t *testing.T) {
-			sharedPg.Truncate(t)
-			seedPlayerWithState(t, testPlayerID1, "uid-1", "Alice", false, 1, 0, 0, today())
-
-			playerRepo, playerViewRepo, _, _, tx := newRealRepos()
-			svc := NewPlayerInteractor(playerRepo, playerRepo, playerRepo, playerRepo, newBattleCountReversalRepo(), playerViewRepo,
-				newFakeGameConfigRepo(nil), tx)
-
-			err := svc.AwardExp(ctx, testPlayerID1, testExpWin)
-			require.ErrorIs(t, err, port.ErrNotFound)
-
-			prog, err := playerRepo.GetProgression(ctx, testPlayerID1)
-			require.NoError(t, err)
-			assert.Equal(t, int64(0), prog.Exp)
 		})
 	})
 }
 
-func TestAwardGameExp(t *testing.T) {
-	ctx := context.Background()
+func TestPlayerInteractor_GetBattleLimit(t *testing.T) {
+	t.Run("[プレイヤー]プレイヤーのユースケース", func(t *testing.T) {
+		t.Run("GetBattleLimit", func(t *testing.T) {
+			t.Run("プレミアム会員のとき、1日の対戦回数の上限は無制限(-1)になる", func(t *testing.T) {
+				interactor := newTestPlayerInteractor(t, validGameConfigValues())
+				playerID := registerTestPlayer(t, "firebase-limit-1")
+				require.NoError(t, interactor.UpdatePremium(context.Background(), playerID, true, nil))
 
-	t.Run("ゲーム結果に応じた経験値付与", func(t *testing.T) {
-		t.Run("PvP", func(t *testing.T) {
-			tests := []struct {
-				name      string
-				winnerNum int64
-				reason    string
-				wantP1Exp int64
-				wantP2Exp int64
-			}{
-				{
-					name:      "プレイヤー1が勝利するとき、P1にexp_win・P2にexp_lossが付与される",
-					winnerNum: 1,
-					reason:    "system_down",
-					wantP1Exp: testExpWin,
-					wantP2Exp: testExpLoss,
-				},
-				{
-					name:      "プレイヤー2が勝利するとき、P1にexp_loss・P2にexp_winが付与される",
-					winnerNum: 2,
-					reason:    "budget_zero",
-					wantP1Exp: testExpLoss,
-					wantP2Exp: testExpWin,
-				},
-				{
-					name:      "引き分けのとき、両者にexp_drawが付与される",
-					winnerNum: 0,
-					reason:    "draw",
-					wantP1Exp: testExpDraw,
-					wantP2Exp: testExpDraw,
-				},
-				{
-					name:      "勝者番号が1でも理由がdrawのとき、両者にexp_drawが付与される",
-					winnerNum: 1,
-					reason:    "draw",
-					wantP1Exp: testExpDraw,
-					wantP2Exp: testExpDraw,
-				},
-				{
-					name:      "理由がdraw以外で勝者番号が0のとき、両者にexp_drawが付与される",
-					winnerNum: 0,
-					reason:    "system_down",
-					wantP1Exp: testExpDraw,
-					wantP2Exp: testExpDraw,
-				},
-			}
+				resp, err := interactor.GetBattleLimit(context.Background(), playerID)
 
-			for _, tt := range tests {
-				t.Run(tt.name, func(t *testing.T) {
-					sharedPg.Truncate(t)
-					seedPlayerWithState(t, testPlayerID1, "uid-1", "Alice", false, 1, 0, 0, today())
-					seedPlayerWithState(t, testPlayerID2, "uid-2", "Bob", false, 1, 0, 0, today())
+				require.NoError(t, err)
+				assert.Equal(t, int64(-1), resp.DailyBattleLimit)
+			})
 
-					svc := newPlayerTestInteractor(nil)
-					require.NoError(t, svc.AwardGameExp(ctx, testPlayerID1, testPlayerID2, tt.winnerNum, tt.reason, gamedesign.MatchTypePvp))
+			t.Run("プレミアム会員のとき、CanBattleは常にtrueになる", func(t *testing.T) {
+				values := validGameConfigValues()
+				values["free_daily_battle_limit"] = 1
+				interactor := newTestPlayerInteractor(t, values)
+				playerID := registerTestPlayer(t, "firebase-limit-2")
+				require.NoError(t, interactor.UpdatePremium(context.Background(), playerID, true, nil))
+				require.NoError(t, interactor.IncrementBattleCount(context.Background(), playerID))
+				require.NoError(t, interactor.IncrementBattleCount(context.Background(), playerID))
 
-					got1, err := svc.GetPlayerResponse(ctx, testPlayerID1)
-					require.NoError(t, err)
-					assert.Equal(t, tt.wantP1Exp, got1.Exp)
+				resp, err := interactor.GetBattleLimit(context.Background(), playerID)
 
-					got2, err := svc.GetPlayerResponse(ctx, testPlayerID2)
-					require.NoError(t, err)
-					assert.Equal(t, tt.wantP2Exp, got2.Exp)
-				})
-			}
+				require.NoError(t, err)
+				assert.True(t, resp.CanBattle)
+			})
+
+			t.Run("プレミアム会員であっても、当日の対戦回数はそのまま(実カウントを)返す", func(t *testing.T) {
+				interactor := newTestPlayerInteractor(t, validGameConfigValues())
+				playerID := registerTestPlayer(t, "firebase-limit-3")
+				require.NoError(t, interactor.UpdatePremium(context.Background(), playerID, true, nil))
+				require.NoError(t, interactor.IncrementBattleCount(context.Background(), playerID))
+
+				resp, err := interactor.GetBattleLimit(context.Background(), playerID)
+
+				require.NoError(t, err)
+				assert.Equal(t, int64(1), resp.DailyBattleCount)
+			})
+
+			t.Run("プレミアム会員でなく、当日の対戦回数が設定された上限未満のとき、CanBattleはtrueになる", func(t *testing.T) {
+				values := validGameConfigValues()
+				values["free_daily_battle_limit"] = 2
+				interactor := newTestPlayerInteractor(t, values)
+				playerID := registerTestPlayer(t, "firebase-limit-4")
+				require.NoError(t, interactor.IncrementBattleCount(context.Background(), playerID))
+
+				resp, err := interactor.GetBattleLimit(context.Background(), playerID)
+
+				require.NoError(t, err)
+				assert.True(t, resp.CanBattle)
+			})
+
+			t.Run("プレミアム会員でなく、当日の対戦回数が設定された上限に達しているとき、CanBattleはfalseになる", func(t *testing.T) {
+				values := validGameConfigValues()
+				values["free_daily_battle_limit"] = 2
+				interactor := newTestPlayerInteractor(t, values)
+				playerID := registerTestPlayer(t, "firebase-limit-5")
+				require.NoError(t, interactor.IncrementBattleCount(context.Background(), playerID))
+				require.NoError(t, interactor.IncrementBattleCount(context.Background(), playerID))
+
+				resp, err := interactor.GetBattleLimit(context.Background(), playerID)
+
+				require.NoError(t, err)
+				assert.False(t, resp.CanBattle)
+			})
+
+			t.Run("当日まだ一度も対戦していない(対戦回数の記録が無い)とき、対戦回数は0として扱われる", func(t *testing.T) {
+				interactor := newTestPlayerInteractor(t, validGameConfigValues())
+				playerID := registerTestPlayer(t, "firebase-limit-6")
+
+				resp, err := interactor.GetBattleLimit(context.Background(), playerID)
+
+				require.NoError(t, err)
+				assert.Equal(t, int64(0), resp.DailyBattleCount)
+			})
+
+			t.Run("対象プレイヤーが存在しないとき、エラーを返す", func(t *testing.T) {
+				interactor := newTestPlayerInteractor(t, validGameConfigValues())
+
+				_, err := interactor.GetBattleLimit(context.Background(), uuid.NewString())
+
+				require.Error(t, err)
+			})
 		})
+	})
+}
 
-		t.Run("NPC戦", func(t *testing.T) {
-			tests := []struct {
-				name      string
-				winnerNum int64
-				reason    string
-				wantP1Exp int64
-			}{
-				{
-					name:      "プレイヤーが勝利するとき、exp_winが付与される",
-					winnerNum: 1,
-					reason:    "system_down",
-					wantP1Exp: testExpWin,
-				},
-				{
-					name:      "プレイヤーが敗北するとき、exp_lossが付与される",
-					winnerNum: 2,
-					reason:    "system_down",
-					wantP1Exp: testExpLoss,
-				},
-				{
-					name:      "引き分けのとき、exp_drawが付与される",
-					winnerNum: 0,
-					reason:    "draw",
-					wantP1Exp: testExpDraw,
-				},
-			}
+func TestPlayerInteractor_IncrementBattleCount(t *testing.T) {
+	t.Run("[プレイヤー]プレイヤーのユースケース", func(t *testing.T) {
+		t.Run("IncrementBattleCount", func(t *testing.T) {
+			t.Run("プレミアム会員のとき、上限判定を行わずに当日の対戦回数を1加算する", func(t *testing.T) {
+				values := validGameConfigValues()
+				values["free_daily_battle_limit"] = 1
+				interactor := newTestPlayerInteractor(t, values)
+				playerID := registerTestPlayer(t, "firebase-increment-1")
+				require.NoError(t, interactor.UpdatePremium(context.Background(), playerID, true, nil))
+				require.NoError(t, interactor.IncrementBattleCount(context.Background(), playerID))
 
-			for _, tt := range tests {
-				t.Run(tt.name, func(t *testing.T) {
-					sharedPg.Truncate(t)
-					seedPlayerWithState(t, testPlayerID1, "uid-1", "Alice", false, 1, 0, 0, today())
+				err := interactor.IncrementBattleCount(context.Background(), playerID)
 
-					svc := newPlayerTestInteractor(nil)
-					require.NoError(t, svc.AwardGameExp(ctx, testPlayerID1, "npc-easy", tt.winnerNum, tt.reason, gamedesign.MatchTypeNpc))
+				require.NoError(t, err)
+				resp, err := interactor.GetBattleLimit(context.Background(), playerID)
+				require.NoError(t, err)
+				assert.Equal(t, int64(2), resp.DailyBattleCount)
+			})
 
-					got1, err := svc.GetPlayerResponse(ctx, testPlayerID1)
-					require.NoError(t, err)
-					assert.Equal(t, tt.wantP1Exp, got1.Exp)
-				})
-			}
+			t.Run("プレミアム会員でなく、加算後も設定された上限以下のとき、当日の対戦回数を1加算する", func(t *testing.T) {
+				values := validGameConfigValues()
+				values["free_daily_battle_limit"] = 2
+				interactor := newTestPlayerInteractor(t, values)
+				playerID := registerTestPlayer(t, "firebase-increment-2")
+
+				err := interactor.IncrementBattleCount(context.Background(), playerID)
+
+				require.NoError(t, err)
+				resp, err := interactor.GetBattleLimit(context.Background(), playerID)
+				require.NoError(t, err)
+				assert.Equal(t, int64(1), resp.DailyBattleCount)
+			})
+
+			t.Run("プレミアム会員でなく、加算により設定された上限を超えるとき、対戦回数を加算せずErrBattleLimitExceededを返す", func(t *testing.T) {
+				values := validGameConfigValues()
+				values["free_daily_battle_limit"] = 1
+				interactor := newTestPlayerInteractor(t, values)
+				playerID := registerTestPlayer(t, "firebase-increment-3")
+				require.NoError(t, interactor.IncrementBattleCount(context.Background(), playerID))
+
+				err := interactor.IncrementBattleCount(context.Background(), playerID)
+
+				assert.ErrorIs(t, err, usecase.ErrBattleLimitExceeded)
+				resp, err := interactor.GetBattleLimit(context.Background(), playerID)
+				require.NoError(t, err)
+				assert.Equal(t, int64(1), resp.DailyBattleCount)
+			})
+
+			t.Run("対象プレイヤーが存在しないとき、エラーを返す", func(t *testing.T) {
+				interactor := newTestPlayerInteractor(t, validGameConfigValues())
+
+				err := interactor.IncrementBattleCount(context.Background(), uuid.NewString())
+
+				require.Error(t, err)
+			})
 		})
+	})
+}
 
-		t.Run("対戦結果の付与時にexp_winが読めないとき、エラーになり両者の経験値は変わらない", func(t *testing.T) {
-			sharedPg.Truncate(t)
-			seedPlayerWithState(t, testPlayerID1, "uid-1", "Alice", false, 1, 0, 0, today())
-			seedPlayerWithState(t, testPlayerID2, "uid-2", "Bob", false, 1, 0, 0, today())
+func TestPlayerInteractor_RevertBattleCount(t *testing.T) {
+	t.Run("[プレイヤー]プレイヤーのユースケース", func(t *testing.T) {
+		t.Run("RevertBattleCount", func(t *testing.T) {
+			t.Run("同一game_idに対する初回の呼び出しでは、消費時刻から算出したゲーム日の両プレイヤーの対戦回数をそれぞれ1減算する", func(t *testing.T) {
+				interactor := newTestPlayerInteractor(t, validGameConfigValues())
+				player1ID := registerTestPlayer(t, "firebase-revert-1a")
+				player2ID := registerTestPlayer(t, "firebase-revert-1b")
+				require.NoError(t, interactor.IncrementBattleCount(context.Background(), player1ID))
+				require.NoError(t, interactor.IncrementBattleCount(context.Background(), player2ID))
 
-			playerRepo, playerViewRepo, _, _, tx := newRealRepos()
-			svc := NewPlayerInteractor(playerRepo, playerRepo, playerRepo, playerRepo, newBattleCountReversalRepo(), playerViewRepo,
-				newFakeGameConfigRepo(map[string]int64{
-					gameConfigKeyExpLoss: testExpLoss,
-					gameConfigKeyExpDraw: testExpDraw,
-				}), tx)
+				err := interactor.RevertBattleCount(context.Background(), "game-1", time.Now().UnixMilli(), player1ID, player2ID)
 
-			err := svc.AwardGameExp(ctx, testPlayerID1, testPlayerID2, 1, "system_down", "pvp")
-			require.ErrorIs(t, err, port.ErrNotFound)
+				require.NoError(t, err)
+				resp1, err := interactor.GetBattleLimit(context.Background(), player1ID)
+				require.NoError(t, err)
+				assert.Equal(t, int64(0), resp1.DailyBattleCount)
+				resp2, err := interactor.GetBattleLimit(context.Background(), player2ID)
+				require.NoError(t, err)
+				assert.Equal(t, int64(0), resp2.DailyBattleCount)
+			})
 
-			prog1, err := playerRepo.GetProgression(ctx, testPlayerID1)
-			require.NoError(t, err)
-			assert.Equal(t, int64(0), prog1.Exp)
+			t.Run("同一game_idに対する2回目以降の呼び出しでは、対戦回数の減算を行わず、成功として扱う(冪等)", func(t *testing.T) {
+				interactor := newTestPlayerInteractor(t, validGameConfigValues())
+				player1ID := registerTestPlayer(t, "firebase-revert-2a")
+				player2ID := registerTestPlayer(t, "firebase-revert-2b")
+				for i := 0; i < 3; i++ {
+					require.NoError(t, interactor.IncrementBattleCount(context.Background(), player1ID))
+					require.NoError(t, interactor.IncrementBattleCount(context.Background(), player2ID))
+				}
+				consumedAtMillis := time.Now().UnixMilli()
+				require.NoError(t, interactor.RevertBattleCount(context.Background(), "game-2", consumedAtMillis, player1ID, player2ID))
 
-			prog2, err := playerRepo.GetProgression(ctx, testPlayerID2)
-			require.NoError(t, err)
-			assert.Equal(t, int64(0), prog2.Exp)
+				err := interactor.RevertBattleCount(context.Background(), "game-2", consumedAtMillis, player1ID, player2ID)
+
+				require.NoError(t, err)
+				resp1, err := interactor.GetBattleLimit(context.Background(), player1ID)
+				require.NoError(t, err)
+				assert.Equal(t, int64(2), resp1.DailyBattleCount)
+				resp2, err := interactor.GetBattleLimit(context.Background(), player2ID)
+				require.NoError(t, err)
+				assert.Equal(t, int64(2), resp2.DailyBattleCount)
+			})
+		})
+	})
+}
+
+func TestPlayerInteractor_AwardExp(t *testing.T) {
+	t.Run("[プレイヤー]プレイヤーのユースケース", func(t *testing.T) {
+		t.Run("AwardExp", func(t *testing.T) {
+			t.Run("expGainが0以下のとき、経験値・レベルは変化しない", func(t *testing.T) {
+				interactor := newTestPlayerInteractor(t, validGameConfigValues())
+				playerID := registerTestPlayer(t, "firebase-exp-1")
+
+				err := interactor.AwardExp(context.Background(), playerID, 0)
+
+				require.NoError(t, err)
+				resp, err := interactor.GetPlayerResponse(context.Background(), playerID)
+				require.NoError(t, err)
+				assert.Equal(t, int64(0), resp.Exp)
+				assert.Equal(t, int64(1), resp.Level)
+			})
+
+			t.Run("expGainが正のとき、累計経験値に加算し、加算後の累計経験値に基づいてレベルを再計算する", func(t *testing.T) {
+				// coeff=100, level1のレベル2必要経験値は100*2^2=400
+				interactor := newTestPlayerInteractor(t, validGameConfigValues())
+				playerID := registerTestPlayer(t, "firebase-exp-2")
+
+				err := interactor.AwardExp(context.Background(), playerID, 400)
+
+				require.NoError(t, err)
+				resp, err := interactor.GetPlayerResponse(context.Background(), playerID)
+				require.NoError(t, err)
+				assert.Equal(t, int64(400), resp.Exp)
+				assert.Equal(t, int64(2), resp.Level)
+			})
+
+			t.Run("対象プレイヤーが存在しないとき、エラーを返す", func(t *testing.T) {
+				interactor := newTestPlayerInteractor(t, validGameConfigValues())
+
+				err := interactor.AwardExp(context.Background(), uuid.NewString(), 10)
+
+				require.Error(t, err)
+			})
+
+			t.Run("同一プレイヤーに対して2つの経験値付与が同時に実行されても、両方の加算が反映され、一方が失われない", func(t *testing.T) {
+				interactor := newTestPlayerInteractor(t, validGameConfigValues())
+				playerID := registerTestPlayer(t, "firebase-exp-concurrent")
+
+				var wg sync.WaitGroup
+				errs := make([]error, 2)
+				wg.Add(2)
+				go func() {
+					defer wg.Done()
+					errs[0] = interactor.AwardExp(context.Background(), playerID, 10)
+				}()
+				go func() {
+					defer wg.Done()
+					errs[1] = interactor.AwardExp(context.Background(), playerID, 10)
+				}()
+				wg.Wait()
+
+				require.NoError(t, errs[0])
+				require.NoError(t, errs[1])
+				resp, err := interactor.GetPlayerResponse(context.Background(), playerID)
+				require.NoError(t, err)
+				assert.Equal(t, int64(20), resp.Exp)
+			})
+		})
+	})
+}
+
+func TestPlayerInteractor_AwardGameExp(t *testing.T) {
+	t.Run("[プレイヤー]プレイヤーのユースケース", func(t *testing.T) {
+		t.Run("AwardGameExp", func(t *testing.T) {
+			t.Run("reasonが引き分けのとき、winner_numの値に関わらず両プレイヤーに引き分け時経験値(exp_draw)を付与する", func(t *testing.T) {
+				interactor := newTestPlayerInteractor(t, validGameConfigValues())
+				player1ID := registerTestPlayer(t, "firebase-game-exp-1a")
+				player2ID := registerTestPlayer(t, "firebase-game-exp-1b")
+
+				err := interactor.AwardGameExp(context.Background(), player1ID, player2ID, 1, gamelogic.WinReasonDraw, gamedesign.MatchTypePvp)
+
+				require.NoError(t, err)
+				resp1, err := interactor.GetPlayerResponse(context.Background(), player1ID)
+				require.NoError(t, err)
+				assert.Equal(t, int64(20), resp1.Exp)
+				resp2, err := interactor.GetPlayerResponse(context.Background(), player2ID)
+				require.NoError(t, err)
+				assert.Equal(t, int64(20), resp2.Exp)
+			})
+
+			t.Run("winner_numが0のとき、reasonの値に関わらず両プレイヤーに引き分け時経験値(exp_draw)を付与する", func(t *testing.T) {
+				interactor := newTestPlayerInteractor(t, validGameConfigValues())
+				player1ID := registerTestPlayer(t, "firebase-game-exp-2a")
+				player2ID := registerTestPlayer(t, "firebase-game-exp-2b")
+
+				err := interactor.AwardGameExp(context.Background(), player1ID, player2ID, 0, gamelogic.WinReasonBudgetZero, gamedesign.MatchTypePvp)
+
+				require.NoError(t, err)
+				resp1, err := interactor.GetPlayerResponse(context.Background(), player1ID)
+				require.NoError(t, err)
+				assert.Equal(t, int64(20), resp1.Exp)
+				resp2, err := interactor.GetPlayerResponse(context.Background(), player2ID)
+				require.NoError(t, err)
+				assert.Equal(t, int64(20), resp2.Exp)
+			})
+
+			t.Run("winner_numが1のとき、プレイヤー1に勝利時経験値を、プレイヤー2に敗北時経験値を付与する", func(t *testing.T) {
+				interactor := newTestPlayerInteractor(t, validGameConfigValues())
+				player1ID := registerTestPlayer(t, "firebase-game-exp-3a")
+				player2ID := registerTestPlayer(t, "firebase-game-exp-3b")
+
+				err := interactor.AwardGameExp(context.Background(), player1ID, player2ID, 1, gamelogic.WinReasonBudgetZero, gamedesign.MatchTypePvp)
+
+				require.NoError(t, err)
+				resp1, err := interactor.GetPlayerResponse(context.Background(), player1ID)
+				require.NoError(t, err)
+				assert.Equal(t, int64(50), resp1.Exp)
+				resp2, err := interactor.GetPlayerResponse(context.Background(), player2ID)
+				require.NoError(t, err)
+				assert.Equal(t, int64(10), resp2.Exp)
+			})
+
+			t.Run("winner_numが2のとき、プレイヤー2に勝利時経験値を、プレイヤー1に敗北時経験値を付与する", func(t *testing.T) {
+				interactor := newTestPlayerInteractor(t, validGameConfigValues())
+				player1ID := registerTestPlayer(t, "firebase-game-exp-4a")
+				player2ID := registerTestPlayer(t, "firebase-game-exp-4b")
+
+				err := interactor.AwardGameExp(context.Background(), player1ID, player2ID, 2, gamelogic.WinReasonBudgetZero, gamedesign.MatchTypePvp)
+
+				require.NoError(t, err)
+				resp1, err := interactor.GetPlayerResponse(context.Background(), player1ID)
+				require.NoError(t, err)
+				assert.Equal(t, int64(10), resp1.Exp)
+				resp2, err := interactor.GetPlayerResponse(context.Background(), player2ID)
+				require.NoError(t, err)
+				assert.Equal(t, int64(50), resp2.Exp)
+			})
+
+			t.Run("match_typeがnpcのとき、プレイヤー2への経験値付与は行われない", func(t *testing.T) {
+				interactor := newTestPlayerInteractor(t, validGameConfigValues())
+				player1ID := registerTestPlayer(t, "firebase-game-exp-5a")
+				player2ID := registerTestPlayer(t, "firebase-game-exp-5b")
+
+				err := interactor.AwardGameExp(context.Background(), player1ID, player2ID, 1, gamelogic.WinReasonBudgetZero, gamedesign.MatchTypeNpc)
+
+				require.NoError(t, err)
+				resp1, err := interactor.GetPlayerResponse(context.Background(), player1ID)
+				require.NoError(t, err)
+				assert.Equal(t, int64(50), resp1.Exp)
+				resp2, err := interactor.GetPlayerResponse(context.Background(), player2ID)
+				require.NoError(t, err)
+				assert.Equal(t, int64(0), resp2.Exp)
+			})
+		})
+	})
+}
+
+func TestPlayerInteractor_GetPlayerResponse(t *testing.T) {
+	t.Run("[プレイヤー]プレイヤーのユースケース", func(t *testing.T) {
+		t.Run("GetPlayerResponse", func(t *testing.T) {
+			t.Run("対象プレイヤーが存在しないとき、エラーを返す", func(t *testing.T) {
+				interactor := newTestPlayerInteractor(t, validGameConfigValues())
+
+				_, err := interactor.GetPlayerResponse(context.Background(), uuid.NewString())
+
+				require.Error(t, err)
+			})
+
+			t.Run("対象プレイヤーが存在するとき、プレイヤー情報を返す", func(t *testing.T) {
+				interactor := newTestPlayerInteractor(t, validGameConfigValues())
+				playerID := registerTestPlayer(t, "firebase-getresp-1")
+
+				resp, err := interactor.GetPlayerResponse(context.Background(), playerID)
+
+				require.NoError(t, err)
+				assert.Equal(t, playerID, resp.PlayerID)
+			})
 		})
 	})
 }

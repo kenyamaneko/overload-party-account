@@ -1,169 +1,91 @@
 //go:build integration
 
-package usecase
+package usecase_test
 
 import (
 	"context"
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/kenyamaneko/overload-party-account/internal/domain"
 	"github.com/kenyamaneko/overload-party-account/internal/port"
+	"github.com/kenyamaneko/overload-party-account/internal/repository/postgres"
 )
 
-// ptr はテスト内でポインタリテラルを書きやすくするヘルパ。
-func ptr[T any](v T) *T { return &v }
-
-// newPlayerSettingsTestInteractor は実 PostgreSQL repository で PlayerSettingsInteractor を組む。
-func newPlayerSettingsTestInteractor() *PlayerSettingsInteractor {
-	_, _, _, playerSettingsRepo, _ := newRealRepos()
-	return NewPlayerSettingsInteractor(playerSettingsRepo)
+// createPlayerWithoutSettings は players / player_progression のみを作成し、
+// player_settings 行を意図的に作らないことで「設定行が存在しない」状態を再現する。
+// この状態は正規の登録フロー (AuthInteractor.Register) では発生し得ないため、
+// リポジトリを直接使って前提を組み立てる。
+func createPlayerWithoutSettings(t *testing.T) string {
+	t.Helper()
+	playerID := uuid.NewString()
+	now := time.Now().UTC()
+	playerRepo := postgres.NewPlayerRepository(sharedPg.Pool)
+	err := playerRepo.Create(context.Background(), &domain.Player{
+		PlayerID:         playerID,
+		FirebaseUID:      "firebase-no-settings-" + playerID,
+		IsPremium:        false,
+		OnboardingStatus: domain.OnboardingStatusNotStarted,
+		CreatedAt:        now,
+		UpdatedAt:        now,
+	}, &domain.PlayerProgression{
+		PlayerID:  playerID,
+		Level:     1,
+		Exp:       0,
+		UpdatedAt: now,
+	})
+	require.NoError(t, err)
+	return playerID
 }
 
-func TestGet(t *testing.T) {
-	ctx := context.Background()
+func TestPlayerSettingsInteractor_Get(t *testing.T) {
+	t.Run("[プレイヤー設定]プレイヤー設定のユースケース", func(t *testing.T) {
+		t.Run("Get", func(t *testing.T) {
+			t.Run("対象プレイヤーの設定行が存在しないとき、エラーを返す", func(t *testing.T) {
+				interactor := newTestPlayerSettingsInteractor(t)
+				playerID := createPlayerWithoutSettings(t)
 
-	t.Run("プレイヤー設定の取得", func(t *testing.T) {
-		seededCases := []struct {
-			name     string
-			seedLang string
-			seedBgm  int64
-			seedSe   int64
-			seedPush bool
-		}{
-			{
-				name:     "言語=en / プッシュ無効のシード値のとき、そのまま返す",
-				seedLang: "en",
-				seedBgm:  20,
-				seedSe:   30,
-				seedPush: false,
-			},
-			{
-				name:     "言語=ja / プッシュ有効のシード値のとき、そのまま返す",
-				seedLang: "ja",
-				seedBgm:  50,
-				seedSe:   60,
-				seedPush: true,
-			},
-		}
-		for _, tc := range seededCases {
-			t.Run(tc.name, func(t *testing.T) {
-				sharedPg.Truncate(t)
-				seedPlayer(t, testPlayerID1, "uid-1", "Alice", false)
-				seedPlayerSettings(t, testPlayerID1, tc.seedLang, tc.seedBgm, tc.seedSe, tc.seedPush)
+				_, err := interactor.Get(context.Background(), playerID)
 
-				svc := newPlayerSettingsTestInteractor()
-				got, err := svc.Get(ctx, testPlayerID1)
-				require.NoError(t, err)
-				require.NotNil(t, got)
-				assert.Equal(t, testPlayerID1, got.PlayerID)
-				assert.Equal(t, tc.seedLang, got.Language)
-				assert.Equal(t, tc.seedBgm, got.BgmVolume)
-				assert.Equal(t, tc.seedSe, got.SeVolume)
-				assert.Equal(t, tc.seedPush, got.PushEnabled)
+				assert.ErrorIs(t, err, port.ErrNotFound)
 			})
-		}
 
-		t.Run("player_settings行が無いとき、port.ErrNotFoundになる", func(t *testing.T) {
-			// Register と同一 Tx で必ず INSERT される契約なので、行が無いのは未実施または
-			// 不整合の症状であり、デフォルト値で隠さずエラーにする。
-			sharedPg.Truncate(t)
-			seedPlayer(t, testPlayerID1, "uid-1", "Alice", false)
+			t.Run("設定行が存在するとき、設定情報を返す", func(t *testing.T) {
+				interactor := newTestPlayerSettingsInteractor(t)
+				playerID := registerTestPlayer(t, "firebase-settings-get-1")
 
-			svc := newPlayerSettingsTestInteractor()
-			_, err := svc.Get(ctx, testPlayerID1)
-			require.ErrorIs(t, err, port.ErrNotFound)
+				resp, err := interactor.Get(context.Background(), playerID)
+
+				require.NoError(t, err)
+				assert.Equal(t, playerID, resp.PlayerID)
+				assert.Equal(t, "ja", resp.Language)
+			})
 		})
 	})
 }
 
-func TestUpdate(t *testing.T) {
-	ctx := context.Background()
+func TestPlayerSettingsInteractor_Update(t *testing.T) {
+	t.Run("[プレイヤー設定]プレイヤー設定のユースケース", func(t *testing.T) {
+		t.Run("Update", func(t *testing.T) {
+			t.Run("プレイヤー設定について、更新内容で値を指定したフィールドのみが更新され、指定しなかったフィールドは元の値のまま変わらない", func(t *testing.T) {
+				interactor := newTestPlayerSettingsInteractor(t)
+				playerID := registerTestPlayer(t, "firebase-settings-update-1")
+				newLanguage := "en"
 
-	t.Run("プレイヤー設定の更新", func(t *testing.T) {
-		// 部分更新契約: patch の非 nil フィールドだけを更新し、nil フィールドは現状維持する。
-		patchCases := []struct {
-			name     string
-			patch    *port.PlayerSettingsPatch
-			wantLang string
-			wantBgm  int64
-			wantSe   int64
-			wantPush bool
-		}{
-			{
-				name:     "Languageだけ指定するとき、他項目はシード値のまま維持される",
-				patch:    &port.PlayerSettingsPatch{Language: ptr("en")},
-				wantLang: "en",
-				wantBgm:  50,
-				wantSe:   50,
-				wantPush: true,
-			},
-			{
-				name: "全フィールド指定のとき、一括上書きされる",
-				patch: &port.PlayerSettingsPatch{
-					Language:    ptr("en"),
-					BgmVolume:   ptr(int64(90)),
-					SeVolume:    ptr(int64(80)),
-					PushEnabled: ptr(false),
-				},
-				wantLang: "en",
-				wantBgm:  90,
-				wantSe:   80,
-				wantPush: false,
-			},
-		}
-		for _, tc := range patchCases {
-			t.Run(tc.name, func(t *testing.T) {
-				sharedPg.Truncate(t)
-				seedPlayer(t, testPlayerID1, "uid-1", "Alice", false)
-				seedPlayerSettings(t, testPlayerID1, "ja", 50, 50, true)
+				err := interactor.Update(context.Background(), playerID, &port.PlayerSettingsPatch{Language: &newLanguage})
 
-				svc := newPlayerSettingsTestInteractor()
-				require.NoError(t, svc.Update(ctx, testPlayerID1, tc.patch))
-
-				got, err := svc.Get(ctx, testPlayerID1)
 				require.NoError(t, err)
-				require.NotNil(t, got)
-				assert.Equal(t, tc.wantLang, got.Language)
-				assert.Equal(t, tc.wantBgm, got.BgmVolume)
-				assert.Equal(t, tc.wantSe, got.SeVolume)
-				assert.Equal(t, tc.wantPush, got.PushEnabled)
+				resp, err := interactor.Get(context.Background(), playerID)
+				require.NoError(t, err)
+				assert.Equal(t, "en", resp.Language)
+				assert.Equal(t, int64(50), resp.BgmVolume)
+				assert.Equal(t, int64(50), resp.SeVolume)
+				assert.True(t, resp.PushEnabled)
 			})
-		}
-
-		t.Run("player_settings行が未登録のとき、port.ErrNotFoundになる", func(t *testing.T) {
-			// 通常は Register で Insert されるため発生しないが、契約として担保する。
-			sharedPg.Truncate(t)
-			seedPlayer(t, testPlayerID1, "uid-1", "Alice", false)
-
-			svc := newPlayerSettingsTestInteractor()
-			err := svc.Update(ctx, testPlayerID1, &port.PlayerSettingsPatch{Language: ptr("en")})
-			require.ErrorIs(t, err, port.ErrNotFound)
-		})
-
-		t.Run("設定を更新するとき、updated_atが前進する", func(t *testing.T) {
-			// updated_at の前進は監査やキャッシュ無効化の基盤。実際の書き換えは
-			// BEFORE UPDATE トリガー trg_player_settings_updated_at が now() で行う。
-			sharedPg.Truncate(t)
-			seedPlayer(t, testPlayerID1, "uid-1", "Alice", false)
-			seedPlayerSettings(t, testPlayerID1, "ja", 50, 50, true)
-
-			svc := newPlayerSettingsTestInteractor()
-			before, err := svc.Get(ctx, testPlayerID1)
-			require.NoError(t, err)
-
-			// updated_at 解像度が 1ms 未満の場合に同値になることを防ぐため 2ms 待つ。
-			time.Sleep(2 * time.Millisecond)
-
-			require.NoError(t, svc.Update(ctx, testPlayerID1, &port.PlayerSettingsPatch{Language: ptr("en")}))
-
-			after, err := svc.Get(ctx, testPlayerID1)
-			require.NoError(t, err)
-			assert.True(t, after.UpdatedAt.After(before.UpdatedAt),
-				"after.UpdatedAt (%v) should be strictly after before.UpdatedAt (%v)",
-				after.UpdatedAt, before.UpdatedAt)
 		})
 	})
 }

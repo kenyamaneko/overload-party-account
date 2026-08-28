@@ -1,146 +1,165 @@
-package pubsub
+package pubsub_test
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
-	"testing"
+	"errors"
 	"time"
-
-	"github.com/stretchr/testify/require"
-
-	"github.com/kenyamaneko/overload-party-account/internal/port"
 )
 
-// mustMarshal は json.Marshal の testing 版。HandleMessage に渡す payload を
-// event_type 欠落などの壊れたケースも含め明示的に組み立てるためのヘルパ。
-func mustMarshal(t *testing.T, v any) []byte {
-	t.Helper()
-	b, err := json.Marshal(v)
-	require.NoError(t, err)
-	return b
+// txBufferKey は fakeTxRunner が context に積む txBuffer を取り出すためのキー。
+type txBufferKey struct{}
+
+// txBuffer は fakeTxRunner.RunInTx 配下での書き込みを、fn がエラーを返さず完走した場合にのみ
+// 実データへ反映するためのコミット待ちキュー。実 PostgreSQL の "同一トランザクション内でコミット"
+// (processed_events への記録と業務データの書き込みが揃って成功/失敗する) を fake 上で再現する。
+type txBuffer struct {
+	pending []func()
 }
 
-// fakeTxRunner はトランザクション境界を持たないパススルー実装。
-// subscriber の business logic から見た RunInTx の契約は「fn を同じ ctx で呼ぶ」だけ
-// なので、テストでは実 DB を立てず直列実行する。
+func withTxBuffer(ctx context.Context, buf *txBuffer) context.Context {
+	return context.WithValue(ctx, txBufferKey{}, buf)
+}
+
+func txBufferFrom(ctx context.Context) (*txBuffer, bool) {
+	buf, ok := ctx.Value(txBufferKey{}).(*txBuffer)
+	return buf, ok
+}
+
+// fakeTxRunner は port.TxRunner を満たす。fn が完走したときのみ、fn 内で登録された保留書き込みを
+// 実データへ反映する (ロールバック相当の再現)。
 type fakeTxRunner struct{}
 
-func (fakeTxRunner) RunInTx(ctx context.Context, fn func(context.Context) error) error {
-	return fn(ctx)
-}
-
-// fakeProcessedEventRepo は processed_events の冪等ガードをメモリで再現する。
-// Insert は同一 event_id で 2 回目に false を返し、subscriber の idempotent ack
-// 経路を検証できるようにする。
-type fakeProcessedEventRepo struct {
-	seen map[string]string // event_id -> event_type
-	// insertErr を設定すると Insert が常にこのエラーを返す (DB 障害の再現)。
-	insertErr error
-}
-
-func newFakeProcessedEventRepo() *fakeProcessedEventRepo {
-	return &fakeProcessedEventRepo{seen: map[string]string{}}
-}
-
-func (r *fakeProcessedEventRepo) Insert(_ context.Context, eventID, eventType string) (bool, error) {
-	if r.insertErr != nil {
-		return false, r.insertErr
+func (fakeTxRunner) RunInTx(ctx context.Context, fn func(ctx context.Context) error) error {
+	buf := &txBuffer{}
+	if err := fn(withTxBuffer(ctx, buf)); err != nil {
+		return err
 	}
-	if _, ok := r.seen[eventID]; ok {
-		return false, nil
+	for _, apply := range buf.pending {
+		apply()
 	}
-	r.seen[eventID] = eventType
-	return true, nil
+	return nil
 }
 
-// fakeFactionRepo は AddPlayerFaction / SetInitialFaction / GetInitialFaction /
-// GetPlayerFactions をメモリで実装する。
+// fakeFactionRepo は port.FactionRepo を満たすメモリ内 fake。
 type fakeFactionRepo struct {
-	added  []factionAdd
-	addErr error
+	factions map[string][]string
+	addErr   error
 }
 
-type factionAdd struct {
-	PlayerID  string
-	Faction   string
-	IsInitial bool
+func newFakeFactionRepo() *fakeFactionRepo {
+	return &fakeFactionRepo{factions: map[string][]string{}}
 }
 
-func (r *fakeFactionRepo) AddPlayerFaction(_ context.Context, playerID, faction string) error {
+func (r *fakeFactionRepo) AddPlayerFaction(ctx context.Context, playerID, faction string) error {
 	if r.addErr != nil {
 		return r.addErr
 	}
-	r.added = append(r.added, factionAdd{PlayerID: playerID, Faction: faction, IsInitial: false})
+	commit := func() {
+		for _, f := range r.factions[playerID] {
+			if f == faction {
+				return
+			}
+		}
+		r.factions[playerID] = append(r.factions[playerID], faction)
+	}
+	if buf, ok := txBufferFrom(ctx); ok {
+		buf.pending = append(buf.pending, commit)
+		return nil
+	}
+	commit()
 	return nil
 }
 
-func (r *fakeFactionRepo) SetInitialFaction(_ context.Context, playerID, faction string) error {
-	for _, a := range r.added {
-		if a.PlayerID == playerID && a.IsInitial && a.Faction != faction {
-			return fmt.Errorf("partial unique index violation: another initial exists")
-		}
-	}
-	for i, a := range r.added {
-		if a.PlayerID == playerID && a.Faction == faction {
-			r.added[i].IsInitial = true
-			return nil
-		}
-	}
-	r.added = append(r.added, factionAdd{PlayerID: playerID, Faction: faction, IsInitial: true})
-	return nil
+func (r *fakeFactionRepo) GetPlayerFactions(ctx context.Context, playerID string) ([]string, error) {
+	return r.factions[playerID], nil
 }
 
-func (r *fakeFactionRepo) GetInitialFaction(_ context.Context, playerID string) (*string, error) {
-	for _, a := range r.added {
-		if a.PlayerID == playerID && a.IsInitial {
-			f := a.Faction
-			return &f, nil
-		}
-	}
+func (r *fakeFactionRepo) GetInitialFaction(ctx context.Context, playerID string) (*string, error) {
 	return nil, nil
 }
 
-func (r *fakeFactionRepo) GetPlayerFactions(_ context.Context, playerID string) ([]string, error) {
-	var out []string
-	for _, a := range r.added {
-		if a.PlayerID == playerID {
-			out = append(out, a.Faction)
-		}
-	}
-	return out, nil
-}
-
-// fakePremiumRepo は premium-updated subscriber が要求する PlayerPremiumRepo
-// (UpdatePremium 1 メソッド) のメモリ実装。
-// PlayerRepo を 5 つの責務別 interface に分割したことで、subscriber テストでは
-// 使わないメソッドの panic スタブを書く必要がなくなった。
-type fakePremiumRepo struct {
-	premium          map[string]premiumState
-	updatePremiumErr error
-}
-
-type premiumState struct {
-	IsPremium bool
-	ExpiresAt *time.Time
-}
-
-func newFakePremiumRepo() *fakePremiumRepo {
-	return &fakePremiumRepo{
-		premium: map[string]premiumState{},
-	}
-}
-
-func (r *fakePremiumRepo) UpdatePremium(_ context.Context, playerID string, isPremium bool, expiresAt *time.Time) error {
-	if r.updatePremiumErr != nil {
-		return r.updatePremiumErr
-	}
-	r.premium[playerID] = premiumState{IsPremium: isPremium, ExpiresAt: expiresAt}
+func (r *fakeFactionRepo) SetInitialFaction(ctx context.Context, playerID, faction string) error {
 	return nil
 }
 
-// port 境界をテスト時に検証する (コンパイル時 assertion)。
-var _ port.PlayerPremiumRepo = (*fakePremiumRepo)(nil)
-var _ port.FactionRepo = (*fakeFactionRepo)(nil)
-var _ port.ProcessedEventRepo = (*fakeProcessedEventRepo)(nil)
-var _ port.TxRunner = fakeTxRunner{}
+// fakePlayerPremiumRepo は port.PlayerPremiumRepo を満たすメモリ内 fake。
+type fakePlayerPremiumRepo struct {
+	isPremium map[string]bool
+	expiresAt map[string]*time.Time
+	updateErr error
+}
+
+func newFakePlayerPremiumRepo() *fakePlayerPremiumRepo {
+	return &fakePlayerPremiumRepo{isPremium: map[string]bool{}, expiresAt: map[string]*time.Time{}}
+}
+
+func (r *fakePlayerPremiumRepo) UpdatePremium(ctx context.Context, playerID string, isPremium bool, expiresAt *time.Time) error {
+	if r.updateErr != nil {
+		return r.updateErr
+	}
+	commit := func() {
+		r.isPremium[playerID] = isPremium
+		r.expiresAt[playerID] = expiresAt
+	}
+	if buf, ok := txBufferFrom(ctx); ok {
+		buf.pending = append(buf.pending, commit)
+		return nil
+	}
+	commit()
+	return nil
+}
+
+// fakeProcessedEventRepo は port.ProcessedEventRepo を満たすメモリ内 fake。
+type fakeProcessedEventRepo struct {
+	processed map[string]bool
+}
+
+func newFakeProcessedEventRepo() *fakeProcessedEventRepo {
+	return &fakeProcessedEventRepo{processed: map[string]bool{}}
+}
+
+func (r *fakeProcessedEventRepo) Insert(ctx context.Context, eventID, eventType string) (bool, error) {
+	if r.processed[eventID] {
+		return false, nil
+	}
+	commit := func() { r.processed[eventID] = true }
+	if buf, ok := txBufferFrom(ctx); ok {
+		buf.pending = append(buf.pending, commit)
+		return true, nil
+	}
+	commit()
+	return true, nil
+}
+
+// fakeApplier は OnboardingNameSetApplier / OnboardingFactionSetApplier / OnboardingCompletedApplier
+// をまとめて満たすメモリ内 fake。呼び出し引数を記録し、戻り値をテストケースごとに差し替えられる。
+type fakeApplier struct {
+	processed    bool
+	err          error
+	calledWith   []string
+	requireEmpty bool
+}
+
+func (f *fakeApplier) ApplyNameSet(ctx context.Context, eventID, eventType, playerID, name string) (bool, error) {
+	f.calledWith = []string{eventID, eventType, playerID, name}
+	if f.requireEmpty {
+		return false, errors.New("should not be called")
+	}
+	return f.processed, f.err
+}
+
+func (f *fakeApplier) ApplyFactionSet(ctx context.Context, eventID, eventType, playerID, initialFactionID string) (bool, error) {
+	f.calledWith = []string{eventID, eventType, playerID, initialFactionID}
+	if f.requireEmpty {
+		return false, errors.New("should not be called")
+	}
+	return f.processed, f.err
+}
+
+func (f *fakeApplier) ApplyCompleted(ctx context.Context, eventID, eventType, playerID string) (bool, error) {
+	f.calledWith = []string{eventID, eventType, playerID}
+	if f.requireEmpty {
+		return false, errors.New("should not be called")
+	}
+	return f.processed, f.err
+}

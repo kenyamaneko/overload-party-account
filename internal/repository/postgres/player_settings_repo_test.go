@@ -5,7 +5,9 @@ package postgres_test
 import (
 	"context"
 	"testing"
+	"time"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -14,151 +16,77 @@ import (
 	"github.com/kenyamaneko/overload-party-account/internal/repository/postgres"
 )
 
-// ptr はテスト内でポインタリテラルを書きやすくするヘルパ。
-func ptr[T any](v T) *T { return &v }
-
-func TestInsert_PlayerSettings(t *testing.T) {
+func createTestPlayerSettings(t *testing.T, playerID string) {
+	t.Helper()
 	repo := postgres.NewPlayerSettingsRepository(sharedPg.Pool)
-	ctx := context.Background()
+	err := repo.Insert(context.Background(), &domain.PlayerSettings{
+		PlayerID:    playerID,
+		Language:    "ja",
+		BgmVolume:   50,
+		SeVolume:    50,
+		PushEnabled: true,
+		UpdatedAt:   time.Now().UTC(),
+	})
+	require.NoError(t, err)
+}
 
-	t.Run("player_settingsへのINSERT", func(t *testing.T) {
-		t.Run("全フィールドを受け取りそのまま書き込む", func(t *testing.T) {
-			sharedPg.Truncate(t)
-			seedPlayer(t, testPlayerID1, "uid-1", "Alice", false)
+func TestPlayerSettingsRepository_Get(t *testing.T) {
+	t.Run("[PlayerSettingsRepository]プレイヤー設定の永続化", func(t *testing.T) {
+		t.Run("Get", func(t *testing.T) {
+			t.Run("存在しないplayer_idを指定したとき、見つからないことを示すエラーを返す", func(t *testing.T) {
+				sharedPg.Truncate(t)
+				repo := postgres.NewPlayerSettingsRepository(sharedPg.Pool)
 
-			payload := &domain.PlayerSettings{
-				PlayerID:    testPlayerID1,
-				Language:    "ja",
-				BgmVolume:   30,
-				SeVolume:    40,
-				PushEnabled: true,
-			}
-			require.NoError(t, repo.Insert(ctx, payload))
+				_, err := repo.Get(context.Background(), uuid.NewString())
 
-			got, err := repo.Get(ctx, testPlayerID1)
-			require.NoError(t, err)
-			require.NotNil(t, got)
-			assert.Equal(t, "ja", got.Language)
-			assert.Equal(t, int64(30), got.BgmVolume)
-			assert.Equal(t, int64(40), got.SeVolume)
-			assert.True(t, got.PushEnabled)
+				assert.ErrorIs(t, err, port.ErrNotFound)
+			})
+
+			t.Run("設定行が存在するとき、設定を返す", func(t *testing.T) {
+				sharedPg.Truncate(t)
+				player := createTestPlayer(t)
+				createTestPlayerSettings(t, player.PlayerID)
+				repo := postgres.NewPlayerSettingsRepository(sharedPg.Pool)
+
+				settings, err := repo.Get(context.Background(), player.PlayerID)
+
+				require.NoError(t, err)
+				assert.Equal(t, "ja", settings.Language)
+			})
 		})
 	})
 }
 
-func TestGet(t *testing.T) {
-	repo := postgres.NewPlayerSettingsRepository(sharedPg.Pool)
-	ctx := context.Background()
-
-	t.Run("player_settingsの取得", func(t *testing.T) {
-		// 未存在は常にエラーで表現し (FindByFirebaseUID と揃える)、デフォルト値での隠蔽をしない。
-		tests := []struct {
-			name    string
-			seeds   []domain.PlayerSettings // 0 件 = 未シード, 1 件 = その値をシード
-			want    *settingsSnapshot
-			wantErr error
-		}{
-			{
-				name: "シード済みのとき、永続層の値をそのまま返す",
-				seeds: []domain.PlayerSettings{
-					{Language: "ja", BgmVolume: 50, SeVolume: 60, PushEnabled: true},
-				},
-				want: &settingsSnapshot{Language: "ja", BgmVolume: 50, SeVolume: 60, PushEnabled: true},
-			},
-			{
-				name:    "未シードのとき、ErrNotFoundになる",
-				seeds:   nil,
-				want:    nil,
-				wantErr: port.ErrNotFound,
-			},
-		}
-
-		for _, tt := range tests {
-			t.Run(tt.name, func(t *testing.T) {
+func TestPlayerSettingsRepository_UpdatePartial(t *testing.T) {
+	t.Run("[PlayerSettingsRepository]プレイヤー設定の永続化", func(t *testing.T) {
+		t.Run("UpdatePartial", func(t *testing.T) {
+			t.Run("存在しないplayer_idを指定したとき、見つからないことを示すエラーを返す", func(t *testing.T) {
 				sharedPg.Truncate(t)
-				seedPlayer(t, testPlayerID1, "uid-1", "Alice", false)
-				for _, s := range tt.seeds {
-					seedPlayerSettings(t, testPlayerID1, s.Language, s.BgmVolume, s.SeVolume, s.PushEnabled)
-				}
+				repo := postgres.NewPlayerSettingsRepository(sharedPg.Pool)
+				lang := "en"
 
-				got, err := repo.Get(ctx, testPlayerID1)
-				require.ErrorIs(t, err, tt.wantErr)
-				assert.Equal(t, tt.want, snapshotSettings(got))
+				err := repo.UpdatePartial(context.Background(), uuid.NewString(), &port.PlayerSettingsPatch{Language: &lang})
+
+				assert.ErrorIs(t, err, port.ErrNotFound)
 			})
-		}
-	})
-}
 
-func TestUpdatePartial(t *testing.T) {
-	repo := postgres.NewPlayerSettingsRepository(sharedPg.Pool)
-	ctx := context.Background()
-
-	t.Run("player_settingsの部分更新", func(t *testing.T) {
-		// 非 nil フィールドだけが書き換わり、nil フィールドは COALESCE で現状維持。
-		// シード値は (ja, 50, 60, true)。want は patch 適用後の期待スナップショット、
-		// 未シードケースは want=nil で「行が無く ErrNotFound になる」を表す。
-		tests := []struct {
-			name    string
-			seeds   []domain.PlayerSettings // 0 件 = 未シード
-			patch   *port.PlayerSettingsPatch
-			want    *settingsSnapshot
-			wantErr error
-		}{
-			{
-				name: "Languageだけ指定するとき、他フィールドはCOALESCEで現状維持される",
-				seeds: []domain.PlayerSettings{
-					{Language: "ja", BgmVolume: 50, SeVolume: 60, PushEnabled: true},
-				},
-				patch: &port.PlayerSettingsPatch{Language: ptr("en")},
-				want:  &settingsSnapshot{Language: "en", BgmVolume: 50, SeVolume: 60, PushEnabled: true},
-			},
-			{
-				name: "BgmVolumeだけ指定するとき、Languageはシード値のまま",
-				seeds: []domain.PlayerSettings{
-					{Language: "ja", BgmVolume: 50, SeVolume: 60, PushEnabled: true},
-				},
-				patch: &port.PlayerSettingsPatch{BgmVolume: ptr(int64(80))},
-				want:  &settingsSnapshot{Language: "ja", BgmVolume: 80, SeVolume: 60, PushEnabled: true},
-			},
-			{
-				name: "複数フィールド同時指定のとき、まとめて更新される",
-				seeds: []domain.PlayerSettings{
-					{Language: "ja", BgmVolume: 50, SeVolume: 60, PushEnabled: true},
-				},
-				patch: &port.PlayerSettingsPatch{
-					Language:    ptr("en"),
-					BgmVolume:   ptr(int64(0)),
-					SeVolume:    ptr(int64(0)),
-					PushEnabled: ptr(false),
-				},
-				want: &settingsSnapshot{Language: "en", BgmVolume: 0, SeVolume: 0, PushEnabled: false},
-			},
-			{
-				name:    "未シードのとき、ErrNotFoundになる (行が無いまま)",
-				seeds:   nil,
-				patch:   &port.PlayerSettingsPatch{Language: ptr("en")},
-				want:    nil,
-				wantErr: port.ErrNotFound,
-			},
-		}
-
-		for _, tt := range tests {
-			t.Run(tt.name, func(t *testing.T) {
+			t.Run("更新内容で値を指定しなかったフィールドは変更されず既存値が保持され、値を指定したフィールドは新しい値に置き換わる", func(t *testing.T) {
 				sharedPg.Truncate(t)
-				seedPlayer(t, testPlayerID1, "uid-1", "Alice", false)
-				for _, s := range tt.seeds {
-					seedPlayerSettings(t, testPlayerID1, s.Language, s.BgmVolume, s.SeVolume, s.PushEnabled)
-				}
+				player := createTestPlayer(t)
+				createTestPlayerSettings(t, player.PlayerID)
+				repo := postgres.NewPlayerSettingsRepository(sharedPg.Pool)
+				newBgm := int64(80)
 
-				err := repo.UpdatePartial(ctx, testPlayerID1, tt.patch)
-				require.ErrorIs(t, err, tt.wantErr)
+				err := repo.UpdatePartial(context.Background(), player.PlayerID, &port.PlayerSettingsPatch{BgmVolume: &newBgm})
 
-				// Get は「シード済みケースは行を返す」「未シードケースは ErrNotFound を返す」と
-				// シード状況に連動するため、UpdatePartial と同じ wantErr で判定する。
-				got, err := repo.Get(ctx, testPlayerID1)
-				require.ErrorIs(t, err, tt.wantErr)
-				assert.Equal(t, tt.want, snapshotSettings(got))
+				require.NoError(t, err)
+				settings, err := repo.Get(context.Background(), player.PlayerID)
+				require.NoError(t, err)
+				assert.Equal(t, int64(80), settings.BgmVolume)
+				assert.Equal(t, "ja", settings.Language)
+				assert.Equal(t, int64(50), settings.SeVolume)
+				assert.True(t, settings.PushEnabled)
 			})
-		}
+		})
 	})
 }

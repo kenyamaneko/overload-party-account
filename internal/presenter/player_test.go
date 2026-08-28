@@ -5,64 +5,136 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/kenyamaneko/overload-party-account/internal/domain"
 	"github.com/kenyamaneko/overload-party-account/internal/presenter"
 	apiaccount "github.com/kenyamaneko/overload-party-account/packages/api-account"
 )
 
-func strPtr(s string) *string { return &s }
-func i64Ptr(n int64) *int64   { return &n }
-
 func TestBuildPlayerResponse(t *testing.T) {
-	t.Run("プレイヤー応答の組み立て", func(t *testing.T) {
-		t.Run("PlayerViewの各フィールドと進捗がwire応答に射影される", func(t *testing.T) {
-			// レベル進捗の算出そのものは domain.ComputeExpProgress の単体テストで網羅し、
-			// ここでは presenter が domain の結果をそのまま wire に詰めていることだけ確認する。
-			created := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-			updated := time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC)
-			expires := time.Date(2026, 12, 31, 0, 0, 0, 0, time.UTC)
-			faction := "SHE"
+	t.Run("[プレイヤー応答の組み立て]プレイヤー情報の応答形式への変換", func(t *testing.T) {
+		t.Run("Read Modelの各フィールドの値を、そのままPlayerResponseの対応フィールドに複写する", func(t *testing.T) {
+			name := "テストプレイヤー"
+			iconNo := int64(7)
+			initialFaction := "SHE"
+			premiumExpiresAt := time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC)
+			createdAt := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+			updatedAt := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
 
 			view := &domain.PlayerView{
 				Player: domain.Player{
-					PlayerID:         "p1",
-					FirebaseUID:      "fb1",
-					Name:             strPtr("Kenya"),
+					PlayerID:         "player-1",
+					FirebaseUID:      "firebase-1",
+					Name:             &name,
 					IsPremium:        true,
-					EquippedIconNo:   i64Ptr(3),
+					EquippedIconNo:   &iconNo,
 					OnboardingStatus: domain.OnboardingStatusCompleted,
-					PremiumExpiresAt: &expires,
-					CreatedAt:        created,
-					UpdatedAt:        updated,
+					PremiumExpiresAt: &premiumExpiresAt,
+					CreatedAt:        createdAt,
+					UpdatedAt:        updatedAt,
 				},
-				Level:          2,
-				Exp:            500,
-				InitialFaction: &faction,
+				Level:          1,
+				Exp:            0,
+				InitialFaction: &initialFaction,
 			}
-			const (
-				coeff                = int64(100)
-				wantLevelExpCurrent  = int64(100)
-				wantLevelExpRequired = int64(500)
-			)
 
-			got, err := presenter.BuildPlayerResponse(view, coeff)
-			assert.NoError(t, err)
+			resp, err := presenter.BuildPlayerResponse(view, 100)
 
-			assert.Equal(t, "p1", got.PlayerID)
-			assert.Equal(t, "fb1", got.FirebaseUID)
-			assert.Equal(t, strPtr("Kenya"), got.Name)
-			assert.Equal(t, view.Level, got.Level)
-			assert.Equal(t, view.Exp, got.Exp)
-			assert.True(t, got.IsPremium)
-			assert.Equal(t, i64Ptr(3), got.EquippedIconNo)
-			assert.Equal(t, &faction, got.InitialFaction)
-			assert.Equal(t, &expires, got.PremiumExpiresAt)
-			assert.Equal(t, apiaccount.OnboardingStatus(domain.OnboardingStatusCompleted), got.OnboardingStatus)
-			assert.Equal(t, created, got.CreatedAt)
-			assert.Equal(t, updated, got.UpdatedAt)
-			assert.Equal(t, wantLevelExpCurrent, got.LevelExpCurrent)
-			assert.Equal(t, wantLevelExpRequired, got.LevelExpRequired)
+			require.NoError(t, err)
+			assert.Equal(t, "player-1", resp.PlayerID)
+			assert.Equal(t, "firebase-1", resp.FirebaseUID)
+			assert.Equal(t, &name, resp.Name)
+			assert.Equal(t, true, resp.IsPremium)
+			assert.Equal(t, &iconNo, resp.EquippedIconNo)
+			assert.Equal(t, &initialFaction, resp.InitialFaction)
+			assert.Equal(t, &premiumExpiresAt, resp.PremiumExpiresAt)
+			assert.Equal(t, createdAt, resp.CreatedAt)
+			assert.Equal(t, updatedAt, resp.UpdatedAt)
+		})
+
+		t.Run("Read Modelのオンボーディング状態の文字列を、そのままwire契約のOnboardingStatus型として設定する", func(t *testing.T) {
+			view := &domain.PlayerView{
+				Player: domain.Player{
+					PlayerID:         "player-1",
+					FirebaseUID:      "firebase-1",
+					OnboardingStatus: domain.OnboardingStatusFactionSet,
+					CreatedAt:        time.Now(),
+					UpdatedAt:        time.Now(),
+				},
+				Level: 1,
+				Exp:   0,
+			}
+
+			resp, err := presenter.BuildPlayerResponse(view, 100)
+
+			require.NoError(t, err)
+			assert.Equal(t, apiaccount.OnboardingStatusFactionSet, resp.OnboardingStatus)
+		})
+
+		t.Run("レベル進捗の計算結果を用いて、現在レベル内の経験値進捗と次レベルまでに必要な経験値の幅を算出する", func(t *testing.T) {
+			// coeff=100, level=2 の開始閾値は400、次レベル(3)必要経験値は900
+			view := &domain.PlayerView{
+				Player: domain.Player{
+					PlayerID:         "player-1",
+					FirebaseUID:      "firebase-1",
+					OnboardingStatus: domain.OnboardingStatusNotStarted,
+					CreatedAt:        time.Now(),
+					UpdatedAt:        time.Now(),
+				},
+				Level: 2,
+				Exp:   450,
+			}
+
+			resp, err := presenter.BuildPlayerResponse(view, 100)
+
+			require.NoError(t, err)
+			assert.Equal(t, int64(50), resp.LevelExpCurrent)
+			assert.Equal(t, int64(500), resp.LevelExpRequired)
+		})
+
+		t.Run("レベルの不整合を検知してレベル進捗の計算がエラーを返すとき、エラーを返す", func(t *testing.T) {
+			// level=2の開始閾値(coeff=100で400)未満のexpは不整合とみなされエラーになる
+			view := &domain.PlayerView{
+				Player: domain.Player{
+					PlayerID:         "player-1",
+					FirebaseUID:      "firebase-1",
+					OnboardingStatus: domain.OnboardingStatusNotStarted,
+					CreatedAt:        time.Now(),
+					UpdatedAt:        time.Now(),
+				},
+				Level: 2,
+				Exp:   0,
+			}
+
+			_, err := presenter.BuildPlayerResponse(view, 100)
+
+			require.Error(t, err)
+		})
+	})
+}
+
+func TestBuildPlayerSettingsResponse(t *testing.T) {
+	t.Run("[プレイヤー応答の組み立て]プレイヤー設定の応答形式への変換", func(t *testing.T) {
+		t.Run("PlayerSettingsの各フィールドの値を、そのままPlayerSettingsResponseの対応フィールドに複写する", func(t *testing.T) {
+			updatedAt := time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC)
+			settings := &domain.PlayerSettings{
+				PlayerID:    "player-1",
+				Language:    "en",
+				BgmVolume:   80,
+				SeVolume:    30,
+				PushEnabled: false,
+				UpdatedAt:   updatedAt,
+			}
+
+			resp := presenter.BuildPlayerSettingsResponse(settings)
+
+			assert.Equal(t, "player-1", resp.PlayerID)
+			assert.Equal(t, "en", resp.Language)
+			assert.Equal(t, int64(80), resp.BgmVolume)
+			assert.Equal(t, int64(30), resp.SeVolume)
+			assert.Equal(t, false, resp.PushEnabled)
+			assert.Equal(t, updatedAt, resp.UpdatedAt)
 		})
 	})
 }

@@ -3,144 +3,222 @@ package apiaccountserverfake_test
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"net/http"
 	"testing"
 
-	apiaccount "github.com/kenyamaneko/overload-party-account/packages/api-account"
-	"github.com/kenyamaneko/overload-party-account/packages/api-account/apiaccountserverfake"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	apiaccount "github.com/kenyamaneko/overload-party-account/packages/api-account"
+	"github.com/kenyamaneko/overload-party-account/packages/api-account/apiaccountserverfake"
 )
 
-func TestServer(t *testing.T) {
-	t.Run("サーバフェイク", func(t *testing.T) {
-		t.Run("RegisterFnはrequest bodyをtypedで受け取り、name未設定のPlayerを返す", func(t *testing.T) {
-			srv := apiaccountserverfake.NewServer()
-			defer srv.Close()
+func doRequest(t *testing.T, method, url string, body any) *http.Response {
+	t.Helper()
 
-			var gotReq apiaccount.RegisterRequest
-			srv.RegisterFn = func(req apiaccount.RegisterRequest) (int, any) {
-				gotReq = req
-				return http.StatusCreated, apiaccount.PlayerResponse{
-					PlayerID:    "p-new",
-					FirebaseUID: req.FirebaseUID,
-					// Register 直後 name は未確定。
-					Name: nil,
-				}
-			}
+	var reader io.Reader
+	if body != nil {
+		b, err := json.Marshal(body)
+		require.NoError(t, err)
+		reader = bytes.NewReader(b)
+	}
+	req, err := http.NewRequest(method, url, reader)
+	require.NoError(t, err)
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	return resp
+}
 
-			reqBody, _ := json.Marshal(apiaccount.RegisterRequest{FirebaseUID: "uid-42"})
-			req, _ := http.NewRequest(http.MethodPost, srv.URL()+"/internal/v1/auth/register", bytes.NewReader(reqBody))
-			req.Header.Set("Content-Type", "application/json")
-			resp, err := http.DefaultClient.Do(req)
-			require.NoError(t, err)
-			defer resp.Body.Close()
+func decodeBody(t *testing.T, resp *http.Response, v any) {
+	t.Helper()
+	defer resp.Body.Close()
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(v))
+}
 
-			assert.Equal(t, http.StatusCreated, resp.StatusCode)
-			assert.Equal(t, "uid-42", gotReq.FirebaseUID)
+func TestServer_DefaultResponses(t *testing.T) {
+	t.Run("Fnがnilのときの既定応答", func(t *testing.T) {
+		t.Run("新規プレイヤー登録は既定のステータスコードとゼロ値のJSONボディを返す", func(t *testing.T) {
+			s := apiaccountserverfake.NewServer()
+			defer s.Close()
 
-			var decoded apiaccount.PlayerResponse
-			require.NoError(t, json.NewDecoder(resp.Body).Decode(&decoded))
-			assert.Equal(t, "p-new", decoded.PlayerID)
-			assert.Nil(t, decoded.Name)
+			resp := doRequest(t, http.MethodPost, s.URL()+"/internal/v1/auth/register", apiaccount.RegisterRequest{FirebaseUID: "fb-1"})
+
+			assert.Equal(t, 201, resp.StatusCode)
+			var body apiaccount.PlayerResponse
+			decodeBody(t, resp, &body)
+			assert.Equal(t, "", body.PlayerID)
 		})
 
-		t.Run("FindByFirebaseUIDはpath variableからFirebase UIDを抽出してFnに渡す", func(t *testing.T) {
-			srv := apiaccountserverfake.NewServer()
-			defer srv.Close()
+		t.Run("プレイヤーログインは既定のステータスコードとゼロ値のJSONボディを返す", func(t *testing.T) {
+			s := apiaccountserverfake.NewServer()
+			defer s.Close()
 
-			var gotUID string
-			srv.FindByFirebaseUIDFn = func(firebaseUID string) (int, any) {
-				gotUID = firebaseUID
-				return http.StatusOK, apiaccount.PlayerResponse{PlayerID: "p-1", FirebaseUID: firebaseUID}
-			}
+			resp := doRequest(t, http.MethodPost, s.URL()+"/internal/v1/auth/login", apiaccount.LoginRequest{FirebaseUID: "fb-1"})
 
-			req, _ := http.NewRequest(http.MethodGet, srv.URL()+"/internal/v1/auth/by-firebase-uid/uid-xyz", nil)
-			resp, err := http.DefaultClient.Do(req)
-			require.NoError(t, err)
-			defer resp.Body.Close()
-
-			assert.Equal(t, http.StatusOK, resp.StatusCode)
-			assert.Equal(t, "uid-xyz", gotUID)
+			assert.Equal(t, 200, resp.StatusCode)
+			var body apiaccount.PlayerResponse
+			decodeBody(t, resp, &body)
+			assert.Equal(t, "", body.PlayerID)
 		})
 
-		t.Run("UpdateNameFnはbodyのみをtypedで受け取る", func(t *testing.T) {
-			// player-scoped endpoint の playerID は path になく JWT sub から取得する規約のため、
-			// fake の Fn には露出せず body だけを受け取る。
-			srv := apiaccountserverfake.NewServer()
-			defer srv.Close()
+		t.Run("Firebase UIDによるプレイヤー検索は既定のステータスコードとゼロ値のJSONボディを返す", func(t *testing.T) {
+			s := apiaccountserverfake.NewServer()
+			defer s.Close()
 
-			var gotReq apiaccount.UpdateNameRequest
-			srv.UpdateNameFn = func(req apiaccount.UpdateNameRequest) (int, any) {
-				gotReq = req
-				name := req.Name
-				return http.StatusOK, apiaccount.PlayerResponse{PlayerID: "p-me", Name: &name}
-			}
+			resp := doRequest(t, http.MethodGet, s.URL()+"/internal/v1/auth/by-firebase-uid/fb-1", nil)
 
-			reqBody := []byte(`{"name":"bob"}`)
-			req, _ := http.NewRequest(http.MethodPut, srv.URL()+"/api/v1/account/me/name", bytes.NewReader(reqBody))
-			req.Header.Set("Content-Type", "application/json")
-			resp, err := http.DefaultClient.Do(req)
-			require.NoError(t, err)
-			defer resp.Body.Close()
-
-			assert.Equal(t, http.StatusOK, resp.StatusCode)
-			assert.Equal(t, "bob", gotReq.Name)
+			assert.Equal(t, 200, resp.StatusCode)
+			var body apiaccount.PlayerResponse
+			decodeBody(t, resp, &body)
+			assert.Equal(t, "", body.PlayerID)
 		})
 
-		t.Run("AwardGameExpFnはplayerIDを持たずbodyのみでplayer 2名を受け取る", func(t *testing.T) {
-			// award-game-exp は battle が直接呼ぶサーバー間バッチのため /internal 配下に置き、
-			// player 2 名を body で渡す。
-			srv := apiaccountserverfake.NewServer()
-			defer srv.Close()
+		t.Run("認証済みプレイヤー自身の情報取得は既定のステータスコードとゼロ値のJSONボディを返す", func(t *testing.T) {
+			s := apiaccountserverfake.NewServer()
+			defer s.Close()
 
-			var gotReq apiaccount.AwardGameExpRequest
-			srv.AwardGameExpFn = func(req apiaccount.AwardGameExpRequest) (int, any) {
-				gotReq = req
-				return http.StatusNoContent, nil
-			}
+			resp := doRequest(t, http.MethodGet, s.URL()+"/api/v1/account/me", nil)
 
-			reqBody, _ := json.Marshal(apiaccount.AwardGameExpRequest{
-				Player1ID: "p-a", Player2ID: "p-b", WinnerNum: 1, Reason: "win", MatchType: "ranked",
-			})
-			req, _ := http.NewRequest(http.MethodPost, srv.URL()+"/internal/v1/players/award-game-exp", bytes.NewReader(reqBody))
-			req.Header.Set("Content-Type", "application/json")
-			resp, err := http.DefaultClient.Do(req)
-			require.NoError(t, err)
-			defer resp.Body.Close()
-
-			assert.Equal(t, http.StatusNoContent, resp.StatusCode)
-			assert.Equal(t, "p-a", gotReq.Player1ID)
-			assert.Equal(t, "p-b", gotReq.Player2ID)
-			assert.Equal(t, int64(1), gotReq.WinnerNum)
+			assert.Equal(t, 200, resp.StatusCode)
+			var body apiaccount.PlayerResponse
+			decodeBody(t, resp, &body)
+			assert.Equal(t, "", body.PlayerID)
 		})
 
-		t.Run("RevertBattleCountFnはplayerIDを持たずbodyのみでplayer 2名と対戦識別子を受け取る", func(t *testing.T) {
-			// revert-battle-count は gateway の停止時処理が直接呼ぶサーバー間バッチのため
-			// /internal 配下に置き、player 2 名を body で渡す。
-			srv := apiaccountserverfake.NewServer()
-			defer srv.Close()
+		t.Run("プレイヤー名の変更は既定のステータスコードとゼロ値のJSONボディを返す", func(t *testing.T) {
+			s := apiaccountserverfake.NewServer()
+			defer s.Close()
 
-			var gotReq apiaccount.RevertBattleCountRequest
-			srv.RevertBattleCountFn = func(req apiaccount.RevertBattleCountRequest) (int, any) {
-				gotReq = req
-				return http.StatusNoContent, nil
-			}
+			resp := doRequest(t, http.MethodPut, s.URL()+"/api/v1/account/me/name", apiaccount.UpdateNameRequest{Name: "名前"})
 
-			reqBody, _ := json.Marshal(apiaccount.RevertBattleCountRequest{
-				GameID: "game-1", Player1ID: "p-a", Player2ID: "p-b", ConsumedAtMillis: 1700000000000,
-			})
-			req, _ := http.NewRequest(http.MethodPost, srv.URL()+"/internal/v1/players/revert-battle-count", bytes.NewReader(reqBody))
-			req.Header.Set("Content-Type", "application/json")
-			resp, err := http.DefaultClient.Do(req)
-			require.NoError(t, err)
+			assert.Equal(t, 200, resp.StatusCode)
+			var body apiaccount.PlayerResponse
+			decodeBody(t, resp, &body)
+			assert.Equal(t, "", body.PlayerID)
+		})
+
+		t.Run("1日のバトル回数制限の取得は既定のステータスコードとゼロ値のJSONボディを返す", func(t *testing.T) {
+			s := apiaccountserverfake.NewServer()
+			defer s.Close()
+
+			resp := doRequest(t, http.MethodGet, s.URL()+"/api/v1/account/me/battle-limit", nil)
+
+			assert.Equal(t, 200, resp.StatusCode)
+			var body apiaccount.BattleLimitResponse
+			decodeBody(t, resp, &body)
+			assert.Equal(t, int64(0), body.DailyBattleLimit)
+		})
+
+		t.Run("プレイヤー設定の取得は既定のステータスコードとゼロ値のJSONボディを返す", func(t *testing.T) {
+			s := apiaccountserverfake.NewServer()
+			defer s.Close()
+
+			resp := doRequest(t, http.MethodGet, s.URL()+"/api/v1/account/me/settings", nil)
+
+			assert.Equal(t, 200, resp.StatusCode)
+			var body apiaccount.PlayerSettingsResponse
+			decodeBody(t, resp, &body)
+			assert.Equal(t, "", body.PlayerID)
+		})
+
+		t.Run("プレイヤー設定の更新は既定のステータスコードとゼロ値のJSONボディを返す", func(t *testing.T) {
+			s := apiaccountserverfake.NewServer()
+			defer s.Close()
+
+			resp := doRequest(t, http.MethodPut, s.URL()+"/api/v1/account/me/settings", apiaccount.UpdateSettingsRequest{})
+
+			assert.Equal(t, 200, resp.StatusCode)
+			var body apiaccount.PlayerSettingsResponse
+			decodeBody(t, resp, &body)
+			assert.Equal(t, "", body.PlayerID)
+		})
+
+		t.Run("所持陣営一覧の取得のみ、既定のレスポンスボディは空配列になる", func(t *testing.T) {
+			s := apiaccountserverfake.NewServer()
+			defer s.Close()
+
+			resp := doRequest(t, http.MethodGet, s.URL()+"/api/v1/account/me/factions", nil)
+
+			assert.Equal(t, 200, resp.StatusCode)
+			var body apiaccount.FactionListing
+			decodeBody(t, resp, &body)
+			assert.Equal(t, []string{}, body.Factions)
+		})
+
+		t.Run("経験値の加算は既定で204を返し、ボディを持たない応答になる", func(t *testing.T) {
+			s := apiaccountserverfake.NewServer()
+			defer s.Close()
+
+			resp := doRequest(t, http.MethodPost, s.URL()+"/api/v1/account/me/exp", apiaccount.AddExpRequest{ExpGain: 1})
 			defer resp.Body.Close()
 
-			assert.Equal(t, http.StatusNoContent, resp.StatusCode)
-			assert.Equal(t, "game-1", gotReq.GameID)
-			assert.Equal(t, "p-a", gotReq.Player1ID)
-			assert.Equal(t, "p-b", gotReq.Player2ID)
-			assert.Equal(t, int64(1700000000000), gotReq.ConsumedAtMillis)
+			assert.Equal(t, 204, resp.StatusCode)
+			b, err := io.ReadAll(resp.Body)
+			require.NoError(t, err)
+			assert.Empty(t, b)
 		})
+
+		t.Run("初期陣営の選択は既定で200を返し、ボディを持たない応答になる", func(t *testing.T) {
+			s := apiaccountserverfake.NewServer()
+			defer s.Close()
+
+			resp := doRequest(t, http.MethodPost, s.URL()+"/api/v1/account/me/factions/select", apiaccount.SelectInitialFactionRequest{FactionID: "SHE"})
+			defer resp.Body.Close()
+
+			assert.Equal(t, 200, resp.StatusCode)
+			b, err := io.ReadAll(resp.Body)
+			require.NoError(t, err)
+			assert.Empty(t, b)
+		})
+	})
+}
+
+func TestServer_FnOverride(t *testing.T) {
+	t.Run("Fnが設定されているとき、Fnが返すステータスコードとレスポンスボディをそのまま応答する", func(t *testing.T) {
+		s := apiaccountserverfake.NewServer()
+		defer s.Close()
+		s.GetPlayerFn = func() (int, any) {
+			return 404, map[string]string{"error": "not found"}
+		}
+
+		resp := doRequest(t, http.MethodGet, s.URL()+"/api/v1/account/me", nil)
+		defer resp.Body.Close()
+
+		assert.Equal(t, 404, resp.StatusCode)
+		var body map[string]string
+		decodeBody(t, resp, &body)
+		assert.Equal(t, "not found", body["error"])
+	})
+
+	t.Run("POST/PUT系エンドポイントでは、リクエストボディをデコードしてFnの引数として渡す", func(t *testing.T) {
+		s := apiaccountserverfake.NewServer()
+		defer s.Close()
+		var received apiaccount.UpdateNameRequest
+		s.UpdateNameFn = func(req apiaccount.UpdateNameRequest) (int, any) {
+			received = req
+			return 200, apiaccount.PlayerResponse{PlayerID: "player-1"}
+		}
+
+		resp := doRequest(t, http.MethodPut, s.URL()+"/api/v1/account/me/name", apiaccount.UpdateNameRequest{Name: "新しい名前"})
+		defer resp.Body.Close()
+
+		assert.Equal(t, 200, resp.StatusCode)
+		assert.Equal(t, "新しい名前", received.Name)
+	})
+}
+
+func TestServer_PlayerScopedEndpointsSkipJWTVerification(t *testing.T) {
+	t.Run("player-scopedエンドポイントは、X-Internal-Authヘッダを付けなくても応答する", func(t *testing.T) {
+		s := apiaccountserverfake.NewServer()
+		defer s.Close()
+
+		resp := doRequest(t, http.MethodGet, s.URL()+"/api/v1/account/me", nil)
+		defer resp.Body.Close()
+
+		assert.Equal(t, 200, resp.StatusCode)
 	})
 }

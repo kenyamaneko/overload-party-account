@@ -40,8 +40,8 @@ func (s *PremiumUpdatedSubscriber) HandleMessage(ctx context.Context, data []byt
 		return fmt.Errorf("premium-updated: bad payload: %w", err)
 	}
 	if event.EventType != apishop.EventTypePremiumUpdated {
-		slog.Warn("premium-updated subscriber: unknown event_type, skipping", "event_type", event.EventType)
-		return nil
+		slog.Error("premium-updated subscriber: unknown event_type", "event_type", event.EventType)
+		return fmt.Errorf("premium-updated: unknown event_type %q", event.EventType)
 	}
 
 	if err := s.txRunner.RunInTx(ctx, func(txCtx context.Context) error {

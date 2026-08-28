@@ -6,71 +6,79 @@ import (
 	"context"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	gamedesign "github.com/kenyamaneko/overload-party-common/packages/game-design-constants"
+
+	"github.com/kenyamaneko/overload-party-account/internal/port"
 	"github.com/kenyamaneko/overload-party-account/internal/repository/postgres"
 )
 
-func TestPlayerViewFindByID(t *testing.T) {
-	repo := postgres.NewPlayerViewRepository(sharedPg.Pool)
-	ctx := context.Background()
-
-	t.Run("player_idによるプレイヤービュー取得", func(t *testing.T) {
-		tests := []struct {
-			name               string
-			seedFaction        func(t *testing.T)
-			wantInitialFaction *string
-		}{
-			{
-				name: "初期陣営確定済みのプレイヤーを取得すると、初期陣営SHEが入る",
-				seedFaction: func(t *testing.T) {
-					seedPlayerFaction(t, testPlayerID1, "SHE", true)
-				},
-				wantInitialFaction: ptr("SHE"),
-			},
-			{
-				name:               "陣営未選択のプレイヤーを取得すると、初期陣営はnilになる",
-				seedFaction:        func(t *testing.T) {},
-				wantInitialFaction: nil,
-			},
-			{
-				name: "初期でない陣営だけ所持しているとき、初期陣営はnilになる",
-				seedFaction: func(t *testing.T) {
-					seedPlayerFaction(t, testPlayerID1, "SHE", false)
-				},
-				wantInitialFaction: nil,
-			},
-		}
-
-		for _, tt := range tests {
-			t.Run(tt.name, func(t *testing.T) {
+func TestPlayerViewRepository_ReferenceMethodsNotFound(t *testing.T) {
+	t.Run("[PlayerViewRepository]プレイヤー参照ビューの取得", func(t *testing.T) {
+		t.Run("参照系メソッドに共通する仕様", func(t *testing.T) {
+			t.Run("存在しないplayer_idでプレイヤーのビューを取得しようとしたとき、見つからないことを示すエラーを返す", func(t *testing.T) {
 				sharedPg.Truncate(t)
-				seedPlayer(t, testPlayerID1, "uid-1", "Alice", false)
-				tt.seedFaction(t)
+				repo := postgres.NewPlayerViewRepository(sharedPg.Pool)
 
-				got, err := repo.FindByID(ctx, testPlayerID1)
-				require.NoError(t, err)
-				assert.Equal(t, tt.wantInitialFaction, got.InitialFaction)
+				_, err := repo.FindByID(context.Background(), uuid.NewString())
+
+				assert.ErrorIs(t, err, port.ErrNotFound)
 			})
-		}
+
+			t.Run("存在しないfirebase_uidでプレイヤーのビューを取得しようとしたとき、見つからないことを示すエラーを返す", func(t *testing.T) {
+				sharedPg.Truncate(t)
+				repo := postgres.NewPlayerViewRepository(sharedPg.Pool)
+
+				_, err := repo.FindByFirebaseUID(context.Background(), "missing-firebase-uid")
+
+				assert.ErrorIs(t, err, port.ErrNotFound)
+			})
+		})
 	})
 }
 
-func TestPlayerViewFindByFirebaseUID(t *testing.T) {
-	repo := postgres.NewPlayerViewRepository(sharedPg.Pool)
-	ctx := context.Background()
-
-	t.Run("firebase_uidによるプレイヤービュー取得", func(t *testing.T) {
-		t.Run("初期陣営確定済みのプレイヤーを取得すると、初期陣営SHEが入る", func(t *testing.T) {
+func TestPlayerViewRepository_JoinedFields(t *testing.T) {
+	t.Run("[PlayerViewRepository]プレイヤー参照ビューの取得", func(t *testing.T) {
+		t.Run("player_idでプレイヤーのビューを取得すると、players/player_progression/player_factions(is_initial=true)を結合した結果を返す", func(t *testing.T) {
 			sharedPg.Truncate(t)
-			seedPlayer(t, testPlayerID1, "uid-1", "Alice", false)
-			seedPlayerFaction(t, testPlayerID1, "SHE", true)
+			player := createTestPlayer(t)
+			factionRepo := postgres.NewFactionRepository(sharedPg.Pool)
+			require.NoError(t, factionRepo.SetInitialFaction(context.Background(), player.PlayerID, gamedesign.FactionSHE))
+			viewRepo := postgres.NewPlayerViewRepository(sharedPg.Pool)
 
-			got, err := repo.FindByFirebaseUID(ctx, "uid-1")
+			view, err := viewRepo.FindByID(context.Background(), player.PlayerID)
+
 			require.NoError(t, err)
-			require.NotNil(t, got.InitialFaction)
-			assert.Equal(t, "SHE", *got.InitialFaction)
+			assert.Equal(t, player.PlayerID, view.Player.PlayerID)
+			assert.Equal(t, int64(1), view.Level)
+			assert.Equal(t, int64(0), view.Exp)
+			require.NotNil(t, view.InitialFaction)
+			assert.Equal(t, gamedesign.FactionSHE, *view.InitialFaction)
+		})
+
+		t.Run("初期ファクション未選択のプレイヤーについては、InitialFactionはnilとして返る", func(t *testing.T) {
+			sharedPg.Truncate(t)
+			player := createTestPlayer(t)
+			viewRepo := postgres.NewPlayerViewRepository(sharedPg.Pool)
+
+			view, err := viewRepo.FindByID(context.Background(), player.PlayerID)
+
+			require.NoError(t, err)
+			assert.Nil(t, view.InitialFaction)
+		})
+
+		t.Run("firebase_uidでプレイヤーのビューを取得すると、players/player_progression/player_factions(is_initial=true)を結合した結果を返す", func(t *testing.T) {
+			sharedPg.Truncate(t)
+			player := createTestPlayer(t)
+			viewRepo := postgres.NewPlayerViewRepository(sharedPg.Pool)
+
+			view, err := viewRepo.FindByFirebaseUID(context.Background(), player.FirebaseUID)
+
+			require.NoError(t, err)
+			assert.Equal(t, player.PlayerID, view.Player.PlayerID)
 		})
 	})
 }

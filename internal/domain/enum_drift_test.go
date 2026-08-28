@@ -2,7 +2,6 @@ package domain_test
 
 import (
 	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -11,59 +10,33 @@ import (
 	"github.com/kenyamaneko/overload-party-account/internal/domain"
 )
 
-func TestEnumDriftAgainstOpenAPISpec(t *testing.T) {
-	t.Run("domainとopenapi.yamlのenum整合", func(t *testing.T) {
-		// SSoT は domain 側。openapi.yaml は外部公開ドキュメントとして同じ値集合を持つ必要がある。
-		spec := loadOpenAPISpec(t)
+type openapiSchemaDoc struct {
+	Components struct {
+		Schemas struct {
+			OnboardingStatus struct {
+				Enum []string `yaml:"enum"`
+			} `yaml:"OnboardingStatus"`
+		} `yaml:"schemas"`
+	} `yaml:"components"`
+}
 
-		t.Run("OnboardingStatus enumがdomainとopenapi.yamlで一致する", func(t *testing.T) {
-			want := []string{
+func TestOnboardingStatusEnumMatchesRESTContract(t *testing.T) {
+	t.Run("[オンボーディング状態]REST契約とのオンボーディング状態値の一致", func(t *testing.T) {
+		t.Run("domainパッケージが定義するオンボーディング状態(not_started/name_set/faction_set/completed)の集合は、openapi.yamlのOnboardingStatus enumと完全に一致する", func(t *testing.T) {
+			raw, err := os.ReadFile("../../data/openapi.yaml")
+			require.NoError(t, err)
+
+			var doc openapiSchemaDoc
+			require.NoError(t, yaml.Unmarshal(raw, &doc))
+
+			domainValues := []string{
 				domain.OnboardingStatusNotStarted,
 				domain.OnboardingStatusNameSet,
 				domain.OnboardingStatusFactionSet,
 				domain.OnboardingStatusCompleted,
 			}
-			got := specEnumValues(t, spec, "OnboardingStatus")
-			require.ElementsMatch(t, want, got, "domain と openapi.yaml の OnboardingStatus enum が drift している")
+
+			require.ElementsMatch(t, domainValues, doc.Components.Schemas.OnboardingStatus.Enum)
 		})
 	})
-}
-
-// loadOpenAPISpec は data/openapi.yaml をパースして返す。
-func loadOpenAPISpec(t *testing.T) map[string]interface{} {
-	t.Helper()
-	specPath := filepath.Join(repoRoot(t), "data", "openapi.yaml")
-	raw, err := os.ReadFile(specPath)
-	require.NoError(t, err)
-	var doc map[string]interface{}
-	require.NoError(t, yaml.Unmarshal(raw, &doc))
-	return doc
-}
-
-// specEnumValues は components/schemas/<name>/enum 配下の値一覧を取り出す。
-func specEnumValues(t *testing.T, spec map[string]interface{}, schemaName string) []string {
-	t.Helper()
-	components, ok := spec["components"].(map[string]interface{})
-	require.True(t, ok, "components が見つからない")
-	schemas, ok := components["schemas"].(map[string]interface{})
-	require.True(t, ok, "components/schemas が見つからない")
-	schema, ok := schemas[schemaName].(map[string]interface{})
-	require.True(t, ok, "components/schemas/%s が見つからない", schemaName)
-	rawEnum, ok := schema["enum"].([]interface{})
-	require.True(t, ok, "components/schemas/%s/enum が無い、または配列でない", schemaName)
-	out := make([]string, 0, len(rawEnum))
-	for _, v := range rawEnum {
-		s, ok := v.(string)
-		require.True(t, ok, "%s の enum 値が文字列でない", schemaName)
-		out = append(out, s)
-	}
-	return out
-}
-
-// repoRoot は本ファイルから見たリポジトリルートを返す (internal/domain/ から 2 階層上)。
-func repoRoot(t *testing.T) string {
-	t.Helper()
-	wd, err := os.Getwd()
-	require.NoError(t, err)
-	return filepath.Join(wd, "..", "..")
 }

@@ -35,9 +35,9 @@ func (s *OnboardingFactionSetSubscriber) HandleMessage(ctx context.Context, data
 		return fmt.Errorf("onboarding-faction-set: bad payload: %w", err)
 	}
 	if event.EventType != apiscenario.EventTypeOnboardingFactionSet {
-		slog.Warn("onboarding-faction-set subscriber: unknown event_type, skipping",
+		slog.Error("onboarding-faction-set subscriber: unknown event_type",
 			"event_type", event.EventType, "event_id", event.EventID)
-		return nil
+		return fmt.Errorf("onboarding-faction-set: unknown event_type %q", event.EventType)
 	}
 	if event.PlayerID == "" || event.InitialFactionID == "" {
 		slog.Error("onboarding-faction-set subscriber: missing required field",

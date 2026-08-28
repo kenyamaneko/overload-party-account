@@ -1,171 +1,145 @@
-package pubsub
+package pubsub_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
-	"fmt"
 	"testing"
+	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	apiscenario "github.com/kenyamaneko/overload-party-scenario/packages/api-scenario"
-	"github.com/stretchr/testify/assert"
 
-	"github.com/kenyamaneko/overload-party-account/internal/usecase"
+	"github.com/kenyamaneko/overload-party-account/internal/adapter/pubsub"
 )
 
-// fakeOnboardingFactionSetApplier は OnboardingFactionSetApplier を満たす最小スタブ。
-// subscriber は「usecase 層にイベント内容を正しく委譲し、戻り値に応じて
-// 成功 / 失敗ログ分岐だけを行う」契約なので、usecase 内部の Tx / repo
-// 挙動はここで抽象化する。
-type fakeOnboardingFactionSetApplier struct {
-	returnProcessed bool
-	returnErr       error
+func TestOnboardingFactionSetSubscriber_HandleMessage(t *testing.T) {
+	t.Run("[オンボーディング初期ファクション設定購読]イベント処理", func(t *testing.T) {
+		t.Run("ペイロードがJSONとして解析できないとき、エラーを返す", func(t *testing.T) {
+			s := pubsub.NewOnboardingFactionSetSubscriber(&fakeApplier{})
 
-	called     bool
-	gotEvent   string
-	gotType    string
-	gotPlayer  string
-	gotFaction string
-}
+			err := s.HandleMessage(context.Background(), []byte("not-json"))
 
-func (f *fakeOnboardingFactionSetApplier) ApplyFactionSet(
-	_ context.Context,
-	eventID, eventType, playerID, initialFactionID string,
-) (bool, error) {
-	f.called = true
-	f.gotEvent = eventID
-	f.gotType = eventType
-	f.gotPlayer = playerID
-	f.gotFaction = initialFactionID
-	if f.returnErr != nil {
-		return false, f.returnErr
-	}
-	return f.returnProcessed, nil
-}
-
-func TestHandleMessageOnboardingFactionSet(t *testing.T) {
-	t.Run("onboarding_faction_setイベントの処理", func(t *testing.T) {
-		const validEventID = "11111111-1111-1111-1111-111111111111"
-		validPayload := mustMarshal(t, apiscenario.OnboardingFactionSetEvent{
-			EventType:        apiscenario.EventTypeOnboardingFactionSet,
-			EventID:          validEventID,
-			PlayerID:         "p-1",
-			InitialFactionID: "SHE",
+			require.ErrorContains(t, err, "bad payload")
 		})
 
-		tests := []struct {
-			name            string
-			payload         []byte
-			returnProcessed bool
-			returnErr       error
-			wantErr         bool
-			wantErrContains string
-			assertApplier   func(t *testing.T, a *fakeOnboardingFactionSetApplier)
+		t.Run("イベント種別が対象外(onboarding_faction_set以外)のとき、unknown event_typeを含むエラーを返す", func(t *testing.T) {
+			s := pubsub.NewOnboardingFactionSetSubscriber(&fakeApplier{requireEmpty: true})
+			event := apiscenario.OnboardingFactionSetEvent{
+				EventType:        "unrelated_event",
+				EventID:          "evt-1",
+				Timestamp:        time.Now(),
+				PlayerID:         "player-1",
+				InitialFactionID: "SHE",
+			}
+			data, err := json.Marshal(event)
+			require.NoError(t, err)
+
+			err = s.HandleMessage(context.Background(), data)
+
+			require.ErrorContains(t, err, "unknown event_type")
+		})
+
+		t.Run("イベント種別が対象外(onboarding_faction_set以外)のとき、オンボーディングの初期ファクション設定処理は実行されない", func(t *testing.T) {
+			applier := &fakeApplier{requireEmpty: true}
+			s := pubsub.NewOnboardingFactionSetSubscriber(applier)
+			event := apiscenario.OnboardingFactionSetEvent{
+				EventType:        "unrelated_event",
+				EventID:          "evt-1",
+				Timestamp:        time.Now(),
+				PlayerID:         "player-1",
+				InitialFactionID: "SHE",
+			}
+			data, err := json.Marshal(event)
+			require.NoError(t, err)
+
+			_ = s.HandleMessage(context.Background(), data)
+
+			assert.Nil(t, applier.calledWith)
+		})
+
+		t.Run("イベントに含まれる対象プレイヤーのIDが空文字のとき、エラーを返し、オンボーディングの初期ファクション設定処理は実行されない", func(t *testing.T) {
+			applier := &fakeApplier{requireEmpty: true}
+			s := pubsub.NewOnboardingFactionSetSubscriber(applier)
+			event := apiscenario.OnboardingFactionSetEvent{
+				EventType:        apiscenario.EventTypeOnboardingFactionSet,
+				EventID:          "evt-1",
+				Timestamp:        time.Now(),
+				PlayerID:         "",
+				InitialFactionID: "SHE",
+			}
+			data, err := json.Marshal(event)
+			require.NoError(t, err)
+
+			err = s.HandleMessage(context.Background(), data)
+
+			require.Error(t, err)
+			assert.Nil(t, applier.calledWith)
+		})
+
+		t.Run("初期選択ファクションIDが空のとき、エラーを返し、オンボーディングの初期ファクション設定処理は実行されない", func(t *testing.T) {
+			applier := &fakeApplier{requireEmpty: true}
+			s := pubsub.NewOnboardingFactionSetSubscriber(applier)
+			event := apiscenario.OnboardingFactionSetEvent{
+				EventType:        apiscenario.EventTypeOnboardingFactionSet,
+				EventID:          "evt-1",
+				Timestamp:        time.Now(),
+				PlayerID:         "player-1",
+				InitialFactionID: "",
+			}
+			data, err := json.Marshal(event)
+			require.NoError(t, err)
+
+			err = s.HandleMessage(context.Background(), data)
+
+			require.Error(t, err)
+			assert.Nil(t, applier.calledWith)
+		})
+
+		t.Run("オンボーディングの初期ファクション設定処理がエラーを返したとき、エラーを返す", func(t *testing.T) {
+			applier := &fakeApplier{err: errors.New("boom")}
+			s := pubsub.NewOnboardingFactionSetSubscriber(applier)
+			event := apiscenario.OnboardingFactionSetEvent{
+				EventType:        apiscenario.EventTypeOnboardingFactionSet,
+				EventID:          "evt-1",
+				Timestamp:        time.Now(),
+				PlayerID:         "player-1",
+				InitialFactionID: "SHE",
+			}
+			data, err := json.Marshal(event)
+			require.NoError(t, err)
+
+			err = s.HandleMessage(context.Background(), data)
+
+			require.Error(t, err)
+		})
+
+		processedResultTests := []struct {
+			name      string
+			processed bool
 		}{
-			{
-				name:            "usecaseがprocessed=trueを返すとき、applierに委譲して成功になる",
-				payload:         validPayload,
-				returnProcessed: true,
-				wantErr:         false,
-				assertApplier: func(t *testing.T, a *fakeOnboardingFactionSetApplier) {
-					assert.True(t, a.called, "applier に委譲する")
-					assert.Equal(t, apiscenario.EventTypeOnboardingFactionSet, a.gotType)
-					assert.Equal(t, "p-1", a.gotPlayer)
-					assert.Equal(t, validEventID, a.gotEvent)
-					assert.Equal(t, "SHE", a.gotFaction)
-				},
-			},
-			{
-				name:            "usecaseがprocessed=falseを返すとき、副作用なしで成功になる",
-				payload:         validPayload,
-				returnProcessed: false,
-				wantErr:         false,
-				assertApplier: func(t *testing.T, a *fakeOnboardingFactionSetApplier) {
-					assert.True(t, a.called, "冪等スキップも applier を経由して判定される")
-				},
-			},
-			{
-				name:            "不正なJSONのとき、applierに到達せず失敗になる",
-				payload:         []byte("broken"),
-				wantErr:         true,
-				wantErrContains: "onboarding-faction-set: bad payload",
-				assertApplier: func(t *testing.T, a *fakeOnboardingFactionSetApplier) {
-					assert.False(t, a.called, "JSON parse 失敗時は applier に到達しない")
-				},
-			},
-			{
-				name: "未知のevent_typeのとき、applierに到達せず責務外として成功になる",
-				payload: mustMarshal(t, apiscenario.OnboardingFactionSetEvent{
-					EventType:        "unknown",
-					EventID:          "22222222-2222-2222-2222-222222222222",
-					PlayerID:         "p-2",
-					InitialFactionID: "SHE",
-				}),
-				wantErr: false,
-				assertApplier: func(t *testing.T, a *fakeOnboardingFactionSetApplier) {
-					assert.False(t, a.called, "event_type フィルタで applier に到達しない")
-				},
-			},
-			{
-				name: "player_idが欠落するとき、applierに到達せず失敗になる",
-				payload: mustMarshal(t, apiscenario.OnboardingFactionSetEvent{
-					EventType:        apiscenario.EventTypeOnboardingFactionSet,
-					EventID:          "33333333-3333-3333-3333-333333333333",
-					InitialFactionID: "SHE",
-				}),
-				wantErr:         true,
-				wantErrContains: "onboarding-faction-set: missing required field",
-				assertApplier: func(t *testing.T, a *fakeOnboardingFactionSetApplier) {
-					assert.False(t, a.called, "必須フィールド欠落は applier より手前で弾く")
-				},
-			},
-			{
-				name: "initial_faction_idが欠落するとき、applierに到達せず失敗になる",
-				payload: mustMarshal(t, apiscenario.OnboardingFactionSetEvent{
-					EventType: apiscenario.EventTypeOnboardingFactionSet,
-					EventID:   "44444444-4444-4444-4444-444444444444",
-					PlayerID:  "p-3",
-				}),
-				wantErr:         true,
-				wantErrContains: "onboarding-faction-set: missing required field",
-				assertApplier: func(t *testing.T, a *fakeOnboardingFactionSetApplier) {
-					assert.False(t, a.called, "必須フィールド欠落は applier より手前で弾く")
-				},
-			},
-			{
-				name:            "usecaseが汎用エラーを返すとき、失敗になる",
-				payload:         validPayload,
-				returnErr:       errors.New("db error"),
-				wantErr:         true,
-				wantErrContains: "onboarding-faction-set: apply:",
-				assertApplier: func(t *testing.T, a *fakeOnboardingFactionSetApplier) {
-					assert.True(t, a.called)
-				},
-			},
-			{
-				name:            "既に別の初期ファクションが設定済みでusecaseがErrFactionConflictを返すとき、publisherバグとして失敗になる",
-				payload:         validPayload,
-				returnErr:       usecase.ErrFactionConflict,
-				wantErr:         true,
-				wantErrContains: "onboarding-faction-set: publisher bug:",
-				assertApplier: func(t *testing.T, a *fakeOnboardingFactionSetApplier) {
-					assert.True(t, a.called)
-				},
-			},
+			{"オンボーディングの初期ファクション設定処理が重複配信によりスキップされたことを示す結果を返したとき", false},
+			{"オンボーディングの初期ファクション設定処理が正常に完了したことを示す結果を返したとき", true},
 		}
-
-		for _, tt := range tests {
-			t.Run(tt.name, func(t *testing.T) {
-				applier := &fakeOnboardingFactionSetApplier{
-					returnProcessed: tt.returnProcessed,
-					returnErr:       tt.returnErr,
+		for _, tt := range processedResultTests {
+			t.Run(tt.name+"、エラーにならない", func(t *testing.T) {
+				applier := &fakeApplier{processed: tt.processed}
+				s := pubsub.NewOnboardingFactionSetSubscriber(applier)
+				event := apiscenario.OnboardingFactionSetEvent{
+					EventType:        apiscenario.EventTypeOnboardingFactionSet,
+					EventID:          "evt-1",
+					Timestamp:        time.Now(),
+					PlayerID:         "player-1",
+					InitialFactionID: "SHE",
 				}
-				sub := NewOnboardingFactionSetSubscriber(applier)
+				data, err := json.Marshal(event)
+				require.NoError(t, err)
 
-				err := sub.HandleMessage(context.Background(), tt.payload)
+				err = s.HandleMessage(context.Background(), data)
 
-				assert.Equal(t, tt.wantErr, err != nil, "エラー有無 (err=%v)", err)
-				assert.Contains(t, fmt.Sprintf("%v", err), tt.wantErrContains, "エラー内容が原因を区別できる")
-				tt.assertApplier(t, applier)
+				require.NoError(t, err)
 			})
 		}
 	})

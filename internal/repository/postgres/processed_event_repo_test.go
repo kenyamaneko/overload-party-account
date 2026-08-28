@@ -6,57 +6,38 @@ import (
 	"context"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/kenyamaneko/overload-party-account/internal/repository/postgres"
 )
 
-const (
-	testEventID1 = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
-)
-
-func TestInsert_ProcessedEvent(t *testing.T) {
-	repo := postgres.NewProcessedEventRepository(sharedPg.Pool)
-	ctx := context.Background()
-
-	t.Run("processed_eventsへのINSERT", func(t *testing.T) {
-		// 冪等性ガード: 初回は created=true、重複 event_id は ON CONFLICT DO NOTHING で
-		// created=false を返し、Pub/Sub の重複配信を検出する。
-		noPreInsert := func(*testing.T) {}
-		preInsertSameEvent := func(t *testing.T) {
-			_, err := sharedPg.Pool.Exec(ctx,
-				`INSERT INTO account.processed_events (event_id, event_type) VALUES ($1, $2)`,
-				testEventID1, "faction_selected")
-			require.NoError(t, err)
-		}
-
-		tests := []struct {
-			name        string
-			preInsert   func(*testing.T)
-			wantCreated bool
-		}{
-			{
-				name:        "初回挿入のとき、created=trueになる",
-				preInsert:   noPreInsert,
-				wantCreated: true,
-			},
-			{
-				name:        "既存event_idのとき、created=falseになる (冪等ガード)",
-				preInsert:   preInsertSameEvent,
-				wantCreated: false,
-			},
-		}
-
-		for _, tt := range tests {
-			t.Run(tt.name, func(t *testing.T) {
+func TestProcessedEventRepository_Insert(t *testing.T) {
+	t.Run("[ProcessedEventRepository]処理済みイベントの記録", func(t *testing.T) {
+		t.Run("冪等ガード", func(t *testing.T) {
+			t.Run("新規のevent_idを指定したとき、記録を新規作成しtrueを返す", func(t *testing.T) {
 				sharedPg.Truncate(t)
-				tt.preInsert(t)
+				repo := postgres.NewProcessedEventRepository(sharedPg.Pool)
 
-				created, err := repo.Insert(ctx, testEventID1, "faction_selected")
+				inserted, err := repo.Insert(context.Background(), uuid.NewString(), "faction_acquired")
+
 				require.NoError(t, err)
-				assert.Equal(t, tt.wantCreated, created)
+				assert.True(t, inserted)
 			})
-		}
+
+			t.Run("既に同じevent_idの記録が存在するとき、記録を追加せずfalseを返す", func(t *testing.T) {
+				sharedPg.Truncate(t)
+				repo := postgres.NewProcessedEventRepository(sharedPg.Pool)
+				eventID := uuid.NewString()
+				_, err := repo.Insert(context.Background(), eventID, "faction_acquired")
+				require.NoError(t, err)
+
+				inserted, err := repo.Insert(context.Background(), eventID, "faction_acquired")
+
+				require.NoError(t, err)
+				assert.False(t, inserted)
+			})
+		})
 	})
 }

@@ -9,126 +9,70 @@ import (
 	"github.com/kenyamaneko/overload-party-account/internal/domain"
 )
 
-const testExpCoeff = 60
-
-// levelStartExp は level n の開始時点の累計経験値を返す。
-func levelStartExp(level int64) int64 {
-	return testExpCoeff * level * level
-}
-
 func TestComputeLevel(t *testing.T) {
-	t.Run("レベル算出", func(t *testing.T) {
-		validCases := []struct {
-			name         string
-			newExp       int64
-			currentLevel int64
-			wantLevel    int64
-		}{
-			{
-				name:         "新経験値が次レベル閾値未満のとき、レベルは据え置かれる",
-				newExp:       levelStartExp(2) - 1,
-				currentLevel: 1,
-				wantLevel:    1,
-			},
-			{
-				name:         "新経験値が次レベル閾値ちょうどのとき、レベルが1上がる",
-				newExp:       levelStartExp(2),
-				currentLevel: 1,
-				wantLevel:    2,
-			},
-			{
-				name:         "新経験値が複数レベル分あるとき、一度に複数レベル上がる",
-				newExp:       levelStartExp(4),
-				currentLevel: 1,
-				wantLevel:    4,
-			},
-			{
-				name:         "現在レベル3で次レベル閾値未満のとき、レベルは3のまま",
-				newExp:       levelStartExp(4) - 1,
-				currentLevel: 3,
-				wantLevel:    3,
-			},
-			{
-				name:         "新経験値が0でも、現在レベルより下がらない",
-				newExp:       0,
-				currentLevel: 5,
-				wantLevel:    5,
-			},
-		}
-		for _, tc := range validCases {
-			t.Run(tc.name, func(t *testing.T) {
-				got, err := domain.ComputeLevel(tc.newExp, tc.currentLevel, testExpCoeff)
-				require.NoError(t, err)
-				assert.Equal(t, tc.wantLevel, got)
-			})
-		}
+	t.Run("[レベル進捗計算]現在レベルの算出", func(t *testing.T) {
+		t.Run("現在レベルが1未満のとき、エラーを返す", func(t *testing.T) {
+			_, err := domain.ComputeLevel(0, 0, 100)
 
-		invalidCases := []struct {
-			name         string
-			newExp       int64
-			currentLevel int64
-		}{
-			{name: "currentLevelが0のとき、エラーになる", newExp: 0, currentLevel: 0},
-			{name: "currentLevelが -1のとき、エラーになる", newExp: 0, currentLevel: -1},
-		}
-		for _, tc := range invalidCases {
-			t.Run(tc.name, func(t *testing.T) {
-				_, err := domain.ComputeLevel(tc.newExp, tc.currentLevel, testExpCoeff)
-				assert.Error(t, err)
-			})
-		}
+			require.Error(t, err)
+		})
+
+		t.Run("係数を100とすると、現在レベルが1、累計経験値が399のとき、レベルは1のまま変わらない", func(t *testing.T) {
+			level, err := domain.ComputeLevel(399, 1, 100)
+
+			require.NoError(t, err)
+			assert.Equal(t, int64(1), level)
+		})
+
+		t.Run("係数を100とすると、現在レベルが1、累計経験値が400のとき、レベルは2になる", func(t *testing.T) {
+			level, err := domain.ComputeLevel(400, 1, 100)
+
+			require.NoError(t, err)
+			assert.Equal(t, int64(2), level)
+		})
+
+		t.Run("係数を100とすると、現在レベルが1、累計経験値が1000のとき、複数レベル分をまとめて上げた3になる", func(t *testing.T) {
+			level, err := domain.ComputeLevel(1000, 1, 100)
+
+			require.NoError(t, err)
+			assert.Equal(t, int64(3), level)
+		})
 	})
 }
 
 func TestComputeExpProgress(t *testing.T) {
-	t.Run("経験値進捗の算出", func(t *testing.T) {
-		validCases := []struct {
-			name    string
-			level   int64
-			exp     int64
-			wantExp *domain.LevelProgress
-		}{
-			{
-				name:    "level=1 / exp=0 (初期状態)のとき、LevelExpCurrent=0・LevelExpRequired=240になる",
-				level:   1,
-				exp:     0,
-				wantExp: &domain.LevelProgress{LevelExpCurrent: 0, LevelExpRequired: 240},
-			},
-			{
-				name:    "level=2開始ちょうどのとき、LevelExpCurrent=0になる",
-				level:   2,
-				exp:     levelStartExp(2),
-				wantExp: &domain.LevelProgress{LevelExpCurrent: 0, LevelExpRequired: 300},
-			},
-			{
-				name:    "現レベル内で進捗中 (level=2 / exp=500)のとき、LevelExpCurrent=260になる",
-				level:   2,
-				exp:     500,
-				wantExp: &domain.LevelProgress{LevelExpCurrent: 260, LevelExpRequired: 300},
-			},
-		}
-		for _, tc := range validCases {
-			t.Run(tc.name, func(t *testing.T) {
-				got, err := domain.ComputeExpProgress(tc.level, tc.exp, testExpCoeff)
-				require.NoError(t, err)
-				assert.Equal(t, tc.wantExp, got)
-			})
-		}
+	t.Run("[レベル進捗計算]レベル内経験値進捗の算出", func(t *testing.T) {
+		t.Run("レベルが1未満のとき、エラーを返す", func(t *testing.T) {
+			_, err := domain.ComputeExpProgress(0, 0, 100)
 
-		invalidCases := []struct {
-			name  string
-			level int64
-			exp   int64
-		}{
-			{name: "levelが0のとき、エラーになる", level: 0, exp: 0},
-			{name: "levelが -1のとき、エラーになる", level: -1, exp: 0},
-			{name: "expが現レベル開始閾値未満 (level=3 / exp=0)のとき、整合性エラーになる", level: 3, exp: 0},
-		}
-		for _, tc := range invalidCases {
-			t.Run(tc.name, func(t *testing.T) {
-				_, err := domain.ComputeExpProgress(tc.level, tc.exp, testExpCoeff)
-				assert.Error(t, err)
-			})
-		}
+			require.Error(t, err)
+		})
+
+		t.Run("係数を100とすると、レベルが2、累計経験値が399のとき、エラーを返す", func(t *testing.T) {
+			_, err := domain.ComputeExpProgress(2, 399, 100)
+
+			require.Error(t, err)
+		})
+
+		t.Run("係数を100とすると、レベルが2、累計経験値が400のとき、現在レベル内の経験値進捗は0になる", func(t *testing.T) {
+			progress, err := domain.ComputeExpProgress(2, 400, 100)
+
+			require.NoError(t, err)
+			assert.Equal(t, int64(0), progress.LevelExpCurrent)
+		})
+
+		t.Run("係数を100とすると、レベルが2、累計経験値が450のとき、現在レベル内の経験値進捗は50になる", func(t *testing.T) {
+			progress, err := domain.ComputeExpProgress(2, 450, 100)
+
+			require.NoError(t, err)
+			assert.Equal(t, int64(50), progress.LevelExpCurrent)
+		})
+
+		t.Run("係数を100とすると、レベルが2、累計経験値が450のとき、次レベルまでに必要な経験値の幅は500になる", func(t *testing.T) {
+			progress, err := domain.ComputeExpProgress(2, 450, 100)
+
+			require.NoError(t, err)
+			assert.Equal(t, int64(500), progress.LevelExpRequired)
+		})
 	})
 }
