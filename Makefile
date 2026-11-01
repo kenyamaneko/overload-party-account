@@ -1,4 +1,4 @@
-.PHONY: build test test-integration vet fmt run tidy down help
+.PHONY: build test test-integration vet fmt run tidy down check-schema-factions help
 
 APP := overload-party-account
 
@@ -13,6 +13,9 @@ test-integration: ## Run unit + integration tests (Firestore emulator required; 
 
 vet: ## Run go vet
 	go vet ./...
+
+check-schema-factions: ## Check that the faction CHECK in db/schema.sql matches game-design-constants (read-only)
+	go run scripts/generate_schema_factions.go -check
 
 tidy: ## Tidy dependencies
 	go mod tidy
