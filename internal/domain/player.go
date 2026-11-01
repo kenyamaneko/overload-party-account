@@ -6,56 +6,53 @@ import (
 	"cloud.google.com/go/civil"
 )
 
-// Player は account.players テーブルの 1 行を表す Write 集約。Level/Exp/InitialFaction はこの型に含めない (それぞれ player_progression / player_factions の責務)。読み取り時に合成が必要な場合は PlayerView を使う。
+// Player はプレイヤーの基本情報である。レベルと経験値、初期陣営は含まない。
 type Player struct {
-	PlayerID         string     `db:"player_id"`
-	FirebaseUID      string     `db:"firebase_uid"`
-	Name             *string    `db:"name"`
-	IsPremium        bool       `db:"is_premium"`
-	EquippedIconNo   *int64     `db:"equipped_icon_no"`
-	OnboardingStatus string     `db:"onboarding_status"`
-	PremiumExpiresAt *time.Time `db:"premium_expires_at"`
-	CreatedAt        time.Time  `db:"created_at"`
-	UpdatedAt        time.Time  `db:"updated_at"`
+	PlayerID         string
+	FirebaseUID      string
+	Name             *string
+	IsPremium        bool
+	EquippedIconNo   *int64
+	OnboardingStatus string
+	PremiumExpiresAt *time.Time
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
 }
 
-// PlayerProgression は account.player_progression の 1 行。バトル毎の高頻度 UPDATE を players から分離するための独立集約。
+// PlayerProgression はプレイヤーの累計経験値である。
 type PlayerProgression struct {
-	PlayerID  string    `db:"player_id"`
-	Level     int64     `db:"level"`
-	Exp       int64     `db:"exp"`
-	UpdatedAt time.Time `db:"updated_at"`
+	PlayerID  string
+	Exp       int64
+	UpdatedAt time.Time
 }
 
-// PlayerDailyBattle は account.player_daily_battle の 1 行 (PK: player_id, game_date)。1 プレイヤーにつきゲーム日ごとに 1 行の履歴台帳。
+// PlayerDailyBattle はプレイヤーのゲーム日ごとのバトル回数である。
 type PlayerDailyBattle struct {
-	PlayerID         string     `db:"player_id"`
-	GameDate         civil.Date `db:"game_date"`
-	DailyBattleCount int64      `db:"daily_battle_count"`
+	PlayerID         string
+	GameDate         civil.Date
+	DailyBattleCount int64
 }
 
-// PlayerFaction は account.player_factions の 1 行。IsInitial=TRUE の行はオンボーディングで選択した faction (1 プレイヤーに最大 1 行)。
-type PlayerFaction struct {
-	PlayerID   string    `db:"player_id"`
-	Faction    string    `db:"faction"`
-	IsInitial  bool      `db:"is_initial"`
-	AcquiredAt time.Time `db:"acquired_at"`
-}
-
-// PlayerSettings は account.player_settings の 1 行。
+// PlayerSettings はプレイヤーの設定である。
 type PlayerSettings struct {
-	PlayerID    string    `db:"player_id"`
-	Language    string    `db:"language"`
-	BgmVolume   int64     `db:"bgm_volume"`
-	SeVolume    int64     `db:"se_volume"`
-	PushEnabled bool      `db:"push_enabled"`
-	UpdatedAt   time.Time `db:"updated_at"`
+	PlayerID      string
+	Language      string
+	BgmVolume     int64
+	SeVolume      int64
+	IsPushEnabled bool
+	UpdatedAt     time.Time
 }
 
-// PlayerView は Read Model: Player (players 行) + PlayerProgression の Level/Exp + player_factions.is_initial=TRUE 行の Faction 名 を 1 つに束ねた、単一の参照向けビュー。リポジトリ層が JOIN で組み立てる読み取り専用ビューであり、書き込み経路では使わない。
+// PlayerView は、プレイヤーの基本情報に、累計経験値と初期陣営を合わせた参照用の情報である。
 type PlayerView struct {
 	Player         Player
-	Level          int64
 	Exp            int64
 	InitialFaction *string
+}
+
+// PlayerInfo は、参照用の情報に、累計経験値と経験値係数から求めたレベルと、現在のレベルの中での経験値の進み具合を加えたプレイヤー情報である。
+type PlayerInfo struct {
+	View          PlayerView
+	Level         int64
+	LevelProgress LevelProgress
 }

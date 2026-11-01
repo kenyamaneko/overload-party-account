@@ -1,54 +1,73 @@
 package domain
 
-import "fmt"
+import (
+	"errors"
+	"fmt"
+)
 
-// LevelProgress は現在レベル内の経験値進捗を保持する。
+const (
+	// InitialLevel は登録直後のプレイヤーのレベルであり、取りうる最小のレベルである。
+	InitialLevel = 1
+	// InitialExp は登録直後のプレイヤーの累計経験値である。
+	InitialExp = 0
+	// MinExpCoefficient は経験値係数の最小値である。
+	MinExpCoefficient = 1
+)
+
+var (
+	// ErrInvalidExpCoefficient は経験値係数が最小値未満であることを示す。
+	ErrInvalidExpCoefficient = errors.New("exp coefficient is below the minimum")
+	// ErrExpBelowLevelThreshold は累計経験値が最小のレベルの開始値を下回っている (負である) ことを示す。
+	ErrExpBelowLevelThreshold = errors.New("exp is below the start of the minimum level")
+)
+
+// LevelProgress は現在のレベルの中での経験値の進み具合を表す。
 type LevelProgress struct {
-	LevelExpCurrent  int64 `json:"level_exp_current"`
-	LevelExpRequired int64 `json:"level_exp_required"`
+	LevelExpCurrent  int64
+	LevelExpRequired int64
 }
 
-// ComputeLevel は経験値獲得後の新レベルを算出する。
-// exp は累計値を SSoT とする設計のためレベルアップ時に減算せず、
-// レベル内進捗は ComputeExpProgress で都度導出する。よって本関数は新レベルのみを返す。
-// coeff * (level+1)^2 を逐次比較するため、ゲームデザイン上の妥当な
-// coeff (~数百) と level (~数百) の範囲では int64 内で安全に動作する。
-// 過大 coeff の検証は config 検証側の責務 (現状は > 0 のみ)。
-// currentLevel は 1 以上を要求する。
-func ComputeLevel(newExp, currentLevel, coeff int64) (int64, error) {
-	if currentLevel < 1 {
-		return 0, fmt.Errorf("currentLevel must be >= 1, got %d", currentLevel)
+// ComputeLevel は累計経験値と経験値係数から、プレイヤーのレベルを返す。
+func ComputeLevel(exp, coefficient int64) (int64, error) {
+	if err := validateExpCoefficient(coefficient); err != nil {
+		return 0, err
 	}
-	level := currentLevel
-	for {
-		nextLevelExp := coeff * (level + 1) * (level + 1)
-		if newExp < nextLevelExp {
-			break
-		}
+	if minLevelStartExp := levelStartExp(InitialLevel, coefficient); exp < minLevelStartExp {
+		return 0, fmt.Errorf("%w: exp %d, level %d starts at %d",
+			ErrExpBelowLevelThreshold, exp, InitialLevel, minLevelStartExp)
+	}
+	level := int64(InitialLevel)
+	for exp >= levelStartExp(level+1, coefficient) {
 		level++
 	}
 	return level, nil
 }
 
-// ComputeExpProgress は現在レベル内の経験値進捗を計算する。
-// level/exp は ComputeLevel で整合済みの累計 exp を前提とするため、
-// 不整合な入力 (例: level=3, exp=0) はバグ検知としてエラーを返す。
-// level=1 の開始閾値は 0 (プレイヤー初期状態)、level>=2 では coeff * level^2 が
-// 開始閾値となる (ComputeLevel の境界式 coeff * (level+1)^2 と整合)。
-func ComputeExpProgress(level, exp, coeff int64) (*LevelProgress, error) {
-	if level < 1 {
-		return nil, fmt.Errorf("level must be >= 1, got %d", level)
+// ComputeExpProgress は累計経験値と経験値係数から、レベルの中での経験値と、次のレベルまでに必要な経験値を返す。
+func ComputeExpProgress(exp, coefficient int64) (*LevelProgress, error) {
+	level, err := ComputeLevel(exp, coefficient)
+	if err != nil {
+		return nil, err
 	}
-	var currentLevelExp int64
-	if level > 1 {
-		currentLevelExp = coeff * level * level
-	}
-	if exp < currentLevelExp {
-		return nil, fmt.Errorf("exp (%d) is below current level threshold (%d) for level %d", exp, currentLevelExp, level)
-	}
-	nextLevelExp := coeff * (level + 1) * (level + 1)
+	currentLevelStartExp := levelStartExp(level, coefficient)
+	nextLevelStartExp := levelStartExp(level+1, coefficient)
 	return &LevelProgress{
-		LevelExpCurrent:  exp - currentLevelExp,
-		LevelExpRequired: nextLevelExp - currentLevelExp,
+		LevelExpCurrent:  exp - currentLevelStartExp,
+		LevelExpRequired: nextLevelStartExp - currentLevelStartExp,
 	}, nil
+}
+
+func validateExpCoefficient(coefficient int64) error {
+	if coefficient < MinExpCoefficient {
+		return fmt.Errorf("%w: got %d", ErrInvalidExpCoefficient, coefficient)
+	}
+	return nil
+}
+
+// levelStartExp はレベルに到達するために必要な累計経験値を返す。最小のレベルは経験値 0 から始まる。
+func levelStartExp(level, coefficient int64) int64 {
+	if level <= InitialLevel {
+		return 0
+	}
+	return coefficient * level * level
 }

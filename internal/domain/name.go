@@ -8,15 +8,14 @@ import (
 	"unicode/utf8"
 )
 
-// MaxNameRunes は表示名の許容最大長 (rune 単位)。
-// repo / DB のサイズ制約 (VARCHAR 50) ではなく、ここで定義した業務上限が真。
+// MaxNameRunes は表示名の最大文字数である。
 const MaxNameRunes = 20
 
-// ErrInvalidName は表示名が業務ルールに違反したことを示す。
-// handler 層で 400 にマップする (handler/rest/errors.go)。
+// ErrInvalidName は表示名が業務ルールに違反していることを示す。
 var ErrInvalidName = errors.New("invalid name")
 
-// ValidateName は表示名の業務ルールを検証する。
+// ValidateName は表示名が業務ルールを満たすかを検証する。
+// 空または空白のみ、最大文字数の超過、制御文字を含む表示名は ErrInvalidName を返す。
 func ValidateName(s string) error {
 	if strings.TrimSpace(s) == "" {
 		return fmt.Errorf("%w: empty or whitespace only", ErrInvalidName)
