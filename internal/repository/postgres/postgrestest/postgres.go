@@ -1,46 +1,62 @@
 // Package postgrestest は DB を用いる account サービスのテストヘルパを提供する。
 //
 // postgres:16-alpine の Testcontainers を起動して実 PostgreSQL に対してテストを
-// 実行する。コンテナはパッケージ単位で 1 回だけ起動し（RunMain）、テスト関数間の
-// 状態リセットは Truncate（登録された schema 配下の全テーブルを動的に列挙して
-// TRUNCATE）で行う。shop の postgrestest と同一 API を維持する。
+// 実行する。コンテナはパッケージ単位で 1 回だけ起動し（RunMain）、ケースごとに
+// スキーマ適用済みのテンプレートから専用のデータベースを複製して（NewDatabase）、
+// 他のケースのデータと混ざらない状態から始める。
 package postgrestest
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
-	"strings"
 	"testing"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
 	"github.com/testcontainers/testcontainers-go/wait"
 )
 
-// Postgres は起動済み PostgreSQL コンテナと接続プールのハンドル。
+const (
+	templateDatabaseName  = "schema_template"
+	caseDatabasePrefix    = "case_"
+	caseDatabaseSuffixLen = 8
+	startupTimeout        = 60 * time.Second
+)
+
+// Postgres は起動済み PostgreSQL コンテナと、ケース専用データベースを作る管理用の接続プールのハンドル。
 type Postgres struct {
 	Container *postgres.PostgresContainer
-	Pool      *pgxpool.Pool
-	schemas   []string
+	adminPool *pgxpool.Pool
+	adminDSN  string
+}
+
+// Database はケース専用のデータベースへの接続情報。
+type Database struct {
+	Pool             *pgxpool.Pool
+	ConnectionString string
 }
 
 type config struct {
 	schemaFiles []string
-	schemas     []string
 }
 
 // Option は Start の振る舞いを構成する。
 type Option func(*config)
 
 // WithSchemaFile は repo-root 起点の相対パスでスキーマ SQL を登録する。
-// 順序通りに pool.Exec で適用される。複数指定可（cross-service schema 参照を
+// 順序通りに Exec で適用される。複数指定可（cross-service schema 参照を
 // 再現したい場合に使う）。
 func WithSchemaFile(repoRelativePath string) Option {
 	return func(c *config) {
@@ -48,27 +64,13 @@ func WithSchemaFile(repoRelativePath string) Option {
 	}
 }
 
-// WithSchema は Truncate 対象スキーマを登録する。複数指定可。
-func WithSchema(name string) Option {
-	return func(c *config) {
-		c.schemas = append(c.schemas, name)
-	}
-}
-
-// Start は postgres:16-alpine コンテナを起動し、登録された schema SQL を順に
-// 適用したうえで接続プールを返す。終了時は Close を呼ぶ（RunMain が代行）。
+// Start は postgres:16-alpine コンテナを起動し、登録された schema SQL を適用した
+// テンプレートデータベースを用意して返す。終了時は Close を呼ぶ（RunMain が代行）。
 func Start(ctx context.Context, opts ...Option) (*Postgres, error) {
 	cfg := &config{}
 	for _, opt := range opts {
 		opt(cfg)
 	}
-	if len(cfg.schemaFiles) == 0 {
-		return nil, errors.New("postgrestest: at least one WithSchemaFile is required")
-	}
-	if len(cfg.schemas) == 0 {
-		return nil, errors.New("postgrestest: at least one WithSchema is required")
-	}
-
 	root, err := findRepoRoot()
 	if err != nil {
 		return nil, err
@@ -82,98 +84,101 @@ func Start(ctx context.Context, opts ...Option) (*Postgres, error) {
 		testcontainers.WithWaitStrategy(
 			wait.ForLog("database system is ready to accept connections").
 				WithOccurrence(2).
-				WithStartupTimeout(60*time.Second),
+				WithStartupTimeout(startupTimeout),
 		),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("start postgres container: %w", err)
 	}
 
-	dsn, err := container.ConnectionString(ctx, "sslmode=disable")
+	adminDSN, err := container.ConnectionString(ctx, "sslmode=disable")
 	if err != nil {
 		return nil, errors.Join(fmt.Errorf("container connection string: %w", err), container.Terminate(ctx))
 	}
 
-	pool, err := pgxpool.New(ctx, dsn)
+	adminPool, err := pgxpool.New(ctx, adminDSN)
 	if err != nil {
 		return nil, errors.Join(fmt.Errorf("pgxpool new: %w", err), container.Terminate(ctx))
 	}
 
-	for _, rel := range cfg.schemaFiles {
-		path := filepath.Join(root, rel)
-		data, rerr := os.ReadFile(path)
-		if rerr != nil {
-			pool.Close()
-			return nil, errors.Join(fmt.Errorf("read schema %s: %w", path, rerr), container.Terminate(ctx))
-		}
-		if _, eerr := pool.Exec(ctx, string(data)); eerr != nil {
-			pool.Close()
-			return nil, errors.Join(fmt.Errorf("apply schema %s: %w", path, eerr), container.Terminate(ctx))
-		}
+	pg := &Postgres{Container: container, adminPool: adminPool, adminDSN: adminDSN}
+	if err := pg.createTemplate(ctx, root, cfg.schemaFiles); err != nil {
+		adminPool.Close()
+		return nil, errors.Join(err, container.Terminate(ctx))
 	}
-
-	return &Postgres{Container: container, Pool: pool, schemas: cfg.schemas}, nil
+	return pg, nil
 }
 
-// Close は pool をクローズしコンテナを終了する。両方のエラーを集約して返す。
+// createTemplate はスキーマ SQL を適用したテンプレートデータベースを作る。
+// 複製の元に接続が残っていると複製できないため、適用が済んだら接続を閉じる。
+func (p *Postgres) createTemplate(ctx context.Context, root string, schemaFiles []string) error {
+	if _, err := p.adminPool.Exec(ctx, "CREATE DATABASE "+templateDatabaseName); err != nil {
+		return fmt.Errorf("create template database: %w", err)
+	}
+	templatePool, err := newPoolForDatabase(ctx, p.adminDSN, templateDatabaseName)
+	if err != nil {
+		return err
+	}
+	defer templatePool.Close()
+
+	for _, rel := range schemaFiles {
+		path := filepath.Join(root, rel)
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return fmt.Errorf("read schema %s: %w", path, err)
+		}
+		if _, err := templatePool.Exec(ctx, string(data)); err != nil {
+			return fmt.Errorf("apply schema %s: %w", path, err)
+		}
+	}
+	return nil
+}
+
+// Close は接続プールをクローズしコンテナを終了する。
 func (p *Postgres) Close(ctx context.Context) error {
-	p.Pool.Close()
+	p.adminPool.Close()
 	if err := p.Container.Terminate(ctx); err != nil {
 		return fmt.Errorf("terminate container: %w", err)
 	}
 	return nil
 }
 
-// Truncate は登録 schema 配下の全 BASE TABLE を動的に列挙して TRUNCATE する。
-// テーブル追加時に postgrestest 側を更新せずに済ませることが目的（横展開時の
-// 更新漏れバグを防ぐ）。
-func (p *Postgres) Truncate(t *testing.T) {
+// NewDatabase はスキーマ適用済みのテンプレートからケース専用のデータベースを複製して返す。
+// ケースの終了時に、そのデータベースだけを削除する。
+func (p *Postgres) NewDatabase(t *testing.T) *Database {
 	t.Helper()
 	ctx := context.Background()
 
-	rows, err := p.Pool.Query(ctx, `
-		SELECT table_schema || '.' || table_name
-		  FROM information_schema.tables
-		 WHERE table_schema = ANY($1)
-		   AND table_type = 'BASE TABLE'
-	`, p.schemas)
-	if err != nil {
-		t.Fatalf("list tables: %v", err)
-	}
-	defer rows.Close()
+	suffix := make([]byte, caseDatabaseSuffixLen/2)
+	_, err := rand.Read(suffix)
+	require.NoError(t, err, "generate database name")
+	name := caseDatabasePrefix + hex.EncodeToString(suffix)
 
-	var tables []string
-	for rows.Next() {
-		var name string
-		if serr := rows.Scan(&name); serr != nil {
-			t.Fatalf("scan table name: %v", serr)
-		}
-		tables = append(tables, name)
-	}
-	if rerr := rows.Err(); rerr != nil {
-		t.Fatalf("iterate tables: %v", rerr)
-	}
-	if len(tables) == 0 {
-		return
-	}
-
-	stmt := "TRUNCATE " + strings.Join(tables, ", ") + " RESTART IDENTITY CASCADE"
-	if _, err := p.Pool.Exec(ctx, stmt); err != nil {
-		t.Fatalf("truncate: %v", err)
-	}
+	_, err = p.adminPool.Exec(ctx, "CREATE DATABASE "+name+" TEMPLATE "+templateDatabaseName)
+	require.NoError(t, err, "create case database")
+	dsn, err := dsnForDatabase(p.adminDSN, name)
+	require.NoError(t, err, "case database dsn")
+	pool, err := pgxpool.New(ctx, dsn)
+	require.NoError(t, err, "connect case database")
+	t.Cleanup(func() {
+		pool.Close()
+		_, dropErr := p.adminPool.Exec(ctx, "DROP DATABASE "+name+" WITH (FORCE)")
+		assert.NoError(t, dropErr, "drop case database")
+	})
+	return &Database{Pool: pool, ConnectionString: dsn}
 }
 
 // RunMain は TestMain のボイラープレートを集約する。コンテナ起動 → m.Run →
 // クリーンアップを保証する。各テストパッケージは
-// `os.Exit(postgrestest.RunMain(m, &sharedPg, opts...))` と書き、`sharedPg.Pool`
-// と `sharedPg.Truncate(t)` を使う。
+// `os.Exit(postgrestest.RunMain(m, &sharedPg, opts...))` と書き、ケースごとに
+// `sharedPg.NewDatabase(t)` で専用のデータベースを得る。
 func RunMain(m *testing.M, out **Postgres, opts ...Option) int {
 	ctx := context.Background()
 
 	pg, err := Start(ctx, opts...)
 	if err != nil {
 		slog.Error("postgrestest start", "error", err)
-		os.Exit(1)
+		return 1
 	}
 	*out = pg
 
@@ -184,6 +189,27 @@ func RunMain(m *testing.M, out **Postgres, opts ...Option) int {
 	}()
 
 	return m.Run()
+}
+
+func newPoolForDatabase(ctx context.Context, baseDSN, database string) (*pgxpool.Pool, error) {
+	dsn, err := dsnForDatabase(baseDSN, database)
+	if err != nil {
+		return nil, err
+	}
+	pool, err := pgxpool.New(ctx, dsn)
+	if err != nil {
+		return nil, fmt.Errorf("connect database %s: %w", database, err)
+	}
+	return pool, nil
+}
+
+func dsnForDatabase(baseDSN, database string) (string, error) {
+	parsed, err := url.Parse(baseDSN)
+	if err != nil {
+		return "", fmt.Errorf("parse dsn: %w", err)
+	}
+	parsed.Path = "/" + database
+	return parsed.String(), nil
 }
 
 // findRepoRoot は本ファイルの位置（postgrestest パッケージは

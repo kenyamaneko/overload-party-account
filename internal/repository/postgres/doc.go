@@ -1,5 +1,3 @@
-// Package postgres は PostgreSQL による account サービスのデータアクセス実装を提供する。
-//
-// トランザクション方針: 全 repository メソッドは context 経由のトランザクション
-// (TxManager.RunInTx が設定) に参加する。connFrom(ctx, pool) で透過的に Tx か Pool を選ぶ。
+// Package postgres は PostgreSQL を使った、アカウントサービスの永続化の実装を提供する。
+// 各操作は、呼び出し元のトランザクションがあればそれに参加する。
 package postgres

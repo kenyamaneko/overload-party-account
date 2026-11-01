@@ -13,7 +13,7 @@ import (
 
 var _ port.BattleCountReversalRepo = (*BattleCountReversalRepository)(nil)
 
-// BattleCountReversalRepository は port.BattleCountReversalRepo の PostgreSQL 実装。
+// BattleCountReversalRepository はバトル回数の返却の記録の PostgreSQL 実装である。
 type BattleCountReversalRepository struct {
 	pool *pgxpool.Pool
 }
@@ -23,16 +23,16 @@ func NewBattleCountReversalRepository(pool *pgxpool.Pool) *BattleCountReversalRe
 	return &BattleCountReversalRepository{pool: pool}
 }
 
-// MarkReverted は account.battle_count_reversals 行を挿入する。新規挿入なら true、既存なら false。
+// MarkReverted は対戦の返却を記録する。新しく記録できたときは true、記録済みのときは false を返す。
 func (r *BattleCountReversalRepository) MarkReverted(ctx context.Context, gameID string) (bool, error) {
-	var inserted string
-	err := connFrom(ctx, r.pool).QueryRow(ctx,
+	var insertedGameID string
+	err := resolveDBTX(ctx, r.pool).QueryRow(ctx,
 		`INSERT INTO account.battle_count_reversals (game_id)
 		 VALUES ($1)
 		 ON CONFLICT (game_id) DO NOTHING
 		 RETURNING game_id`,
 		gameID,
-	).Scan(&inserted)
+	).Scan(&insertedGameID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return false, nil
