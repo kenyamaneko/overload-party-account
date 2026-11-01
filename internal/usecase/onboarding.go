@@ -10,14 +10,12 @@ import (
 	"github.com/kenyamaneko/overload-party-account/internal/port"
 )
 
-// OnboardingInteractor はオンボード進行イベントの副作用を 1 Tx で反映する。
-// 冪等ガード (processed_events) と業務データの永続化を同 Tx で束ねる責務はここが持つ。
+// OnboardingInteractor はオンボーディングの進行を表すイベントを反映する。
 type OnboardingInteractor struct {
 	playerRepo     port.PlayerRepo
 	onboardingRepo port.PlayerOnboardingRepo
 	factionRepo    port.FactionRepo
-	eventRepo      port.ProcessedEventRepo
-	txRunner       port.TxRunner
+	eventGuard     *processedEventGuard
 }
 
 // NewOnboardingInteractor は OnboardingInteractor を生成する。
@@ -32,134 +30,100 @@ func NewOnboardingInteractor(
 		playerRepo:     playerRepo,
 		onboardingRepo: onboardingRepo,
 		factionRepo:    factionRepo,
-		eventRepo:      eventRepo,
-		txRunner:       txRunner,
+		eventGuard:     &processedEventGuard{txRunner: txRunner, eventRepo: eventRepo},
 	}
 }
 
-// ApplyNameSet は onboarding-name-set イベントの副作用を反映する。
-// processed=false は重複配信で、呼び出し側は ACK のみで他の副作用を起こさない。
-func (s *OnboardingInteractor) ApplyNameSet(
+// ApplyNameSet は表示名設定イベントを反映して、表示名を設定し、進行状態を name_set に進める。
+// 同じイベントIDのイベントを反映済みのときは何もしない。
+// 進行状態がすでに先へ進んでいるときは、表示名を変えずに受理する。
+func (oi *OnboardingInteractor) ApplyNameSet(
 	ctx context.Context,
 	eventID, eventType, playerID, name string,
-) (processed bool, err error) {
+) error {
 	if err := domain.ValidateName(name); err != nil {
-		return false, err
+		return err
 	}
-
-	if txErr := s.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
-		inserted, err := s.eventRepo.Insert(txCtx, eventID, eventType)
-		if err != nil {
-			return fmt.Errorf("insert processed_events: %w", err)
-		}
-		if !inserted {
-			return nil
-		}
-		processed = true
-		if err := s.playerRepo.UpdateName(txCtx, playerID, name); err != nil {
-			return err
-		}
-		return s.advanceOnboardingStatus(txCtx, playerID, domain.OnboardingStatusNameSet)
-	}); txErr != nil {
-		return false, txErr
-	}
-	return processed, nil
+	return oi.applyOnboardingStep(ctx, eventID, eventType, playerID, domain.OnboardingStatusNameSet,
+		func(txCtx context.Context) error {
+			return oi.playerRepo.UpdateName(txCtx, playerID, name)
+		})
 }
 
-// ApplyFactionSet は onboarding-faction-set イベントの副作用を反映する。
-func (s *OnboardingInteractor) ApplyFactionSet(
+// ApplyFactionSet は陣営設定イベントを反映して、初期陣営を確定し、進行状態を faction_set に進める。
+// 同じイベントIDのイベントを反映済みのときは何もしない。
+// 初期陣営が別の陣営で確定済みのときは ErrFactionConflict を返す。
+// 進行状態がすでに先へ進んでいるときは、初期陣営を変えずに受理する。
+func (oi *OnboardingInteractor) ApplyFactionSet(
 	ctx context.Context,
 	eventID, eventType, playerID, initialFactionID string,
-) (processed bool, err error) {
-	if err := validateInitialFaction(initialFactionID); err != nil {
-		return false, err
+) error {
+	if err := validateSelectableFaction(initialFactionID); err != nil {
+		return err
 	}
-
-	if txErr := s.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
-		inserted, err := s.eventRepo.Insert(txCtx, eventID, eventType)
-		if err != nil {
-			return fmt.Errorf("insert processed_events: %w", err)
-		}
-		if !inserted {
-			return nil
-		}
-		processed = true
-
-		existing, err := s.factionRepo.GetInitialFaction(txCtx, playerID)
-		if err != nil {
-			return fmt.Errorf("get initial faction: %w", err)
-		}
-		// オンボードフロー上、faction-set はプレイヤーにつき 1 度しか届かない想定。
-		// 異なる faction で再到着するのは publisher バグなので、上書きせずに
-		// ErrFactionConflict を返して subscriber 側で ERROR ログ + NACK させる。
-		if existing != nil && *existing != initialFactionID {
-			return fmt.Errorf("%w: existing=%s incoming=%s", ErrFactionConflict, *existing, initialFactionID)
-		}
-		if existing == nil {
-			if err := s.factionRepo.SetInitialFaction(txCtx, playerID, initialFactionID); err != nil {
-				return fmt.Errorf("set initial faction: %w", err)
+	return oi.applyOnboardingStep(ctx, eventID, eventType, playerID, domain.OnboardingStatusFactionSet,
+		func(txCtx context.Context) error {
+			existing, err := confirmInitialFaction(txCtx, oi.factionRepo, playerID, initialFactionID)
+			if err != nil {
+				return err
 			}
-		}
-		return s.advanceOnboardingStatus(txCtx, playerID, domain.OnboardingStatusFactionSet)
-	}); txErr != nil {
-		return false, txErr
-	}
-	return processed, nil
+			if existing != nil && *existing != initialFactionID {
+				return fmt.Errorf("%w: existing=%s incoming=%s", ErrFactionConflict, *existing, initialFactionID)
+			}
+			return nil
+		})
 }
 
-// ApplyCompleted は player-onboarded イベントの副作用を反映する。
-func (s *OnboardingInteractor) ApplyCompleted(
+// ApplyCompleted はオンボーディング完了イベントを反映して、進行状態を completed に進める。
+// 同じイベントIDのイベントを反映済みのときは何もしない。
+func (oi *OnboardingInteractor) ApplyCompleted(
 	ctx context.Context,
 	eventID, eventType, playerID string,
-) (processed bool, err error) {
-	if txErr := s.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
-		inserted, err := s.eventRepo.Insert(txCtx, eventID, eventType)
+) error {
+	return oi.applyOnboardingStep(ctx, eventID, eventType, playerID, domain.OnboardingStatusCompleted,
+		func(context.Context) error { return nil })
+}
+
+// applyOnboardingStep は、進行状態を target に進められるときだけ、イベントの内容を書き込んで進行状態を更新する。
+// 進行状態が段階を飛ばして進むときは domain.ErrOnboardingStatusSkipped を返し、何も書き込まない。
+// 進行状態が後退するときは警告ログを残し、何も書き込まずに受理する。
+func (oi *OnboardingInteractor) applyOnboardingStep(
+	ctx context.Context,
+	eventID, eventType, playerID, target string,
+	writeEventContent func(txCtx context.Context) error,
+) error {
+	return oi.eventGuard.applyOnce(ctx, eventID, eventType, func(txCtx context.Context) error {
+		current, err := oi.onboardingRepo.GetOnboardingStatus(txCtx, playerID)
 		if err != nil {
-			return fmt.Errorf("insert processed_events: %w", err)
+			return fmt.Errorf("get onboarding status: %w", err)
 		}
-		if !inserted {
+		canTransition, err := domain.CanTransitionOnboardingStatus(current, target)
+		if err != nil {
+			return fmt.Errorf("check onboarding transition %q -> %q: %w", current, target, err)
+		}
+		if !canTransition {
+			slog.WarnContext(txCtx, "onboarding status backward transition skipped",
+				"player_id", playerID, "current", current, "target", target)
 			return nil
 		}
-		processed = true
-		return s.advanceOnboardingStatus(txCtx, playerID, domain.OnboardingStatusCompleted)
-	}); txErr != nil {
-		return false, txErr
-	}
-	return processed, nil
+		if err := writeEventContent(txCtx); err != nil {
+			return err
+		}
+		if current == target {
+			return nil
+		}
+		if err := oi.onboardingRepo.UpdateOnboardingStatus(txCtx, playerID, target); err != nil {
+			return fmt.Errorf("update onboarding status: %w", err)
+		}
+		return nil
+	})
 }
 
-// advanceOnboardingStatus は onboarding_status を target に進める。
-// 後進方向は out-of-order 配信に対する防御として副作用なくスキップするが、
-// 多発時に運用で気づけるよう Warn ログを残す。current == target は冪等な
-// 再適用なので無音。
-func (s *OnboardingInteractor) advanceOnboardingStatus(ctx context.Context, playerID, target string) error {
-	current, err := s.onboardingRepo.GetOnboardingStatus(ctx, playerID)
-	if err != nil {
-		return fmt.Errorf("get onboarding status: %w", err)
-	}
-	canAdvance, err := domain.CanTransitionOnboardingStatus(current, target)
-	if err != nil {
-		return fmt.Errorf("check onboarding transition %q -> %q: %w", current, target, err)
-	}
-	if !canAdvance {
-		slog.WarnContext(ctx, "onboarding status backward transition skipped",
-			"player_id", playerID, "current", current, "target", target)
-		return nil
-	}
-	if current == target {
-		return nil
-	}
-	if err := s.onboardingRepo.UpdateOnboardingStatus(ctx, playerID, target); err != nil {
-		return fmt.Errorf("update onboarding status: %w", err)
-	}
-	return nil
-}
-
-// IsPublisherBug は subscriber が publisher 起源の不整合を検出するためのヘルパー。
-// 再処理しても解決しないため、subscriber は ERROR ログ + NACK する責務を負う。
-// NACK は自動リトライではなく、最終的に DLQ へ滞留させて運用に気づかせるための
-// 設計。復旧は publisher 側の不整合を是正した上で、DLQ のメッセージを破棄するか
-// 正しいペイロードに差し替えて replay する。
+// IsPublisherBug は、イベントの反映に失敗した原因が、イベントの発行元の誤りかを返す。
+// 該当するプレイヤーがいない、初期陣営が衝突している、表示名または陣営が不正なときは true を返す。
 func IsPublisherBug(err error) bool {
-	return errors.Is(err, port.ErrNotFound) || errors.Is(err, ErrFactionConflict)
+	return errors.Is(err, port.ErrNotFound) ||
+		errors.Is(err, ErrFactionConflict) ||
+		errors.Is(err, domain.ErrInvalidName) ||
+		errors.Is(err, ErrInvalidFaction)
 }

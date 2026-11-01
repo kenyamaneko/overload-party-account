@@ -4,23 +4,20 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"time"
-
-	"github.com/google/uuid"
 
 	"github.com/kenyamaneko/overload-party-account/internal/domain"
 	"github.com/kenyamaneko/overload-party-account/internal/port"
-	"github.com/kenyamaneko/overload-party-account/internal/presenter"
-	apiaccount "github.com/kenyamaneko/overload-party-account/packages/api-account"
 )
 
-// AuthInteractor はプレイヤーの登録・ログインを管理する。
+// AuthInteractor はプレイヤーの登録とログインを行う。
 type AuthInteractor struct {
 	playerRepo         port.PlayerRepo
 	playerViewRepo     port.PlayerViewRepo
 	playerSettingsRepo port.PlayerSettingsRepo
 	gameConfigRepo     port.GameConfigRepo
 	txRunner           port.TxRunner
+	clock              port.Clock
+	playerIDGenerator  port.PlayerIDGenerator
 }
 
 // NewAuthInteractor は AuthInteractor を生成する。
@@ -30,6 +27,8 @@ func NewAuthInteractor(
 	playerSettingsRepo port.PlayerSettingsRepo,
 	gameConfigRepo port.GameConfigRepo,
 	txRunner port.TxRunner,
+	clock port.Clock,
+	playerIDGenerator port.PlayerIDGenerator,
 ) *AuthInteractor {
 	return &AuthInteractor{
 		playerRepo:         playerRepo,
@@ -37,28 +36,24 @@ func NewAuthInteractor(
 		playerSettingsRepo: playerSettingsRepo,
 		gameConfigRepo:     gameConfigRepo,
 		txRunner:           txRunner,
+		clock:              clock,
+		playerIDGenerator:  playerIDGenerator,
 	}
 }
 
-// Register は新規プレイヤーを登録する。表示名は別途 onboarding-name-set
-// イベントで確定する (オンボード途中中断後に再登録を要求しない設計)。
-// 冪等ではなく、二重登録は ErrPlayerAlreadyRegistered を返して呼び出し元に委ねる。
-// 呼び出し元が冪等にリトライしたい場合は Register ではなく Login を呼ぶ契約。
-func (s *AuthInteractor) Register(ctx context.Context, firebaseUID string) (*apiaccount.PlayerResponse, error) {
-	isRegistered, err := s.playerRepo.ExistsByFirebaseUID(ctx, firebaseUID)
+// Register は新しいプレイヤーを登録し、プレイヤー情報を返す。表示名は未設定で登録する。
+// 同じ FirebaseUID で登録済みのときは ErrPlayerAlreadyRegistered を返す。
+func (ai *AuthInteractor) Register(ctx context.Context, firebaseUID string) (*domain.PlayerInfo, error) {
+	// 登録の後にゲーム設定を読めないと、登録済みのまま失敗を返して再登録が二重登録になるため、登録の前に読む。
+	coefficient, err := readGameConfig(ctx, ai.gameConfigRepo, gameConfigKeyExpFormulaCoefficient)
 	if err != nil {
-		return nil, fmt.Errorf("check existing player: %w", err)
+		return nil, err
 	}
-	if isRegistered {
-		return nil, ErrPlayerAlreadyRegistered
-	}
-
-	now := time.Now()
-	playerID := uuid.New().String()
+	now := ai.clock.Now()
+	playerID := ai.playerIDGenerator.GeneratePlayerID()
 	progression := &domain.PlayerProgression{
 		PlayerID:  playerID,
-		Level:     1,
-		Exp:       0,
+		Exp:       domain.InitialExp,
 		UpdatedAt: now,
 	}
 	player := &domain.Player{
@@ -70,65 +65,52 @@ func (s *AuthInteractor) Register(ctx context.Context, firebaseUID string) (*api
 		CreatedAt:        now,
 		UpdatedAt:        now,
 	}
-
 	settings := &domain.PlayerSettings{
-		PlayerID:    playerID,
-		Language:    domain.DefaultLanguage,
-		BgmVolume:   domain.DefaultBgmVolume,
-		SeVolume:    domain.DefaultSeVolume,
-		PushEnabled: domain.DefaultPushEnabled,
-		UpdatedAt:   now,
+		PlayerID:      playerID,
+		Language:      domain.DefaultLanguage,
+		BgmVolume:     domain.DefaultBgmVolume,
+		SeVolume:      domain.DefaultSeVolume,
+		IsPushEnabled: domain.DefaultIsPushEnabled,
+		UpdatedAt:     now,
 	}
 
-	if err := s.txRunner.RunInTx(ctx, func(ctx context.Context) error {
-		if err := s.playerRepo.Create(ctx, player, progression); err != nil {
+	view := &domain.PlayerView{
+		Player:         *player,
+		Exp:            progression.Exp,
+		InitialFaction: nil,
+	}
+	info, err := buildPlayerInfo(view, coefficient)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := ai.txRunner.RunInTx(ctx, func(txCtx context.Context) error {
+		if err := ai.playerRepo.Create(txCtx, player, progression); err != nil {
+			if errors.Is(err, port.ErrAlreadyExists) {
+				return ErrPlayerAlreadyRegistered
+			}
 			return fmt.Errorf("create player: %w", err)
 		}
-		if err := s.playerSettingsRepo.Insert(ctx, settings); err != nil {
+		if err := ai.playerSettingsRepo.InsertPlayerSettings(txCtx, settings); err != nil {
 			return fmt.Errorf("create default player settings: %w", err)
 		}
 		return nil
 	}); err != nil {
 		return nil, err
 	}
-
-	view := &domain.PlayerView{
-		Player: *player,
-		Level:  progression.Level,
-		Exp:    progression.Exp,
-		// 登録時点では initial_faction 未選択。onboarding-faction-set イベントの
-		// subscriber が player_factions に is_initial=TRUE 行を入れて確定させる。
-		InitialFaction: nil,
-	}
-	return s.toResponse(ctx, view)
+	return info, nil
 }
 
-// FindByFirebaseUID は Firebase UID でプレイヤーを検索する。
-// gateway 等の内部 API 用で、Login と異なり業務イベントを伴わない参照系。
-func (s *AuthInteractor) FindByFirebaseUID(ctx context.Context, firebaseUID string) (*apiaccount.PlayerResponse, error) {
-	view, err := s.playerViewRepo.FindByFirebaseUID(ctx, firebaseUID)
+// GetByFirebaseUID は FirebaseUID に対応するプレイヤー情報を返す。登録されていなければ port.ErrNotFound を包んだエラーを返す。
+func (ai *AuthInteractor) GetByFirebaseUID(ctx context.Context, firebaseUID string) (*domain.PlayerInfo, error) {
+	view, err := ai.playerViewRepo.GetByFirebaseUID(ctx, firebaseUID)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("get player: %w", err)
 	}
-	return s.toResponse(ctx, view)
+	return assemblePlayerInfo(ctx, ai.gameConfigRepo, view)
 }
 
-// Login は Firebase UID でプレイヤーを検索しログインする。
-func (s *AuthInteractor) Login(ctx context.Context, firebaseUID string) (*apiaccount.PlayerResponse, error) {
-	view, err := s.playerViewRepo.FindByFirebaseUID(ctx, firebaseUID)
-	if errors.Is(err, port.ErrNotFound) {
-		return nil, ErrPlayerNotFound
-	}
-	if err != nil {
-		return nil, fmt.Errorf("find player: %w", err)
-	}
-	return s.toResponse(ctx, view)
-}
-
-func (s *AuthInteractor) toResponse(ctx context.Context, view *domain.PlayerView) (*apiaccount.PlayerResponse, error) {
-	coeff, err := s.gameConfigRepo.GetInt64(ctx, ConfigKeyExpFormulaCoefficient)
-	if err != nil {
-		return nil, fmt.Errorf("get exp_formula_coefficient: %w", err)
-	}
-	return presenter.BuildPlayerResponse(view, coeff)
+// Login は FirebaseUID に対応するプレイヤー情報を返す。登録されていなければ port.ErrNotFound を包んだエラーを返す。
+func (ai *AuthInteractor) Login(ctx context.Context, firebaseUID string) (*domain.PlayerInfo, error) {
+	return ai.GetByFirebaseUID(ctx, firebaseUID)
 }

@@ -4,12 +4,11 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/kenyamaneko/overload-party-account/internal/domain"
 	"github.com/kenyamaneko/overload-party-account/internal/port"
-	"github.com/kenyamaneko/overload-party-account/internal/presenter"
-	apiaccount "github.com/kenyamaneko/overload-party-account/packages/api-account"
 )
 
-// PlayerSettingsInteractor はプレイヤー設定の参照・更新を提供する。
+// PlayerSettingsInteractor はプレイヤー設定の参照と更新を行う。
 type PlayerSettingsInteractor struct {
 	repo port.PlayerSettingsRepo
 }
@@ -19,17 +18,16 @@ func NewPlayerSettingsInteractor(repo port.PlayerSettingsRepo) *PlayerSettingsIn
 	return &PlayerSettingsInteractor{repo: repo}
 }
 
-// Get はプレイヤーの設定を返す。
-// 行が無いのは Register 未実施または不整合なので、デフォルト値で隠さず port.ErrNotFound を伝播する。
-func (s *PlayerSettingsInteractor) Get(ctx context.Context, playerID string) (*apiaccount.PlayerSettingsResponse, error) {
-	settings, err := s.repo.Get(ctx, playerID)
+// GetPlayerSettings はプレイヤー設定を返す。登録されていなければ port.ErrNotFound を包んだエラーを返す。
+func (si *PlayerSettingsInteractor) GetPlayerSettings(ctx context.Context, playerID string) (*domain.PlayerSettings, error) {
+	settings, err := si.repo.GetPlayerSettings(ctx, playerID)
 	if err != nil {
 		return nil, fmt.Errorf("get player settings: %w", err)
 	}
-	return presenter.BuildPlayerSettingsResponse(settings), nil
+	return settings, nil
 }
 
-// Update はプレイヤー設定を部分更新する。patch の非 nil フィールドだけが書き換わる。
-func (s *PlayerSettingsInteractor) Update(ctx context.Context, playerID string, patch *port.PlayerSettingsPatch) error {
-	return s.repo.UpdatePartial(ctx, playerID, patch)
+// UpdatePlayerSettings はプレイヤー設定のうち、更新内容で指定された項目だけを更新する。
+func (si *PlayerSettingsInteractor) UpdatePlayerSettings(ctx context.Context, playerID string, patch *port.PlayerSettingsPatch) error {
+	return si.repo.UpdatePlayerSettings(ctx, playerID, patch)
 }
