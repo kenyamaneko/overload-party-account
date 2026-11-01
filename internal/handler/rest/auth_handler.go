@@ -9,7 +9,7 @@ import (
 	apiaccount "github.com/kenyamaneko/overload-party-account/packages/api-account"
 )
 
-// AuthHandler は認証関連の REST エンドポイントを処理する。
+// AuthHandler はプレイヤーの登録とログインの REST の受け口である。
 type AuthHandler struct {
 	authInteractor *usecase.AuthInteractor
 }
@@ -19,59 +19,42 @@ func NewAuthHandler(authInteractor *usecase.AuthInteractor) *AuthHandler {
 	return &AuthHandler{authInteractor: authInteractor}
 }
 
-// Register は新規プレイヤー登録を処理する。
+// Register は新規プレイヤーを登録する。
 func (h *AuthHandler) Register(c *gin.Context) {
 	var req apiaccount.RegisterRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-	if req.FirebaseUID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "firebase_uid is required"})
+	if !bindRequestBody(c, &req) || respondIfEmpty(c, "firebase_uid", req.FirebaseUID) {
 		return
 	}
 
-	player, err := h.authInteractor.Register(c.Request.Context(), req.FirebaseUID)
+	info, err := h.authInteractor.Register(c.Request.Context(), req.FirebaseUID)
 	if err != nil {
 		respondError(c, err)
 		return
 	}
-
-	c.JSON(http.StatusCreated, player)
+	respondPlayer(c, http.StatusCreated, info)
 }
 
 // GetPlayerByFirebaseUID は Firebase UID でプレイヤーを検索する。
 func (h *AuthHandler) GetPlayerByFirebaseUID(c *gin.Context) {
-	firebaseUID := c.Param("firebaseUID")
-	if firebaseUID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "firebaseUID is required"})
-		return
-	}
-	player, err := h.authInteractor.FindByFirebaseUID(c.Request.Context(), firebaseUID)
+	info, err := h.authInteractor.GetByFirebaseUID(c.Request.Context(), c.Param("firebaseUID"))
 	if err != nil {
 		respondError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, player)
+	respondPlayer(c, http.StatusOK, info)
 }
 
-// Login は既存プレイヤーのログインを処理する。
+// Login は登録済みのプレイヤーのログインを受け付ける。
 func (h *AuthHandler) Login(c *gin.Context) {
 	var req apiaccount.LoginRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-	if req.FirebaseUID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "firebase_uid is required"})
+	if !bindRequestBody(c, &req) || respondIfEmpty(c, "firebase_uid", req.FirebaseUID) {
 		return
 	}
 
-	player, err := h.authInteractor.Login(c.Request.Context(), req.FirebaseUID)
+	info, err := h.authInteractor.Login(c.Request.Context(), req.FirebaseUID)
 	if err != nil {
 		respondError(c, err)
 		return
 	}
-
-	c.JSON(http.StatusOK, player)
+	respondPlayer(c, http.StatusOK, info)
 }

@@ -9,138 +9,132 @@ import (
 	"github.com/kenyamaneko/overload-party-account/internal/domain"
 )
 
-// PlayerRepo は account.players の識別 (Create / Find / Exists) と name 更新を担う。
-// premium / onboarding_status / progression / daily_battle は責務別の専用 Repo に分離する
-// (Interface Segregation Principle)。
-// 単表 SELECT で済む参照系は本 Repo に置き、複数テーブルの JOIN を伴う表示用クエリ
-// (= API レスポンス組み立てに必要な Read Model) のみ PlayerViewRepo に隔離する。
-// 厳密な CQRS ではなく「JOIN コストの隔離」が分割基準。
+// PlayerRepo はプレイヤーの基本情報の登録・取得・存在確認と、表示名の更新を担う。
 type PlayerRepo interface {
-	// Create は players / player_progression を同一トランザクションで初期化する。
-	// player_daily_battle はゲーム日ごとに発生する履歴台帳のため Create では INSERT しない。
+	// Create はプレイヤーと、その累計経験値を同時に登録する。
+	// 同じ FirebaseUID または同じプレイヤーIDが登録済みのときは ErrAlreadyExists を返す。
 	Create(ctx context.Context, player *domain.Player, progression *domain.PlayerProgression) error
-	// FindByID は players 行を返す。Level/Exp は含まない。行が無ければ ErrNotFound。
-	FindByID(ctx context.Context, playerID string) (*domain.Player, error)
-	// FindByFirebaseUID は firebase_uid で検索する。該当なしは ErrNotFound。
-	FindByFirebaseUID(ctx context.Context, firebaseUID string) (*domain.Player, error)
-	// Exists は player_id に対応する行の存在のみを確認する。
+	// GetByID はプレイヤーを返す。登録されていなければ ErrNotFound を返す。
+	GetByID(ctx context.Context, playerID string) (*domain.Player, error)
+	// Exists はプレイヤーが登録されているかを返す。
 	Exists(ctx context.Context, playerID string) (bool, error)
-	// ExistsByFirebaseUID は firebase_uid に対応する行の存在のみを確認する。
-	// Register の重複登録チェック用に Player struct を取らない軽量版として用意する。
-	ExistsByFirebaseUID(ctx context.Context, firebaseUID string) (bool, error)
-	// UpdateName は name のみを更新する。行が無ければ ErrNotFound。
+	// UpdateName は表示名を更新する。プレイヤーが登録されていなければ ErrNotFound を返す。
 	UpdateName(ctx context.Context, playerID string, name string) error
 }
 
-// PlayerPremiumRepo は players.is_premium / premium_expires_at の書き込みを担う。
-// premium-updated subscriber が UpdatePremium のみ要求するため独立させ、
-// テスト時に他のメソッドの panic スタブを書かなくて済むようにする。
+// PlayerPremiumRepo はプレイヤーのプレミアム状態の更新と、最後に反映したプレミアム状態更新イベントの発生時刻の排他取得を担う。
 type PlayerPremiumRepo interface {
-	// UpdatePremium は is_premium と premium_expires_at を更新する。行が無ければ ErrNotFound。
+	// UpdatePremium はプレミアム状態と有効期限を更新する。最後に反映したイベントの発生時刻は変えない。
+	// プレイヤーが登録されていなければ ErrNotFound を返す。
 	UpdatePremium(ctx context.Context, playerID string, isPremium bool, expiresAt *time.Time) error
+	// UpdatePremiumFromEvent はプレミアム状態と有効期限を更新し、イベントの発生時刻を最後に反映したイベントの発生時刻として保存する。
+	// プレイヤーが登録されていなければ ErrNotFound を返す。
+	UpdatePremiumFromEvent(ctx context.Context, playerID string, isPremium bool, expiresAt *time.Time, occurredAt time.Time) error
+	// GetLastPremiumEventOccurredAtForUpdate は最後に反映したプレミアム状態更新イベントの発生時刻を排他的に取得する。
+	// 別のトランザクションが同じプレイヤーを更新している間は、その確定を待つ。トランザクション内で呼ぶ。
+	// イベントをまだ反映していないときは nil を返す。プレイヤーが登録されていなければ ErrNotFound を返す。
+	GetLastPremiumEventOccurredAtForUpdate(ctx context.Context, playerID string) (*time.Time, error)
 }
 
-// PlayerOnboardingRepo は players.onboarding_status の参照・更新を担う。
-// オンボード進行イベントの副作用は OnboardingInteractor で 1 Tx に束ねる。
+// PlayerOnboardingRepo はプレイヤーのオンボーディング進行状態の取得と更新を担う。
 type PlayerOnboardingRepo interface {
-	// GetOnboardingStatus は onboarding_status を返す。行が無ければ ErrNotFound。
+	// GetOnboardingStatus は進行状態を返す。プレイヤーが登録されていなければ ErrNotFound を返す。
 	GetOnboardingStatus(ctx context.Context, playerID string) (string, error)
-	// UpdateOnboardingStatus は onboarding_status をそのまま書き込む。行が無ければ ErrNotFound。
+	// UpdateOnboardingStatus は進行状態を指定した値に更新する。プレイヤーが登録されていなければ ErrNotFound を返す。
 	UpdateOnboardingStatus(ctx context.Context, playerID, status string) error
 }
 
-// PlayerProgressionRepo は account.player_progression (level / exp) の参照・更新を担う。
-// 並行 AwardExp のロストアップデート防止に SELECT ... FOR UPDATE を備える。
+// PlayerProgressionRepo はプレイヤーの累計経験値の取得と更新を担う。
 type PlayerProgressionRepo interface {
-	// GetProgression は account.player_progression の現在値を返す。行が無ければ ErrNotFound。
-	GetProgression(ctx context.Context, playerID string) (*domain.PlayerProgression, error)
-	// GetProgressionForUpdate は SELECT ... FOR UPDATE で行ロックを取得して返す。
-	// 呼び出し側が TxRunner.RunInTx 配下で使う責務を負う。行が無ければ ErrNotFound。
+	// GetProgressionForUpdate は累計経験値を排他的に取得する。
+	// 別のトランザクションが同じプレイヤーを更新している間は、その確定を待つ。トランザクション内で呼ぶ。
+	// プレイヤーが登録されていなければ ErrNotFound を返す。
 	GetProgressionForUpdate(ctx context.Context, playerID string) (*domain.PlayerProgression, error)
-	// UpdateProgression は exp と level をそのまま書き込む。行が無ければ ErrNotFound。
-	UpdateProgression(ctx context.Context, playerID string, exp, level int64) (*domain.PlayerProgression, error)
+	// UpdateProgression は累計経験値を指定した値に更新する。
+	// プレイヤーが登録されていなければ ErrNotFound を返す。
+	UpdateProgression(ctx context.Context, playerID string, exp int64) error
 }
 
-// PlayerBattleRepo は account.player_daily_battle (ゲーム日単位のバトル履歴台帳) を担う。
-// premium 会員も含め全プレイヤー分が集計用に保持される。
+// PlayerBattleRepo はプレイヤーのゲーム日ごとのバトル回数を担う。
 type PlayerBattleRepo interface {
-	// GetDailyBattle は (player_id, gameDate) の行を返す。該当なしは (nil, nil)。
+	// GetDailyBattle はゲーム日のバトル回数を返す。記録がなければ nil を返す。
 	GetDailyBattle(ctx context.Context, playerID string, gameDate civil.Date) (*domain.PlayerDailyBattle, error)
-	// IncrementDailyBattleCount は (player_id, gameDate) のカウントを 1 加算した結果を返す。
+	// IncrementDailyBattleCount はゲーム日のバトル回数を 1 増やし、増やした後の回数を返す。
 	IncrementDailyBattleCount(ctx context.Context, playerID string, gameDate civil.Date) (int64, error)
-	// DecrementDailyBattleCount は (player_id, gameDate) のカウントを 1 減算し 0 を下限にする。
-	// 対象行が無ければ何もせず false を返す (呼び出し側が不整合検知のログに使う)。
-	DecrementDailyBattleCount(ctx context.Context, playerID string, gameDate civil.Date) (bool, error)
+	// GetDailyBattleForUpdate はゲーム日のバトル回数を排他的に取得する。記録がなければ nil を返す。
+	// 別のトランザクションが同じ記録を更新している間は、その確定を待つ。トランザクション内で呼ぶ。
+	GetDailyBattleForUpdate(ctx context.Context, playerID string, gameDate civil.Date) (*domain.PlayerDailyBattle, error)
+	// DecrementDailyBattleCount はゲーム日のバトル回数を 1 減らす。記録がなければ ErrNotFound を返す。
+	DecrementDailyBattleCount(ctx context.Context, playerID string, gameDate civil.Date) error
 }
 
-// BattleCountReversalRepo は消費バトル回数の返却が対戦単位で一度しか適用されないことを保証する。
+// BattleCountReversalRepo は対戦ごとのバトル回数の返却を記録する。
 type BattleCountReversalRepo interface {
-	// MarkReverted は gameID を新規に記録できれば true を返す。既に記録済みなら false (二重返却防止)。
+	// MarkReverted は対戦の返却を記録する。新しく記録できたときは true、記録済みのときは false を返す。
 	MarkReverted(ctx context.Context, gameID string) (bool, error)
 }
 
-// PlayerViewRepo は API レスポンス組み立て用の Read Model (players + player_progression
-// + player_factions の JOIN 結果) を返す参照専用リポジトリ。
-// 単表 SELECT は PlayerRepo 側に置く。本 Repo は JOIN を含む表示用クエリのみを扱い、
-// 高コストクエリを書き込み Repo から物理的に隔離する役割を持つ。
+// PlayerViewRepo はプレイヤー情報の組み立てに使う参照用の情報を返す。
 type PlayerViewRepo interface {
-	// FindByID は player_id に対応する Read Model を返す。行が無ければ ErrNotFound。
-	FindByID(ctx context.Context, playerID string) (*domain.PlayerView, error)
-	// FindByFirebaseUID は firebase_uid に対応する Read Model を返す。行が無ければ ErrNotFound。
-	FindByFirebaseUID(ctx context.Context, firebaseUID string) (*domain.PlayerView, error)
+	// GetByID はプレイヤーの参照用の情報を返す。登録されていなければ ErrNotFound を返す。
+	GetByID(ctx context.Context, playerID string) (*domain.PlayerView, error)
+	// GetByFirebaseUID は FirebaseUID に対応するプレイヤーの参照用の情報を返す。登録されていなければ ErrNotFound を返す。
+	GetByFirebaseUID(ctx context.Context, firebaseUID string) (*domain.PlayerView, error)
 }
 
-// PlayerSettingsPatch は player_settings の部分更新リクエストを表す。
-// nil フィールドは「変更なし」を意味し、repo 層の COALESCE で現在値が保持される。
+// PlayerSettingsPatch はプレイヤー設定の更新内容である。nil の項目は変更しない。
 type PlayerSettingsPatch struct {
-	Language    *string
-	BgmVolume   *int64
-	SeVolume    *int64
-	PushEnabled *bool
+	Language      *string
+	BgmVolume     *int64
+	SeVolume      *int64
+	IsPushEnabled *bool
 }
 
-// IsEmpty は 1 つも指定フィールドがない patch (全 nil) かを返す。
+// IsEmpty は更新する項目が1つも指定されていないかを返す。
 func (p *PlayerSettingsPatch) IsEmpty() bool {
-	return p.Language == nil && p.BgmVolume == nil && p.SeVolume == nil && p.PushEnabled == nil
+	return p.Language == nil && p.BgmVolume == nil && p.SeVolume == nil && p.IsPushEnabled == nil
 }
 
-// PlayerSettingsRepo はプレイヤー設定の永続化を抽象化する。
+// PlayerSettingsRepo はプレイヤー設定の登録・取得・更新を担う。
 type PlayerSettingsRepo interface {
-	// Insert は新規行を挿入する。Register 時の初期化に使用する。
-	Insert(ctx context.Context, s *domain.PlayerSettings) error
-	// Get はプレイヤー設定を返す。該当なしは ErrNotFound。
-	Get(ctx context.Context, playerID string) (*domain.PlayerSettings, error)
-	// UpdatePartial は patch で指定された非 nil フィールドのみを更新する (COALESCE 方式)。
-	// 行が無ければ ErrNotFound。
-	UpdatePartial(ctx context.Context, playerID string, patch *PlayerSettingsPatch) error
+	// InsertPlayerSettings はプレイヤー設定を登録する。
+	InsertPlayerSettings(ctx context.Context, settings *domain.PlayerSettings) error
+	// GetPlayerSettings はプレイヤー設定を返す。登録されていなければ ErrNotFound を返す。
+	GetPlayerSettings(ctx context.Context, playerID string) (*domain.PlayerSettings, error)
+	// UpdatePlayerSettings は更新内容で指定された項目だけを更新する。登録されていなければ ErrNotFound を返す。
+	UpdatePlayerSettings(ctx context.Context, playerID string, patch *PlayerSettingsPatch) error
 }
 
-// GameConfigRepo はゲーム設定値の読み取りを抽象化する。キーが無ければ ErrNotFound (fail-fast)。
+// GameConfigRepo はゲーム設定の読み取りを担う。
 type GameConfigRepo interface {
+	// GetInt64 はキーに対応するゲーム設定の整数値を返す。
+	// 設定がなければ ErrNotFound、値が整数として読めなければ ErrValueNotInteger を返す。
 	GetInt64(ctx context.Context, key string) (int64, error)
 }
 
-// FactionRepo はプレイヤーファクションの永続化を抽象化する。
+// FactionRepo はプレイヤーが所持する陣営を担う。
 type FactionRepo interface {
-	// AddPlayerFaction は player_factions に is_initial=FALSE で 1 行追加する。
-	// (player_id, faction) PK の ON CONFLICT DO NOTHING で冪等。
+	// AddPlayerFaction は陣営を所持陣営に加える。初期陣営にはしない。所持済みのときは何も変えない。
+	// プレイヤーが登録されていなければ ErrNotFound を返す。
 	AddPlayerFaction(ctx context.Context, playerID, faction string) error
-	// GetPlayerFactions は所持ファクション名の一覧を返す (is_initial 区別なし)。
+	// GetPlayerFactions は所持陣営の一覧を返す。順序は決まっていない。所持陣営がなければ空の一覧を返す。
 	GetPlayerFactions(ctx context.Context, playerID string) ([]string, error)
-	// GetInitialFaction はプレイヤーの initial faction を返す。未選択なら (nil, nil)。
+	// GetInitialFaction は初期陣営を返す。選択されていなければ nil を返す。
 	GetInitialFaction(ctx context.Context, playerID string) (*string, error)
-	// SetInitialFaction は (player_id, faction) をプレイヤーの初期選択ファクションとして登録する。
+	// SetInitialFaction は陣営を初期陣営にし、所持陣営にも加える。
+	// 初期陣営がすでにあるときは、同じ陣営でも ErrAlreadyExists を返す。
 	SetInitialFaction(ctx context.Context, playerID, faction string) error
 }
 
-// ProcessedEventRepo は処理済み Pub/Sub イベントを追跡する。
-// subscriber は Tx 冒頭で event_id を Insert し、新規挿入の真偽で重複配信を判別する。
+// ProcessedEventRepo は処理済みの Pub/Sub イベントを記録する。
 type ProcessedEventRepo interface {
-	// Insert は新規行が挿入された場合 true を返す。
-	Insert(ctx context.Context, eventID, eventType string) (bool, error)
+	// InsertProcessedEvent はイベントIDを処理済みとして記録する。新しく記録できたときは true、記録済みのときは false を返す。
+	InsertProcessedEvent(ctx context.Context, eventID, eventType string) (bool, error)
 }
 
-// TxRunner はトランザクション内で処理を実行する。
+// TxRunner は処理を1つのトランザクションで実行する。
 type TxRunner interface {
+	// RunInTx は fn を1つのトランザクションで実行する。fn がエラーを返したときは fn の書き込みをすべて取り消し、そのエラーを返す。
+	// 呼び出しが取り消されていないのにトランザクションを開始できないときは、ErrDatabaseUnavailable を包んだエラーを返す。
 	RunInTx(ctx context.Context, fn func(ctx context.Context) error) error
 }

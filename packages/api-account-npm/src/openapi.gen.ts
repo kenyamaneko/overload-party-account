@@ -32,8 +32,9 @@ export interface paths {
         put?: never;
         /**
          * 新規プレイヤーを登録する (gateway が Firebase UID を中継)
-         * @description 表示名はオンボード内 name 入力ステップで PUT /api/v1/account/me/name 経由で確定するため、
-         *     Register 時には受け取らない。
+         * @description 表示名はこの呼び出しでは受け取らない。オンボーディングの名前入力ステップで scenario が
+         *     発行する表示名設定イベント (`onboarding_name_set`) をアカウントサービスが購読して確定する。
+         *     同じ firebase_uid の二重登録は 409 になる。リトライを冪等にしたい呼び出し元はログインを呼ぶ。
          */
         post: operations["registerPlayer"];
         delete?: never;
@@ -66,7 +67,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Firebase UID からプレイヤーを検索する (gateway などサービス間ルックアップ用) */
+        /** Firebase UID からプレイヤーを検索する (gateway などサービス間の照会用) */
         get: operations["getPlayerByFirebaseUID"];
         put?: never;
         post?: never;
@@ -84,9 +85,9 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * 指定プレイヤーの所持ファクション一覧を返す (card → account)
-         * @description card がデッキ作成/編集時に宣言ファクションの所持を検証するためのサービス間ルックアップ。
-         *     player_id を path で受けるため bootstrap 系と同様に認証なし (/internal 配下)。
+         * 指定プレイヤーの所持陣営一覧を返す (card → account)
+         * @description card がデッキの作成・編集時に、宣言した陣営を所持しているか確かめるためのサービス間の照会。
+         *     プレイヤーID をパスで受けるため認証しない (/internal 配下)。
          */
         get: operations["listPlayerFactions"];
         put?: never;
@@ -108,8 +109,9 @@ export interface paths {
         put?: never;
         /**
          * 対戦終了後に両プレイヤーへ経験値を付与する (battle → account)
-         * @description body に両 player_id を含むサーバー間バッチ呼び出し。JWT sub では表現できないため
-         *     bootstrap 系と同様に認証なし (/internal 配下)。
+         * @description ボディに両プレイヤーの player_id を含むサービス間の一括処理。JWT の sub では表せないため
+         *     認証しない (/internal 配下)。2 人分の付与は 1 つの処理として確定し、片方が失敗したときはどちらにも付与しない。
+         *     winner_num が 0 のときは、reason が何であっても引き分けとして扱う。
          */
         post: operations["awardGameExp"];
         delete?: never;
@@ -129,9 +131,9 @@ export interface paths {
         put?: never;
         /**
          * 停止で無効になった対戦の消費バトル回数を両プレイヤーに戻す (gateway → account)
-         * @description body に両 player_id・対戦識別子・バトル回数を消費した時刻を含むサーバー間バッチ呼び出し。
-         *     JWT sub では表現できないため bootstrap 系と同様に認証なし (/internal 配下)。
-         *     同一 game_id の呼び出しは 1 回のみ適用され、以降は idempotent に 204 を返す。
+         * @description ボディに両プレイヤーの player_id・対戦識別子・バトル回数を消費した時刻を含むサービス間の一括処理。
+         *     JWT の sub では表せないため認証しない (/internal 配下)。
+         *     同じ game_id の呼び出しは 1 回だけ適用され、以降も 204 を返す。
          */
         post: operations["revertBattleCount"];
         delete?: never;
@@ -165,7 +167,7 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
-        /** プレイヤー名を変更する */
+        /** 表示名を変更する */
         put: operations["updateName"];
         post?: never;
         delete?: never;
@@ -184,9 +186,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * オンボード内 name 入力ステップで scenario が呼ぶ表示名バリデーション (書き込みなし)
-         * @description バリデーション SSoT は account の internal/domain/name.go。
-         *     書き込みは onboarding-name-set subscriber が行う。
+         * オンボーディングの名前入力ステップで scenario が呼ぶ表示名の検証
+         * @description 表示名は保存しない。保存は scenario が発行する表示名設定イベント (`onboarding_name_set`) の購読が行う。
          */
         post: operations["validateNameForOnboarding"];
         delete?: never;
@@ -237,7 +238,7 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
-        /** プレミアムステータスを更新する (shop webhook 経由) */
+        /** プレミアム状態を更新する (運用・テスト用。プレミアム状態の正本は shop) */
         put: operations["updatePremium"];
         post?: never;
         delete?: never;
@@ -255,7 +256,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** 経験値を加算する */
+        /**
+         * 経験値を加算する
+         * @description 加算する経験値が 0 のときは何も変えずに成功する。
+         */
         post: operations["addExp"];
         delete?: never;
         options?: never;
@@ -270,10 +274,14 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** プレイヤーが所有するファクション一覧を返す */
+        /** プレイヤーが所持する陣営の一覧を返す */
         get: operations["listFactions"];
         put?: never;
-        /** ファクション所有権を付与する (購入・報酬等) */
+        /**
+         * 陣営の所持を付与する (購入・報酬など)
+         * @description 付与できる陣営は、初期陣営の選択と同じ SHE・Tenki・Sugar・Tuners の 4 種だけ。
+         *     Neutral は付与できず 400 になる。
+         */
         post: operations["grantFaction"];
         delete?: never;
         options?: never;
@@ -291,8 +299,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * 初期ファクション選択 (チュートリアル完了時に scenario が呼び出す)
-         * @description 冪等。既に選択済みの場合は 409 を返すがクライアントにとってはエラーではない。
+         * 初期陣営を選択する (チュートリアル完了時に scenario が呼び出す)
+         * @description 既に初期陣営を選択済みのプレイヤーが再び選ぶと 409 になり、選択済みの陣営は変わらない。
          */
         post: operations["selectInitialFaction"];
         delete?: never;
@@ -311,9 +319,9 @@ export interface paths {
         /** プレイヤー設定を返す */
         get: operations["getPlayerSettings"];
         /**
-         * プレイヤー設定を部分更新する
-         * @description Partial update semantics: nil フィールドは現状維持 (COALESCE in SQL)。
-         *     全 nil リクエストは 400 で弾く。
+         * プレイヤー設定を部分的に更新する
+         * @description 指定しなかった項目は保存済みの値のままになる。
+         *     項目を 1 つも指定しない更新は 400 になる。
          */
         put: operations["updatePlayerSettings"];
         post?: never;
@@ -327,18 +335,22 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        ErrorResponse: {
+            /** @description 原因を示す文面 */
+            error: string;
+        };
         HealthResponse: {
             /** @example ok */
             status: string;
         };
         /**
-         * @description PlayerView + computed level progress を JSON 化した、内部 REST 契約の唯一の
-         *     Player 表現。GET /api/v1/account/me とその親戚 endpoint が共通で返す。
+         * @description プレイヤーの基本情報とレベル進捗。GET /api/v1/account/me とその関連エンドポイントが
+         *     共通で返す、プレイヤーの唯一の表現。
          */
         PlayerResponse: {
             player_id: string;
             firebase_uid: string;
-            /** @description オンボーディング未完了時は省略 (omit) される。 */
+            /** @description 表示名が未設定のときは省略される。 */
             name?: string;
             /** Format: int64 */
             level: number;
@@ -347,7 +359,7 @@ export interface components {
             is_premium: boolean;
             /** Format: int64 */
             equipped_icon_no?: number;
-            /** @description オンボーディングで選択した faction (player_factions.is_initial=TRUE から導出)。 */
+            /** @description オンボーディングで選択した陣営。未選択のときは省略される。 */
             initial_faction?: string;
             onboarding_status: components["schemas"]["OnboardingStatus"];
             /** Format: date-time */
@@ -380,6 +392,7 @@ export interface components {
             can_battle: boolean;
         };
         FactionListing: {
+            /** @description 所持している陣営。順序は決まっていない。 */
             factions: string[];
         };
         RegisterRequest: {
@@ -392,57 +405,77 @@ export interface components {
             name: string;
         };
         /**
-         * @description オンボード内 name 入力ステップで scenario が呼ぶ表示名バリデーション専用 DTO。
-         *     値は永続化されない。書き込みは onboarding-name-set subscriber 経由。
+         * @description オンボーディングの名前入力ステップで scenario が呼ぶ表示名の検証に使う。
+         *     値は保存されない。
          */
         ValidateNameForOnboardingRequest: {
             name: string;
         };
-        /** @description ExpiresAtMillis は UNIX ミリ秒タイムスタンプ。null は NULL リセット。 */
         UpdatePremiumRequest: {
             is_premium: boolean;
-            /** Format: int64 */
+            /**
+             * Format: int64
+             * @description プレミアムの有効期限の UNIX ミリ秒。省略したとき、または null のときは有効期限なしにする。
+             *     保存済みの有効期限は消える。
+             */
             expires_at_millis?: number;
         };
         AddExpRequest: {
-            /** Format: int64 */
+            /**
+             * Format: int64
+             * @description 加算する経験値。0 のときは何も変えずに成功する。
+             */
             exp_gain: number;
         };
         AwardGameExpRequest: {
+            /** @description 1 人目のプレイヤーID。UUID 形式。 */
             player1_id: string;
+            /** @description 2 人目のプレイヤーID。空でないときは UUID 形式。match_type が npc のときは空文字でよい。 */
             player2_id: string;
-            /** Format: int64 */
+            /**
+             * Format: int64
+             * @description 勝者の番号。1 は player1_id、2 は player2_id の勝ち。0 は reason によらず引き分け。
+             */
             winner_num: number;
+            /** @description 対戦の終了理由。draw のとき winner_num は 0 だけ許される。 */
             reason: string;
-            match_type: string;
+            /**
+             * @description 対戦種別。
+             * @enum {string}
+             */
+            match_type: "pvp" | "npc";
         };
         /**
-         * @description consumed_at_millis はバトル回数を消費した (gateway が increment を呼んだ) 時刻の
-         *     UNIX ミリ秒。停止発生時刻ではなく、消費時点の時刻を渡す。ゲーム日境界 (JST 05:00)
-         *     の判定はこの時刻を基準に account 側で行う。0 以下は 400 になる。
+         * @description consumed_at_millis はバトル回数を消費した (gateway が加算を呼んだ) 時刻の UNIX ミリ秒。
+         *     停止が発生した時刻ではなく、消費した時点の時刻を渡す。
+         *     ゲーム日の境界 (JST 05:00) はこの時刻を基準に判定する。
          */
         RevertBattleCountRequest: {
             game_id: string;
+            /** @description UUID 形式のプレイヤーID */
             player1_id: string;
+            /** @description UUID 形式のプレイヤーID */
             player2_id: string;
             /** Format: int64 */
             consumed_at_millis: number;
         };
         FactionGrantRequest: {
+            /** @description 付与する陣営。初期陣営として選べる陣営だけを受け付ける (Neutral は付与できない)。 */
             faction: string;
         };
         /**
-         * @description Scenario calls this once the tutorial/story pins the player's faction choice;
-         *     account UPSERTs player_factions with is_initial=TRUE in one tx.
+         * @description scenario がチュートリアルでプレイヤーの陣営の選択を確定したときに呼ぶ。
+         *     選択した陣営は所持陣営にも加わる。
          */
         SelectInitialFactionRequest: {
             faction_id: string;
         };
         /**
-         * @description Partial update: nil フィールドは現状維持 (COALESCE in SQL)。
-         *     最低 1 つは non-nil である必要がある (handler 層で検証)。
+         * @description 指定しなかった項目は保存済みの値のままになる。
+         *     1 つ以上の項目を指定する必要があり、検証はアカウントサービスの受け口が行う。
          */
         UpdateSettingsRequest: {
+            /** @description 保存先の列の上限に合わせ、10 文字まで。 */
             language?: string;
             /** Format: int64 */
             bgm_volume?: number;
@@ -451,13 +484,46 @@ export interface components {
             push_enabled?: boolean;
         };
         /**
-         * @description オンボーディング進捗。`internal/domain/onboarding_status.go` の定数群と完全一致。
-         *     drift は enum_drift_test.go で検知する。
+         * @description オンボーディングの進行状態。段階は not_started、name_set、faction_set、completed の順に進む。
          * @enum {string}
          */
         OnboardingStatus: "not_started" | "name_set" | "faction_set" | "completed";
     };
-    responses: never;
+    responses: {
+        /** @description 認証失敗 (X-Internal-Auth ヘッダが無い、またはトークンが無効) */
+        Unauthorized: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["ErrorResponse"];
+            };
+        };
+        /** @description プレイヤーが存在しない */
+        PlayerNotFound: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["ErrorResponse"];
+            };
+        };
+        /**
+         * @description サーバー内部の障害 (データベースの障害、ゲーム設定が見つからない、経験値係数が 1 未満、
+         *     累計経験値が負、保存されたオンボーディングの進行状態が契約の値でないときなど)。
+         *     原因は応答に出さない。
+         */
+        InternalServerError: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": {
+                    error: string;
+                };
+            };
+        };
+    };
     parameters: never;
     requestBodies: never;
     headers: never;
@@ -507,27 +573,27 @@ export interface operations {
                     "application/json": components["schemas"]["PlayerResponse"];
                 };
             };
-            /** @description firebase_uid が空 */
+            /** @description ボディが JSON として読めない、または firebase_uid が空 */
             400: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        error: string;
+                    };
+                };
             };
-            /** @description 同一 firebase_uid で既に登録済み */
+            /** @description 同じ firebase_uid で登録済み (同時に登録した場合の後発を含む) */
             409: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
-            };
-            /** @description DB 接続エラー */
-            500: {
-                headers: {
-                    [name: string]: unknown;
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
-                content?: never;
             };
+            500: components["responses"]["InternalServerError"];
         };
     };
     loginPlayer: {
@@ -552,27 +618,19 @@ export interface operations {
                     "application/json": components["schemas"]["PlayerResponse"];
                 };
             };
-            /** @description firebase_uid が空 */
+            /** @description ボディが JSON として読めない、または firebase_uid が空 */
             400: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
-            };
-            /** @description プレイヤーが存在しない */
-            404: {
-                headers: {
-                    [name: string]: unknown;
+                content: {
+                    "application/json": {
+                        error: string;
+                    };
                 };
-                content?: never;
             };
-            /** @description DB 接続エラー */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
+            404: components["responses"]["PlayerNotFound"];
+            500: components["responses"]["InternalServerError"];
         };
     };
     getPlayerByFirebaseUID: {
@@ -595,27 +653,8 @@ export interface operations {
                     "application/json": components["schemas"]["PlayerResponse"];
                 };
             };
-            /** @description firebaseUID が空 */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description プレイヤーが存在しない */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description DB 接続エラー */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
+            404: components["responses"]["PlayerNotFound"];
+            500: components["responses"]["InternalServerError"];
         };
     };
     listPlayerFactions: {
@@ -623,13 +662,14 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description UUID 形式のプレイヤーID */
                 playerID: string;
             };
             cookie?: never;
         };
         requestBody?: never;
         responses: {
-            /** @description 所持ファクション一覧 */
+            /** @description 所持陣営一覧 */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -638,13 +678,19 @@ export interface operations {
                     "application/json": components["schemas"]["FactionListing"];
                 };
             };
-            /** @description DB 接続エラー */
-            500: {
+            /** @description パスのプレイヤーID が UUID 形式でない */
+            400: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        error: string;
+                    };
+                };
             };
+            404: components["responses"]["PlayerNotFound"];
+            500: components["responses"]["InternalServerError"];
         };
     };
     awardGameExp: {
@@ -667,27 +713,19 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description リクエストボディ不正 */
+            /** @description ボディが JSON として読めない、必須項目が欠けている、または値が許される範囲の外 */
             400: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
-            };
-            /** @description プレイヤーが存在しない */
-            404: {
-                headers: {
-                    [name: string]: unknown;
+                content: {
+                    "application/json": {
+                        error: string;
+                    };
                 };
-                content?: never;
             };
-            /** @description DB 接続エラー */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
+            404: components["responses"]["PlayerNotFound"];
+            500: components["responses"]["InternalServerError"];
         };
     };
     revertBattleCount: {
@@ -703,27 +741,25 @@ export interface operations {
             };
         };
         responses: {
-            /** @description 返却成功 (同一 game_id の再呼び出しも成功扱い) */
+            /** @description 返却成功 (同じ game_id の再呼び出しも成功) */
             204: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content?: never;
             };
-            /** @description リクエストボディ不正 */
+            /** @description ボディが JSON として読めない、必須項目が欠けている、または値が許される範囲の外 */
             400: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
-            };
-            /** @description DB 接続エラー */
-            500: {
-                headers: {
-                    [name: string]: unknown;
+                content: {
+                    "application/json": {
+                        error: string;
+                    };
                 };
-                content?: never;
             };
+            500: components["responses"]["InternalServerError"];
         };
     };
     getPlayer: {
@@ -744,27 +780,9 @@ export interface operations {
                     "application/json": components["schemas"]["PlayerResponse"];
                 };
             };
-            /** @description 認証失敗 */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description プレイヤーが存在しない */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description DB 接続エラー */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["PlayerNotFound"];
+            500: components["responses"]["InternalServerError"];
         };
     };
     updateName: {
@@ -789,34 +807,20 @@ export interface operations {
                     "application/json": components["schemas"]["PlayerResponse"];
                 };
             };
-            /** @description name が空 / バリデーション違反 */
+            /** @description ボディが JSON として読めない、または name が表示名の基準に合わない (空・空白だけ・制御文字を含む・20 文字超) */
             400: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
-            };
-            /** @description 認証失敗 */
-            401: {
-                headers: {
-                    [name: string]: unknown;
+                content: {
+                    "application/json": {
+                        error: string;
+                    };
                 };
-                content?: never;
             };
-            /** @description プレイヤーが存在しない */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description DB 接続エラー */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["PlayerNotFound"];
+            500: components["responses"]["InternalServerError"];
         };
     };
     validateNameForOnboarding: {
@@ -832,41 +836,27 @@ export interface operations {
             };
         };
         responses: {
-            /** @description バリデーション成功 */
+            /** @description 検証成功 */
             204: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content?: never;
             };
-            /** @description name が空 / 全空白 / 制御文字 / 上限超 */
+            /** @description ボディが JSON として読めない、または name が表示名の基準に合わない (空・空白だけ・制御文字を含む・20 文字超) */
             400: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
-            };
-            /** @description 認証失敗 */
-            401: {
-                headers: {
-                    [name: string]: unknown;
+                content: {
+                    "application/json": {
+                        error: string;
+                    };
                 };
-                content?: never;
             };
-            /** @description プレイヤーが存在しない */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description DB 接続エラー */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["PlayerNotFound"];
+            500: components["responses"]["InternalServerError"];
         };
     };
     getBattleLimit: {
@@ -878,7 +868,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description バトル制限情報 */
+            /** @description バトル回数制限の情報 */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -887,27 +877,9 @@ export interface operations {
                     "application/json": components["schemas"]["BattleLimitResponse"];
                 };
             };
-            /** @description 認証失敗 */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description プレイヤーが存在しない */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description DB 接続エラー */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["PlayerNotFound"];
+            500: components["responses"]["InternalServerError"];
         };
     };
     incrementBattleCount: {
@@ -919,34 +891,25 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description インクリメント成功 */
+            /** @description 加算成功 */
             204: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content?: never;
             };
-            /** @description 認証失敗 */
-            401: {
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["PlayerNotFound"];
+            /** @description 無料プレイヤーの 1 日のバトル回数が上限に達している */
+            429: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
-            };
-            /** @description プレイヤーが存在しない */
-            404: {
-                headers: {
-                    [name: string]: unknown;
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
-                content?: never;
             };
-            /** @description DB 接続エラー */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
+            500: components["responses"]["InternalServerError"];
         };
     };
     updatePremium: {
@@ -969,34 +932,20 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description リクエストボディ不正 */
+            /** @description ボディが JSON として読めない、is_premium が欠けている、または expires_at_millis が 0 以下 */
             400: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
-            };
-            /** @description 認証失敗 */
-            401: {
-                headers: {
-                    [name: string]: unknown;
+                content: {
+                    "application/json": {
+                        error: string;
+                    };
                 };
-                content?: never;
             };
-            /** @description プレイヤーが存在しない */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description DB 接続エラー */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["PlayerNotFound"];
+            500: components["responses"]["InternalServerError"];
         };
     };
     addExp: {
@@ -1019,34 +968,20 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description リクエストボディ不正 */
+            /** @description ボディが JSON として読めない、exp_gain が欠けている、または exp_gain が負 */
             400: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
-            };
-            /** @description 認証失敗 */
-            401: {
-                headers: {
-                    [name: string]: unknown;
+                content: {
+                    "application/json": {
+                        error: string;
+                    };
                 };
-                content?: never;
             };
-            /** @description プレイヤーが存在しない */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description DB 接続エラー */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["PlayerNotFound"];
+            500: components["responses"]["InternalServerError"];
         };
     };
     listFactions: {
@@ -1058,7 +993,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description ファクション一覧 */
+            /** @description 所持陣営一覧 */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -1067,27 +1002,9 @@ export interface operations {
                     "application/json": components["schemas"]["FactionListing"];
                 };
             };
-            /** @description 認証失敗 */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description プレイヤーが存在しない */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description DB 接続エラー */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["PlayerNotFound"];
+            500: components["responses"]["InternalServerError"];
         };
     };
     grantFaction: {
@@ -1110,34 +1027,20 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description faction が空 */
+            /** @description ボディが JSON として読めない、faction が空、または付与できない陣営 */
             400: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
-            };
-            /** @description 認証失敗 */
-            401: {
-                headers: {
-                    [name: string]: unknown;
+                content: {
+                    "application/json": {
+                        error: string;
+                    };
                 };
-                content?: never;
             };
-            /** @description プレイヤーが存在しない */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description DB 接続エラー */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["PlayerNotFound"];
+            500: components["responses"]["InternalServerError"];
         };
     };
     selectInitialFaction: {
@@ -1160,41 +1063,29 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description faction_id が空 / 無効なファクション */
+            /** @description ボディが JSON として読めない、faction_id が空、または選択できない陣営 (Neutral を含む) */
             400: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
-            };
-            /** @description 認証失敗 */
-            401: {
-                headers: {
-                    [name: string]: unknown;
+                content: {
+                    "application/json": {
+                        error: string;
+                    };
                 };
-                content?: never;
             };
-            /** @description プレイヤーが存在しない */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description 初期ファクション選択済み (冪等 no-op) */
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["PlayerNotFound"];
+            /** @description 初期陣営を選択済み */
             409: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
-            };
-            /** @description DB 接続エラー */
-            500: {
-                headers: {
-                    [name: string]: unknown;
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
-                content?: never;
             };
+            500: components["responses"]["InternalServerError"];
         };
     };
     getPlayerSettings: {
@@ -1206,7 +1097,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description 設定情報 */
+            /** @description プレイヤー設定 */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -1215,27 +1106,9 @@ export interface operations {
                     "application/json": components["schemas"]["PlayerSettingsResponse"];
                 };
             };
-            /** @description 認証失敗 */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description プレイヤーが存在しない */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description DB 接続エラー */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["PlayerNotFound"];
+            500: components["responses"]["InternalServerError"];
         };
     };
     updatePlayerSettings: {
@@ -1251,7 +1124,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description 更新後の設定情報 */
+            /** @description 更新後のプレイヤー設定 */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -1260,34 +1133,20 @@ export interface operations {
                     "application/json": components["schemas"]["PlayerSettingsResponse"];
                 };
             };
-            /** @description language が空 / 全 nil */
+            /** @description ボディが JSON として読めない、項目が 1 つも指定されていない、language が空または 10 文字を超える、または音量が 0 から 100 の外 */
             400: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
-            };
-            /** @description 認証失敗 */
-            401: {
-                headers: {
-                    [name: string]: unknown;
+                content: {
+                    "application/json": {
+                        error: string;
+                    };
                 };
-                content?: never;
             };
-            /** @description プレイヤーが存在しない */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description DB 接続エラー */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["PlayerNotFound"];
+            500: components["responses"]["InternalServerError"];
         };
     };
 }

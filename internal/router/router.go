@@ -11,35 +11,18 @@ import (
 	internalauth "github.com/kenyamaneko/overload-party-gateway/packages/internalauth-go"
 )
 
-// New は account サービスの HTTP ルーターを構築する。
-//
-// ルーティング方針 (ADR-037 Phase 3):
-//   - /internal/v1/auth/*: Firebase UID をキーとする bootstrap 系。player_id 確立前
-//     のため JWT を要求しない
-//   - /internal/v1/players/award-game-exp: battle が直接呼ぶサーバー間バッチ。body に
-//     2 プレイヤー分の player_id を含み JWT sub では表現できないため /internal に残す
-//   - /internal/v1/players/revert-battle-count: gateway の停止時処理が直接呼ぶサーバー間
-//     バッチ。body に 2 プレイヤー分の player_id を含み JWT sub では表現できないため
-//     /internal に残す
-//   - /internal/v1/pubsub/*: Cloud Pub/Sub push subscription の受け口。呼び出し元が
-//     プレイヤーではなく Pub/Sub 基盤のため JWT を要求せず、到達制御は Cloud Run の
-//     呼び出し IAM に委ねる
-//   - /api/v1/account/me/*: gateway / shop / scenario が JWT を付けて呼ぶ player-scoped
-//     API。VerifyInternalAuth が sub クレーム (= player_id) を context に注入し、
-//     handler は path / body から player_id を読まない
-//
-// Firebase ID Token の検証は gateway が担う前提であり、account 側には導入しない。
-// 導入すると「account の中で認証する責務」が混入し、gateway との二重管理になる。
+// New は account サービスの HTTP ルーターを生成する。
+// /api/v1/account 配下は内部認証が必要で、/internal/v1 配下と /health は認証しない。
 func New(
-	authH *rest.AuthHandler,
-	playerH *rest.PlayerHandler,
-	factionH *rest.FactionHandler,
-	settingsH *rest.PlayerSettingsHandler,
+	authHandler *rest.AuthHandler,
+	playerHandler *rest.PlayerHandler,
+	factionHandler *rest.FactionHandler,
+	settingsHandler *rest.PlayerSettingsHandler,
 	authVerifier internalauth.Verifier,
 	pubsubHandlers pubsubpush.Handlers,
 ) *gin.Engine {
 	r := gin.New()
-	r.Use(gin.Recovery())
+	r.Use(rest.NewRecovery())
 
 	r.GET("/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"status": "ok"})
@@ -47,21 +30,21 @@ func New(
 
 	internal := r.Group("/internal/v1")
 	{
-		internal.POST("/auth/register", authH.Register)
-		internal.POST("/auth/login", authH.Login)
-		internal.GET("/auth/by-firebase-uid/:firebaseUID", authH.GetPlayerByFirebaseUID)
+		internal.POST("/auth/register", authHandler.Register)
+		internal.POST("/auth/login", authHandler.Login)
+		internal.GET("/auth/by-firebase-uid/:firebaseUID", authHandler.GetPlayerByFirebaseUID)
 
-		internal.GET("/players/:playerID/factions", factionH.ListPlayerFactions)
-		internal.POST("/players/award-game-exp", playerH.AwardGameExp)
-		internal.POST("/players/revert-battle-count", playerH.RevertBattleCount)
+		internal.GET("/players/:playerID/factions", factionHandler.ListPlayerFactions)
+		internal.POST("/players/award-game-exp", playerHandler.AwardGameExp)
+		internal.POST("/players/revert-battle-count", playerHandler.RevertBattleCount)
 
 		pubsubGroup := internal.Group("/pubsub")
 		{
-			pubsubGroup.POST("/faction-acquired", pubsubHandlers.FactionAcquired.Handle)
-			pubsubGroup.POST("/premium-updated", pubsubHandlers.PremiumUpdated.Handle)
-			pubsubGroup.POST("/player-onboarded", pubsubHandlers.PlayerOnboarded.Handle)
-			pubsubGroup.POST("/onboarding-name-set", pubsubHandlers.OnboardingNameSet.Handle)
-			pubsubGroup.POST("/onboarding-faction-set", pubsubHandlers.OnboardingFactionSet.Handle)
+			pubsubGroup.POST("/faction-acquired", pubsubHandlers.FactionAcquired.ReceivePush)
+			pubsubGroup.POST("/premium-updated", pubsubHandlers.PremiumUpdated.ReceivePush)
+			pubsubGroup.POST("/player-onboarded", pubsubHandlers.PlayerOnboarded.ReceivePush)
+			pubsubGroup.POST("/onboarding-name-set", pubsubHandlers.OnboardingNameSet.ReceivePush)
+			pubsubGroup.POST("/onboarding-faction-set", pubsubHandlers.OnboardingFactionSet.ReceivePush)
 		}
 	}
 
@@ -70,18 +53,18 @@ func New(
 	{
 		me := api.Group("/me")
 		{
-			me.GET("", playerH.GetPlayer)
-			me.PUT("/name", playerH.UpdateName)
-			me.POST("/onboarding/name/validate", playerH.ValidateNameForOnboarding)
-			me.GET("/battle-limit", playerH.GetBattleLimit)
-			me.POST("/battle-limit/increment", playerH.IncrementBattleCount)
-			me.PUT("/premium", playerH.UpdatePremium)
-			me.POST("/exp", playerH.AddExp)
-			me.POST("/factions", factionH.GrantFaction)
-			me.POST("/factions/select", factionH.SelectInitialFaction)
-			me.GET("/factions", factionH.ListFactions)
-			me.GET("/settings", settingsH.GetSettings)
-			me.PUT("/settings", settingsH.UpdateSettings)
+			me.GET("", playerHandler.GetPlayer)
+			me.PUT("/name", playerHandler.UpdateName)
+			me.POST("/onboarding/name/validate", playerHandler.ValidateNameForOnboarding)
+			me.GET("/battle-limit", playerHandler.GetBattleLimit)
+			me.POST("/battle-limit/increment", playerHandler.IncrementBattleCount)
+			me.PUT("/premium", playerHandler.UpdatePremium)
+			me.POST("/exp", playerHandler.AddExp)
+			me.POST("/factions", factionHandler.GrantFaction)
+			me.POST("/factions/select", factionHandler.SelectInitialFaction)
+			me.GET("/factions", factionHandler.ListFactions)
+			me.GET("/settings", settingsHandler.GetSettings)
+			me.PUT("/settings", settingsHandler.UpdateSettings)
 		}
 	}
 	return r

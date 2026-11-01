@@ -3,7 +3,7 @@
 set -euo pipefail
 
 if ! git diff --exit-code; then
-  echo "::error::Generated files are out of sync. Run 'scripts/generate_types.sh' and 'python3 scripts/generate_schema_doc.py' and commit."
+  echo "::error::Generated files are out of sync. Run 'scripts/generate_types.sh', 'go run scripts/generate_schema_factions.go' and 'python3 scripts/generate_schema_doc.py' and commit."
   exit 1
 fi
 if [ -n "$(git ls-files --others --exclude-standard)" ]; then

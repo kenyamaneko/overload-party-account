@@ -1,109 +1,155 @@
-//go:build integration
-
 package rest_test
 
 import (
-	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
-	"github.com/google/uuid"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
-
-	apiaccount "github.com/kenyamaneko/overload-party-account/packages/api-account"
+	"github.com/kenyamaneko/overload-party-account/internal/handler/handlertest"
+	"github.com/kenyamaneko/overload-party-account/internal/router/routertest"
 )
 
-func TestAuthHandler_Register(t *testing.T) {
-	t.Run("[認証API]POST /internal/v1/auth/register", func(t *testing.T) {
-		t.Run("firebase_uidが空のとき、400を返す", func(t *testing.T) {
-			r, _ := newTestRouter(t, validGameConfigValues())
+func newAuthTestServer() *routertest.Server {
+	s := routertest.NewServer(routertest.Options{
+		GameConfig: map[string]int64{routertest.ConfigKeyExpCoefficient: 100},
+	})
+	s.Memory.AddPlayer(routertest.NewPlayerSeedA())
+	return s
+}
 
-			w := doJSON(r, "POST", "/internal/v1/auth/register", apiaccount.RegisterRequest{FirebaseUID: ""}, nil)
+func TestRegisterPlayer(t *testing.T) {
+	t.Run("[プレイヤー認証API]新規登録", func(t *testing.T) {
+		t.Run("正常系", func(t *testing.T) {
+			t.Run("FirebaseUIDがfirebase-newで未登録のとき、登録すると", func(t *testing.T) {
+				register := func(t *testing.T) (*routertest.Server, *httptest.ResponseRecorder) {
+					s := newAuthTestServer()
+					return s, s.Call(t, http.MethodPost, "/internal/v1/auth/register", routertest.NoAuth, `{"firebase_uid":"firebase-new"}`)
+				}
 
-			assert.Equal(t, 400, w.Code)
+				t.Run("ステータスが201になる", func(t *testing.T) {
+					_, rec := register(t)
+					handlertest.AssertStatus(t, rec, http.StatusCreated)
+				})
+				t.Run("応答のfirebase_uidがfirebase-newになる", func(t *testing.T) {
+					_, rec := register(t)
+					handlertest.AssertJSONField(t, rec, "firebase_uid", `"firebase-new"`)
+				})
+				t.Run("応答のlevelが1になる", func(t *testing.T) {
+					_, rec := register(t)
+					handlertest.AssertJSONField(t, rec, "level", `1`)
+				})
+				t.Run("応答のexpが0になる", func(t *testing.T) {
+					_, rec := register(t)
+					handlertest.AssertJSONField(t, rec, "exp", `0`)
+				})
+				t.Run("応答のonboarding_statusがnot_startedになる", func(t *testing.T) {
+					_, rec := register(t)
+					handlertest.AssertJSONField(t, rec, "onboarding_status", `"not_started"`)
+				})
+				t.Run("続けてFirebaseUIDがfirebase-newでプレイヤー検索すると、応答のplayer_idが登録時に割り当てられたcccccccc-cccc-4ccc-8ccc-ccccccccccccになる", func(t *testing.T) {
+					s, _ := register(t)
+					found := s.Call(t, http.MethodGet, "/internal/v1/auth/by-firebase-uid/firebase-new", routertest.NoAuth, "")
+					handlertest.AssertJSONField(t, found, "player_id", `"cccccccc-cccc-4ccc-8ccc-cccccccccccc"`)
+				})
+			})
 		})
-
-		t.Run("指定したfirebase_uidが未登録のとき、新規プレイヤーを作成し、201とプレイヤー情報を返す", func(t *testing.T) {
-			r, _ := newTestRouter(t, validGameConfigValues())
-
-			w := doJSON(r, "POST", "/internal/v1/auth/register", apiaccount.RegisterRequest{FirebaseUID: "firebase-" + uuid.NewString()}, nil)
-
-			require.Equal(t, 201, w.Code)
-			var resp apiaccount.PlayerResponse
-			require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
-			assert.Equal(t, int64(1), resp.Level)
-			assert.Equal(t, int64(0), resp.Exp)
-			assert.Equal(t, apiaccount.OnboardingStatusNotStarted, resp.OnboardingStatus)
-			assert.Nil(t, resp.Name)
-			assert.Nil(t, resp.InitialFaction)
-			assert.False(t, resp.IsPremium)
-		})
-
-		t.Run("同一firebase_uidで既に登録済みのとき、409を返す", func(t *testing.T) {
-			r, _ := newTestRouter(t, validGameConfigValues())
-			firebaseUID := "firebase-" + uuid.NewString()
-			w1 := doJSON(r, "POST", "/internal/v1/auth/register", apiaccount.RegisterRequest{FirebaseUID: firebaseUID}, nil)
-			require.Equal(t, 201, w1.Code)
-
-			w2 := doJSON(r, "POST", "/internal/v1/auth/register", apiaccount.RegisterRequest{FirebaseUID: firebaseUID}, nil)
-
-			assert.Equal(t, 409, w2.Code)
+		t.Run("異常系", func(t *testing.T) {
+			t.Run("firebase_uidが指定されないとき", func(t *testing.T) {
+				cases := []struct {
+					name string
+					body string
+				}{
+					{name: "空文字のとき、firebase_uidの不足を示す400の応答になる", body: `{"firebase_uid":""}`},
+					{name: "キーが無いとき、firebase_uidの不足を示す400の応答になる", body: `{}`},
+				}
+				for _, tc := range cases {
+					t.Run(tc.name, func(t *testing.T) {
+						rec := newAuthTestServer().Call(t, http.MethodPost, "/internal/v1/auth/register", routertest.NoAuth, tc.body)
+						handlertest.AssertErrorResponse(t, rec, http.StatusBadRequest, "firebase_uid is required")
+					})
+				}
+			})
+			t.Run("リクエストボディを、firebase_uidが文字列のJSONオブジェクトとして読めないとき", func(t *testing.T) {
+				cases := []struct {
+					name string
+					body string
+				}{
+					{name: "リクエストボディが無いとき、リクエストボディ不正を示す400の応答になる", body: ""},
+					{name: `リクエストボディが{"firebase_uid":だけのとき、リクエストボディ不正を示す400の応答になる`, body: `{"firebase_uid":`},
+					{name: "firebase_uidが数値123のとき、リクエストボディ不正を示す400の応答になる", body: `{"firebase_uid":123}`},
+				}
+				for _, tc := range cases {
+					t.Run(tc.name, func(t *testing.T) {
+						rec := newAuthTestServer().Call(t, http.MethodPost, "/internal/v1/auth/register", routertest.NoAuth, tc.body)
+						handlertest.AssertErrorResponse(t, rec, http.StatusBadRequest, "invalid request body")
+					})
+				}
+			})
 		})
 	})
 }
 
-func TestAuthHandler_Login(t *testing.T) {
-	t.Run("[認証API]POST /internal/v1/auth/login", func(t *testing.T) {
-		t.Run("firebase_uidが空のとき、400を返す", func(t *testing.T) {
-			r, _ := newTestRouter(t, validGameConfigValues())
+func TestLoginPlayer(t *testing.T) {
+	t.Run("[プレイヤー認証API]ログイン", func(t *testing.T) {
+		t.Run("正常系", func(t *testing.T) {
+			t.Run("player_idがaaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaaで登録済みのプレイヤーのFirebaseUIDで、ログインするとき", func(t *testing.T) {
+				login := func(t *testing.T) *httptest.ResponseRecorder {
+					return newAuthTestServer().Call(t, http.MethodPost, "/internal/v1/auth/login", routertest.NoAuth, `{"firebase_uid":"`+routertest.FirebaseUIDA+`"}`)
+				}
 
-			w := doJSON(r, "POST", "/internal/v1/auth/login", apiaccount.LoginRequest{FirebaseUID: ""}, nil)
-
-			assert.Equal(t, 400, w.Code)
+				t.Run("ステータスが200になる", func(t *testing.T) {
+					handlertest.AssertStatus(t, login(t), http.StatusOK)
+				})
+				t.Run("応答のplayer_idがaaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaaになる", func(t *testing.T) {
+					handlertest.AssertJSONField(t, login(t), "player_id", `"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"`)
+				})
+			})
 		})
-
-		t.Run("指定したfirebase_uidのプレイヤーが存在するとき、200とプレイヤー情報を返す", func(t *testing.T) {
-			r, _ := newTestRouter(t, validGameConfigValues())
-			registered := registerPlayer(t, r)
-
-			w := doJSON(r, "POST", "/internal/v1/auth/login", apiaccount.LoginRequest{FirebaseUID: registered.FirebaseUID}, nil)
-
-			require.Equal(t, 200, w.Code)
-			var resp apiaccount.PlayerResponse
-			require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
-			assert.Equal(t, registered.PlayerID, resp.PlayerID)
-		})
-
-		t.Run("指定したfirebase_uidのプレイヤーが存在しないとき、404を返す", func(t *testing.T) {
-			r, _ := newTestRouter(t, validGameConfigValues())
-
-			w := doJSON(r, "POST", "/internal/v1/auth/login", apiaccount.LoginRequest{FirebaseUID: "missing-" + uuid.NewString()}, nil)
-
-			assert.Equal(t, 404, w.Code)
+		t.Run("異常系", func(t *testing.T) {
+			t.Run("firebase_uidが指定されないとき", func(t *testing.T) {
+				cases := []struct {
+					name string
+					body string
+				}{
+					{name: "空文字のとき、firebase_uidの不足を示す400の応答になる", body: `{"firebase_uid":""}`},
+					{name: "キーが無いとき、firebase_uidの不足を示す400の応答になる", body: `{}`},
+				}
+				for _, tc := range cases {
+					t.Run(tc.name, func(t *testing.T) {
+						rec := newAuthTestServer().Call(t, http.MethodPost, "/internal/v1/auth/login", routertest.NoAuth, tc.body)
+						handlertest.AssertErrorResponse(t, rec, http.StatusBadRequest, "firebase_uid is required")
+					})
+				}
+			})
+			t.Run("リクエストボディが無いとき、リクエストボディ不正を示す400の応答になる", func(t *testing.T) {
+				rec := newAuthTestServer().Call(t, http.MethodPost, "/internal/v1/auth/login", routertest.NoAuth, "")
+				handlertest.AssertErrorResponse(t, rec, http.StatusBadRequest, "invalid request body")
+			})
 		})
 	})
 }
 
-func TestAuthHandler_GetPlayerByFirebaseUID(t *testing.T) {
-	t.Run("[認証API]GET /internal/v1/auth/by-firebase-uid/{firebaseUID}", func(t *testing.T) {
-		t.Run("指定したfirebaseUIDのプレイヤーが存在するとき、200とプレイヤー情報を返す", func(t *testing.T) {
-			r, _ := newTestRouter(t, validGameConfigValues())
-			registered := registerPlayer(t, r)
+func TestFindPlayerByFirebaseUID(t *testing.T) {
+	t.Run("[プレイヤー認証API]FirebaseUIDによるプレイヤー検索", func(t *testing.T) {
+		t.Run("正常系", func(t *testing.T) {
+			t.Run("player_idがaaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaaで登録済みのプレイヤーのFirebaseUIDで、検索するとき", func(t *testing.T) {
+				find := func(t *testing.T) *httptest.ResponseRecorder {
+					return newAuthTestServer().Call(t, http.MethodGet, "/internal/v1/auth/by-firebase-uid/"+routertest.FirebaseUIDA, routertest.NoAuth, "")
+				}
 
-			w := doJSON(r, "GET", "/internal/v1/auth/by-firebase-uid/"+registered.FirebaseUID, nil, nil)
-
-			require.Equal(t, 200, w.Code)
-			var resp apiaccount.PlayerResponse
-			require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
-			assert.Equal(t, registered.PlayerID, resp.PlayerID)
+				t.Run("ステータスが200になる", func(t *testing.T) {
+					handlertest.AssertStatus(t, find(t), http.StatusOK)
+				})
+				t.Run("応答のplayer_idがaaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaaになる", func(t *testing.T) {
+					handlertest.AssertJSONField(t, find(t), "player_id", `"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"`)
+				})
+			})
 		})
-
-		t.Run("指定したfirebaseUIDのプレイヤーが存在しないとき、404を返す", func(t *testing.T) {
-			r, _ := newTestRouter(t, validGameConfigValues())
-
-			w := doJSON(r, "GET", "/internal/v1/auth/by-firebase-uid/missing-"+uuid.NewString(), nil, nil)
-
-			assert.Equal(t, 404, w.Code)
+		t.Run("異常系", func(t *testing.T) {
+			t.Run("未登録のFirebaseUIDで検索すると、プレイヤー不在を示す404の応答になる", func(t *testing.T) {
+				rec := newAuthTestServer().Call(t, http.MethodGet, "/internal/v1/auth/by-firebase-uid/firebase-unknown", routertest.NoAuth, "")
+				handlertest.AssertErrorResponse(t, rec, http.StatusNotFound, "player not found")
+			})
 		})
 	})
 }

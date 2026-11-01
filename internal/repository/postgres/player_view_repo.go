@@ -14,8 +14,7 @@ import (
 
 var _ port.PlayerViewRepo = (*PlayerViewRepository)(nil)
 
-// PlayerViewRepository は port.PlayerViewRepo の PostgreSQL 実装。
-// players + player_progression + player_factions(is_initial=TRUE) を JOIN で結合した Read Model を返す。
+// PlayerViewRepository はプレイヤーの参照用の情報の PostgreSQL 実装である。
 type PlayerViewRepository struct {
 	pool *pgxpool.Pool
 }
@@ -25,35 +24,35 @@ func NewPlayerViewRepository(pool *pgxpool.Pool) *PlayerViewRepository {
 	return &PlayerViewRepository{pool: pool}
 }
 
-// FindByID は player_id で Read Model を返す。該当なしは port.ErrNotFound。
-func (r *PlayerViewRepository) FindByID(ctx context.Context, playerID string) (*domain.PlayerView, error) {
-	row := connFrom(ctx, r.pool).QueryRow(ctx, playerViewSelectByID, playerID)
+// GetByID はプレイヤーの参照用の情報を返す。登録されていなければ port.ErrNotFound を返す。
+func (r *PlayerViewRepository) GetByID(ctx context.Context, playerID string) (*domain.PlayerView, error) {
+	row := resolveDBTX(ctx, r.pool).QueryRow(ctx, playerViewSelectByID, playerID)
 	v, err := scanPlayerView(row)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, fmt.Errorf("player %s: %w", playerID, port.ErrNotFound)
 		}
-		return nil, fmt.Errorf("find player view by id: %w", err)
+		return nil, fmt.Errorf("get player view by id: %w", err)
 	}
 	return v, nil
 }
 
-// FindByFirebaseUID は firebase_uid で Read Model を返す。該当なしは port.ErrNotFound。
-func (r *PlayerViewRepository) FindByFirebaseUID(ctx context.Context, firebaseUID string) (*domain.PlayerView, error) {
-	row := connFrom(ctx, r.pool).QueryRow(ctx, playerViewSelectByFirebaseUID, firebaseUID)
+// GetByFirebaseUID は FirebaseUID に対応するプレイヤーの参照用の情報を返す。登録されていなければ port.ErrNotFound を返す。
+func (r *PlayerViewRepository) GetByFirebaseUID(ctx context.Context, firebaseUID string) (*domain.PlayerView, error) {
+	row := resolveDBTX(ctx, r.pool).QueryRow(ctx, playerViewSelectByFirebaseUID, firebaseUID)
 	v, err := scanPlayerView(row)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, port.ErrNotFound
 		}
-		return nil, fmt.Errorf("find player view by firebase_uid: %w", err)
+		return nil, fmt.Errorf("get player view by firebase_uid: %w", err)
 	}
 	return v, nil
 }
 
 const playerViewSelectColumns = `p.player_id, p.firebase_uid, p.name, p.is_premium, p.equipped_icon_no,
 	        p.onboarding_status, p.premium_expires_at, p.created_at, p.updated_at,
-	        pp.level, pp.exp, pf.faction`
+	        pp.exp, pf.faction`
 
 const playerViewSelectByID = `SELECT ` + playerViewSelectColumns + `
 		   FROM account.players p
@@ -79,7 +78,6 @@ func scanPlayerView(row pgx.Row) (*domain.PlayerView, error) {
 		&v.Player.PremiumExpiresAt,
 		&v.Player.CreatedAt,
 		&v.Player.UpdatedAt,
-		&v.Level,
 		&v.Exp,
 		&v.InitialFaction,
 	)

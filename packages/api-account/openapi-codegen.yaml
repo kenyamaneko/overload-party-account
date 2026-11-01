@@ -3,6 +3,7 @@ output: openapi_gen.go
 generate:
   models: true
   client: true
+  std-http-server: true
   embedded-spec: false
 output-options:
   skip-prune: true

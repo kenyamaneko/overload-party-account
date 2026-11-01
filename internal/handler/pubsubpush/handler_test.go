@@ -1,11 +1,10 @@
 package pubsubpush_test
 
 import (
-	"bytes"
 	"context"
-	"encoding/base64"
-	"encoding/json"
 	"errors"
+	"log/slog"
+	"net/http"
 	"net/http/httptest"
 	"testing"
 
@@ -13,106 +12,150 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	apishop "github.com/kenyamaneko/overload-party-shop/packages/api-shop"
+
+	"github.com/kenyamaneko/overload-party-account/internal/adapter/logging/loggingtest"
+	"github.com/kenyamaneko/overload-party-account/internal/handler/handlertest"
 	"github.com/kenyamaneko/overload-party-account/internal/handler/pubsubpush"
+	"github.com/kenyamaneko/overload-party-account/internal/handler/pubsubpush/pubsubpushtest"
 )
+
+const receivePath = "/internal/v1/pubsub/faction-acquired"
+
+const validEventBody = `{"event_type":"faction_acquired","event_id":"3f2b8c1e-5a4d-4e6f-9b7a-1c2d3e4f5a6b","timestamp":"2026-01-01T00:00:00Z","player_id":"7d9e1a2b-3c4d-4e5f-8a6b-0c1d2e3f4a5b","faction":"Tenki"}`
 
 func init() {
 	gin.SetMode(gin.TestMode)
 }
 
-// callHandle は EventHandler.Handle を gin.Context 経由で呼び出し、応答の *httptest.ResponseRecorder を返す。
-func callHandle(t *testing.T, h *pubsubpush.EventHandler, body []byte) *httptest.ResponseRecorder {
-	t.Helper()
-
-	w := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(w)
-	req := httptest.NewRequest("POST", "/internal/v1/pubsub/dummy", bytes.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	c.Request = req
-
-	h.Handle(c)
-	return w
+func newReceiveEngine(handle func(context.Context, apishop.FactionAcquiredEvent) error) *gin.Engine {
+	engine := gin.New()
+	engine.POST(receivePath, pubsubpush.NewEventHandler("faction-acquired", handle).ReceivePush)
+	return engine
 }
 
-func envelopeJSON(t *testing.T, data string) []byte {
+func succeeds(context.Context, apishop.FactionAcquiredEvent) error { return nil }
+
+func fails(context.Context, apishop.FactionAcquiredEvent) error { return errors.New("handler failure") }
+
+const messageID = "msg-1"
+
+func postBody(t *testing.T, engine *gin.Engine, body string) *httptest.ResponseRecorder {
 	t.Helper()
-	env := map[string]any{
-		"message": map[string]any{
-			"data":      data,
-			"messageId": "msg-1",
-		},
+	return handlertest.PostJSON(t, engine, receivePath, body)
+}
+
+func validEnvelope(t *testing.T) string {
+	t.Helper()
+	return pubsubpushtest.BuildEventEnvelope(t, validEventBody, messageID)
+}
+
+type receiveCheck func(t *testing.T, rec *httptest.ResponseRecorder, logs *loggingtest.Logs)
+
+func respondsWith(status int, wantError string) receiveCheck {
+	return func(t *testing.T, rec *httptest.ResponseRecorder, _ *loggingtest.Logs) {
+		t.Helper()
+		assert.Equal(t, status, rec.Code)
+		assert.Equal(t, wantError, handlertest.DecodeErrorMessage(t, rec))
 	}
-	b, err := json.Marshal(env)
-	require.NoError(t, err)
-	return b
 }
 
-func TestEventHandler_Handle(t *testing.T) {
-	t.Run("[Pub/Sub push受け口]push受け口の応答変換", func(t *testing.T) {
-		t.Run("リクエストボディがJSONとして解析できないとき、ステータスコード400で、メッセージ形式が不正である旨のエラー内容を返し、処理関数は呼び出されない", func(t *testing.T) {
-			called := false
-			h := pubsubpush.NewEventHandler(func(ctx context.Context, data []byte) error { called = true; return nil })
+func logsError(wantMessage string) receiveCheck {
+	return func(t *testing.T, _ *httptest.ResponseRecorder, logs *loggingtest.Logs) {
+		t.Helper()
+		assert.NotEmpty(t, logs.SelectByMessageAndLevel(wantMessage, slog.LevelError))
+	}
+}
 
-			w := callHandle(t, h, []byte("not-json"))
+func logsErrorWithMessageID(wantMessage, wantMessageID string) receiveCheck {
+	return func(t *testing.T, _ *httptest.ResponseRecorder, logs *loggingtest.Logs) {
+		t.Helper()
+		records := logs.SelectByMessageAndLevel(wantMessage, slog.LevelError)
+		require.NotEmpty(t, records)
+		assert.Equal(t, wantMessageID, records[0].String("message_id"))
+	}
+}
 
-			assert.Equal(t, 400, w.Code)
-			assert.Contains(t, w.Body.String(), "malformed push envelope")
-			assert.False(t, called, "envelopeの形式が不正なときは処理関数の呼び出しに到達しない")
-		})
+func logsErrorContaining(wantMessage, wantText string) receiveCheck {
+	return func(t *testing.T, _ *httptest.ResponseRecorder, logs *loggingtest.Logs) {
+		t.Helper()
+		records := logs.SelectByMessageAndLevel(wantMessage, slog.LevelError)
+		require.NotEmpty(t, records)
+		assert.Contains(t, records[0].String("error"), wantText)
+	}
+}
 
-		t.Run("リクエストボディのデータ部分が空のとき、ステータスコード400で、メッセージ形式が不正である旨のエラー内容を返し、処理関数は呼び出されない", func(t *testing.T) {
-			called := false
-			h := pubsubpush.NewEventHandler(func(ctx context.Context, data []byte) error { called = true; return nil })
+func TestReceivePush(t *testing.T) {
+	t.Run("[イベント受信]受信メッセージの応答", func(t *testing.T) {
+		t.Run("正常系", func(t *testing.T) {
+			t.Run("メッセージを受信すると", func(t *testing.T) {
+				extraFields := map[string]any{
+					"subscription": "projects/test-project/subscriptions/test-subscription",
+					"attributes":   map[string]any{"key": "value"},
+				}
+				cases := []struct {
+					name string
+					body string
+				}{
+					{"受信したイベントの処理が成功したとき、応答は200になる", validEnvelope(t)},
+					{"受信本文にsubscriptionとattributesの項目があるとき、応答は200になる", pubsubpushtest.BuildEventEnvelopeWithFields(t, validEventBody, messageID, extraFields)},
+				}
+				for _, tc := range cases {
+					t.Run(tc.name, func(t *testing.T) {
+						rec := postBody(t, newReceiveEngine(succeeds), tc.body)
 
-			w := callHandle(t, h, envelopeJSON(t, ""))
-
-			assert.Equal(t, 400, w.Code)
-			assert.Contains(t, w.Body.String(), "malformed push envelope")
-			assert.False(t, called, "データ部分が空なときは処理関数の呼び出しに到達しない")
-		})
-
-		t.Run("データ部分がBase64として正しくデコードできない値のとき、ステータスコード400で、データ形式が不正である旨のエラー内容を返し、処理関数は呼び出されない", func(t *testing.T) {
-			called := false
-			h := pubsubpush.NewEventHandler(func(ctx context.Context, data []byte) error { called = true; return nil })
-
-			w := callHandle(t, h, envelopeJSON(t, "not-valid-base64!!!"))
-
-			assert.Equal(t, 400, w.Code)
-			assert.Contains(t, w.Body.String(), "undecodable message data")
-			assert.False(t, called, "データ部分をデコードできないときは処理関数の呼び出しに到達しない")
-		})
-
-		t.Run("データ部分が正しくBase64デコードできるとき、デコード結果を処理関数の引数として渡す", func(t *testing.T) {
-			var received []byte
-			h := pubsubpush.NewEventHandler(func(ctx context.Context, data []byte) error {
-				received = data
-				return nil
+						assert.Equal(t, http.StatusOK, rec.Code)
+					})
+				}
 			})
-			payload := []byte(`{"event_type":"faction_acquired"}`)
-
-			w := callHandle(t, h, envelopeJSON(t, base64.StdEncoding.EncodeToString(payload)))
-
-			assert.Equal(t, 200, w.Code)
-			assert.Equal(t, payload, received)
 		})
 
-		t.Run("データ部分のデコードには成功したが、その後の処理関数の呼び出しが失敗したとき、ステータスコード500で、処理に失敗した旨のエラー内容を返す", func(t *testing.T) {
-			h := pubsubpush.NewEventHandler(func(ctx context.Context, data []byte) error {
-				return errors.New("boom")
+		t.Run("異常系", func(t *testing.T) {
+			t.Run("受信したイベントの処理が失敗したとき、処理失敗を示す500の応答になる", func(t *testing.T) {
+				rec := postBody(t, newReceiveEngine(fails), validEnvelope(t))
+
+				assert.Equal(t, http.StatusInternalServerError, rec.Code)
+				assert.Equal(t, "handler failed", handlertest.DecodeErrorMessage(t, rec))
 			})
 
-			w := callHandle(t, h, envelopeJSON(t, base64.StdEncoding.EncodeToString([]byte("{}"))))
+			t.Run("受信本文が不正なとき", func(t *testing.T) {
+				const (
+					malformedEnvelopeMessage = "pubsub push: malformed envelope"
+					undecodableBody          = `{"message":{"data":"!!!","messageId":"msg-1"}}`
+					missingMessageBody       = `{"subscription":"projects/test-project/subscriptions/test-subscription"}`
+					missingDataBody          = `{"message":{"messageId":"msg-1"}}`
+					emptyDataBody            = `{"message":{"data":"","messageId":"msg-1"}}`
+				)
+				cases := []struct {
+					name  string
+					body  string
+					check receiveCheck
+				}{
+					{"受信本文が空のとき、受信本文不正を示す400の応答になる", "", respondsWith(http.StatusBadRequest, "malformed push envelope")},
+					{"受信本文がJSONでない「not-json」のとき、受信本文不正を示す400の応答になる", "not-json", respondsWith(http.StatusBadRequest, "malformed push envelope")},
+					{"messageが無いとき、受信本文不正を示す400の応答になる", missingMessageBody, respondsWith(http.StatusBadRequest, "malformed push envelope")},
+					{"message.dataが無いとき、受信本文不正を示す400の応答になる", missingDataBody, respondsWith(http.StatusBadRequest, "malformed push envelope")},
+					{"message.dataが空文字のとき、受信本文不正を示す400の応答になる", emptyDataBody, respondsWith(http.StatusBadRequest, "malformed push envelope")},
+					{"message.dataがbase64として復号できない「!!!」のとき、復号不能を示す400の応答になる", undecodableBody, respondsWith(http.StatusBadRequest, "undecodable message data")},
+					{"受信本文がJSONでない「not-json」のとき、ERRORログに「受信本文不正」が記録される", "not-json", logsError(malformedEnvelopeMessage)},
+					{"message.dataがbase64として復号できない「!!!」のとき、ERRORログに「復号不能」が記録される", undecodableBody, logsError("pubsub push: undecodable message data")},
+					{"message.dataがbase64として復号できない「!!!」で、messageIdが「msg-1」のとき、ERRORログにメッセージIDとして「msg-1」が記録される", undecodableBody, logsErrorWithMessageID("pubsub push: undecodable message data", "msg-1")},
+					{"受信本文が空のとき、ERRORログのエラーの内容は、受信本文がJSONとして読めないことを示す", "", logsErrorContaining(malformedEnvelopeMessage, "envelope is not valid JSON")},
+					{"受信本文がJSONでない「not-json」のとき、ERRORログのエラーの内容は、受信本文がJSONとして読めないことを示す", "not-json", logsErrorContaining(malformedEnvelopeMessage, "envelope is not valid JSON")},
+					{"messageが無いとき、ERRORログのエラーの内容は、message.dataが無いことを示す", missingMessageBody, logsErrorContaining(malformedEnvelopeMessage, "missing message.data")},
+					{"message.dataが無いとき、ERRORログのエラーの内容は、message.dataが無いことを示す", missingDataBody, logsErrorContaining(malformedEnvelopeMessage, "missing message.data")},
+					{"message.dataが空文字のとき、ERRORログのエラーの内容は、message.dataが無いことを示す", emptyDataBody, logsErrorContaining(malformedEnvelopeMessage, "missing message.data")},
+				}
+				for _, tc := range cases {
+					t.Run(tc.name, func(t *testing.T) {
+						logs := loggingtest.Capture(t)
 
-			assert.Equal(t, 500, w.Code)
-			assert.Contains(t, w.Body.String(), "handler failed")
-		})
+						rec := postBody(t, newReceiveEngine(succeeds), tc.body)
 
-		t.Run("データ部分のデコードにも、その後の処理関数の呼び出しにも成功したとき、200を返す", func(t *testing.T) {
-			h := pubsubpush.NewEventHandler(func(ctx context.Context, data []byte) error { return nil })
-
-			w := callHandle(t, h, envelopeJSON(t, base64.StdEncoding.EncodeToString([]byte("{}"))))
-
-			assert.Equal(t, 200, w.Code)
+						tc.check(t, rec, logs)
+					})
+				}
+			})
 		})
 	})
 }

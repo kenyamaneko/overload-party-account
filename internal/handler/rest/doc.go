@@ -1,3 +1,3 @@
-// Package rest は account の REST 配信層を提供する。
-// gin handler と、usecase の sentinel エラーを HTTP ステータスへ変換する責務を持つ。
+// Package rest は account の REST の受け口を提供する。
+// リクエストを業務ロジック側の型に変換して usecase に渡し、結果とエラーを HTTP の応答にする。
 package rest

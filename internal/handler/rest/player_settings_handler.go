@@ -5,14 +5,21 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/kenyamaneko/overload-party-account/internal/domain"
 	"github.com/kenyamaneko/overload-party-account/internal/port"
+	"github.com/kenyamaneko/overload-party-account/internal/presenter"
 	"github.com/kenyamaneko/overload-party-account/internal/usecase"
 	apiaccount "github.com/kenyamaneko/overload-party-account/packages/api-account"
 
 	internalauth "github.com/kenyamaneko/overload-party-gateway/packages/internalauth-go"
 )
 
-// PlayerSettingsHandler はプレイヤー設定の REST エンドポイントを処理する。
+const (
+	minVolume = 0
+	maxVolume = 100
+)
+
+// PlayerSettingsHandler はプレイヤー設定の REST の受け口である。
 type PlayerSettingsHandler struct {
 	settingsInteractor *usecase.PlayerSettingsInteractor
 }
@@ -22,49 +29,65 @@ func NewPlayerSettingsHandler(settingsInteractor *usecase.PlayerSettingsInteract
 	return &PlayerSettingsHandler{settingsInteractor: settingsInteractor}
 }
 
-// GetSettings はプレイヤーの設定を返す。
+// GetSettings は認証済みプレイヤーのプレイヤー設定を返す。
 func (h *PlayerSettingsHandler) GetSettings(c *gin.Context) {
 	playerID := c.GetString(internalauth.PlayerIDContextKey)
 
-	s, err := h.settingsInteractor.Get(c.Request.Context(), playerID)
+	settings, err := h.settingsInteractor.GetPlayerSettings(c.Request.Context(), playerID)
 	if err != nil {
 		respondError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, s)
+	c.JSON(http.StatusOK, presenter.ToPlayerSettingsResponse(settings))
 }
 
-// UpdateSettings はプレイヤーの設定を部分更新する。
-// PUT だが partial update 契約 (nil フィールドは現状維持)。全 nil リクエストは 400 で弾く。
+// UpdateSettings は認証済みプレイヤーのプレイヤー設定のうち、指定された項目だけを更新し、更新後の設定を返す。
 func (h *PlayerSettingsHandler) UpdateSettings(c *gin.Context) {
 	playerID := c.GetString(internalauth.PlayerIDContextKey)
 
 	var req apiaccount.UpdateSettingsRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	if !bindRequestBody(c, &req) {
 		return
 	}
 
 	patch := &port.PlayerSettingsPatch{
-		Language:    req.Language,
-		BgmVolume:   req.BgmVolume,
-		SeVolume:    req.SeVolume,
-		PushEnabled: req.PushEnabled,
+		Language:      req.Language,
+		BgmVolume:     req.BgmVolume,
+		SeVolume:      req.SeVolume,
+		IsPushEnabled: req.PushEnabled,
 	}
 	if patch.IsEmpty() {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "at least one settings field is required"})
+		respondBadRequest(c, "at least one settings field is required")
+		return
+	}
+	if patch.Language != nil {
+		if err := domain.ValidateLanguage(*patch.Language); err != nil {
+			respondError(c, err)
+			return
+		}
+	}
+	if isVolumeOutOfRange(patch.BgmVolume) {
+		respondBadRequest(c, invalidFieldMessage("bgm_volume"))
+		return
+	}
+	if isVolumeOutOfRange(patch.SeVolume) {
+		respondBadRequest(c, invalidFieldMessage("se_volume"))
 		return
 	}
 
-	if err := h.settingsInteractor.Update(c.Request.Context(), playerID, patch); err != nil {
+	if err := h.settingsInteractor.UpdatePlayerSettings(c.Request.Context(), playerID, patch); err != nil {
 		respondError(c, err)
 		return
 	}
-
-	updated, err := h.settingsInteractor.Get(c.Request.Context(), playerID)
+	updated, err := h.settingsInteractor.GetPlayerSettings(c.Request.Context(), playerID)
 	if err != nil {
 		respondError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, updated)
+	c.JSON(http.StatusOK, presenter.ToPlayerSettingsResponse(updated))
+}
+
+// isVolumeOutOfRange は指定された音量が許される範囲の外かを返す。指定されていないときは false を返す。
+func isVolumeOutOfRange(volume *int64) bool {
+	return volume != nil && (*volume < minVolume || *volume > maxVolume)
 }

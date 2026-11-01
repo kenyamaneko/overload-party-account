@@ -14,6 +14,5 @@ var sharedPg *postgrestest.Postgres
 func TestMain(m *testing.M) {
 	os.Exit(postgrestest.RunMain(m, &sharedPg,
 		postgrestest.WithSchemaFile("db/schema.sql"),
-		postgrestest.WithSchema("account"),
 	))
 }

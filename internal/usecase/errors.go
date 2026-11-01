@@ -2,27 +2,34 @@ package usecase
 
 import (
 	"errors"
-
-	"github.com/kenyamaneko/overload-party-account/internal/port"
+	"fmt"
 )
 
-// usecase 層は HTTP ステータスを知らず、以下のセンチネルで業務上の意味を表現する。
-// repository は port.ErrNotFound とラップした SQL エラーだけを返し、
-// handler (rest) が errors.Is でこれらのセンチネルを分類して HTTP ステータスに変換する。
 var (
-	// ErrNotFound は port.ErrNotFound の re-export。
-	ErrNotFound = port.ErrNotFound
-	// ErrPlayerNotFound はプレイヤーが存在しないことを示す。
-	ErrPlayerNotFound = errors.New("player not found")
-	// ErrPlayerAlreadyRegistered は同一 Firebase UID での二重登録を示す。
+	// ErrPlayerAlreadyRegistered は同じ FirebaseUID で登録済みであることを示す。
 	ErrPlayerAlreadyRegistered = errors.New("player already registered")
-	// ErrInvalidFaction は不正なファクション値を示す。
+	// ErrInvalidFaction は選択できない陣営であることを示す。
 	ErrInvalidFaction = errors.New("invalid faction")
-	// ErrFactionAlreadySelected は初期ファクション選択済みを示す。フローは冪等。
+	// ErrUnknownFaction は所持陣営として存在しない陣営であることを示す。
+	ErrUnknownFaction = errors.New("unknown faction")
+	// ErrFactionAlreadySelected は初期陣営を選択済みであることを示す。
 	ErrFactionAlreadySelected = errors.New("initial faction already selected")
-	// ErrFactionConflict は subscriber 経路で「既に別 faction が initial 確定済み」を
-	// 検出したことを示す。publisher のバグとして NACK 扱いする。
+	// ErrFactionConflict は初期陣営として確定済みの陣営と異なる陣営が指定されたことを示す。
 	ErrFactionConflict = errors.New("initial faction conflict")
 	// ErrBattleLimitExceeded は当日のバトル回数が上限に達していることを示す。
 	ErrBattleLimitExceeded = errors.New("daily battle limit exceeded")
+	// ErrGameConfigNotFound は必要なゲーム設定が存在しないことを示す。プレイヤーが存在しないことを示すエラーとは別である。
+	ErrGameConfigNotFound = errors.New("game config not found")
+	// ErrGameConfigBelowMinimum は、ゲーム設定の値が設定ごとの最小値を下回っていることを示す。
+	ErrGameConfigBelowMinimum = errors.New("game config is below the minimum")
+	// ErrInvalidExpGain は経験値の加算量が負であることを示す。
+	ErrInvalidExpGain = errors.New("invalid exp gain")
+	// ErrPlayer2IDRequired は、対人戦なのに2人目のプレイヤーIDが指定されていないことを示す。
+	ErrPlayer2IDRequired = errors.New("player2 id is required")
+	// ErrInvalidGameResult は対戦種別・勝者の番号・終了理由の組が不正であることを示す。
+	ErrInvalidGameResult = errors.New("invalid game result")
+	// ErrInvalidWinnerNumber は勝者の番号が不正であることを示す。ErrInvalidGameResult の一種である。
+	ErrInvalidWinnerNumber = fmt.Errorf("%w: winner number", ErrInvalidGameResult)
+	// ErrInvalidMatchType は対戦種別が不正であることを示す。ErrInvalidGameResult の一種である。
+	ErrInvalidMatchType = fmt.Errorf("%w: match type", ErrInvalidGameResult)
 )

@@ -1,51 +1,58 @@
 package domain_test
 
 import (
-	"strings"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/kenyamaneko/overload-party-account/internal/domain"
 )
 
 func TestValidateName(t *testing.T) {
-	t.Run("[表示名バリデーション]表示名の妥当性検証", func(t *testing.T) {
-		t.Run("空文字のとき、エラーを返す", func(t *testing.T) {
-			err := domain.ValidateName("")
+	t.Run("[表示名]表示名の検証", func(t *testing.T) {
+		t.Run("正常系", func(t *testing.T) {
+			tests := []struct {
+				name  string
+				input string
+			}{
+				{name: "表示名が「あ」の1文字のとき、検証に成功する", input: "あ"},
+				{name: "表示名が「あいうえおかきくけこさしすせそたちつてと」(20文字)のとき、検証に成功する", input: "あいうえおかきくけこさしすせそたちつてと"},
+				{name: "表示名が「abcdefghijklmnopqrst」(20文字)のとき、検証に成功する", input: "abcdefghijklmnopqrst"},
+				{name: "表示名が「山田」と「太郎」の間に半角スペースを1つ含むとき、検証に成功する", input: "山田 太郎"},
+			}
+			for _, tt := range tests {
+				t.Run(tt.name, func(t *testing.T) {
+					err := domain.ValidateName(tt.input)
 
-			assert.ErrorIs(t, err, domain.ErrInvalidName)
+					require.NoError(t, err)
+				})
+			}
 		})
 
-		t.Run("空白文字のみで構成されているとき、エラーを返す", func(t *testing.T) {
-			err := domain.ValidateName("   ")
+		t.Run("異常系", func(t *testing.T) {
+			tests := []struct {
+				name         string
+				input        string
+				wantFragment string
+			}{
+				{name: "表示名が空文字のとき、表示名が空または空白のみであることを示すエラーになる", input: "", wantFragment: "empty or whitespace only"},
+				{name: "表示名が半角スペース1つのとき、表示名が空または空白のみであることを示すエラーになる", input: " ", wantFragment: "empty or whitespace only"},
+				{name: "表示名が全角スペース1つのとき、表示名が空または空白のみであることを示すエラーになる", input: "　", wantFragment: "empty or whitespace only"},
+				{name: "表示名が「あいうえおかきくけこさしすせそたちつてとな」(21文字)のとき、表示名が20文字を超えていることを示すエラーになる", input: "あいうえおかきくけこさしすせそたちつてとな", wantFragment: "21 runes exceeds max 20"},
+				{name: "表示名が「abcdefghijklmnopqrstu」(21文字)のとき、表示名が20文字を超えていることを示すエラーになる", input: "abcdefghijklmnopqrstu", wantFragment: "21 runes exceeds max 20"},
+				{name: "表示名が「あ」と「い」の間に改行を含むとき、表示名が制御文字を含むことを示すエラーになる", input: "あ\nい", wantFragment: "contains control character"},
+				{name: "表示名が「あ」と「い」の間にタブ文字を含むとき、表示名が制御文字を含むことを示すエラーになる", input: "あ\tい", wantFragment: "contains control character"},
+				{name: "表示名がNUL文字を含むとき、表示名が制御文字を含むことを示すエラーになる", input: "\x00", wantFragment: "contains control character"},
+				{name: "表示名がDEL文字(U+007F)を含むとき、表示名が制御文字を含むことを示すエラーになる", input: "\x7f", wantFragment: "contains control character"},
+			}
+			for _, tt := range tests {
+				t.Run(tt.name, func(t *testing.T) {
+					err := domain.ValidateName(tt.input)
 
-			assert.ErrorIs(t, err, domain.ErrInvalidName)
-		})
-
-		t.Run("文字数が上限(20文字)を超えるとき、エラーを返す", func(t *testing.T) {
-			err := domain.ValidateName(strings.Repeat("あ", domain.MaxNameRunes+1))
-
-			assert.ErrorIs(t, err, domain.ErrInvalidName)
-		})
-
-		t.Run("文字数がちょうど上限(20文字)のとき、エラーにならない", func(t *testing.T) {
-			err := domain.ValidateName(strings.Repeat("あ", domain.MaxNameRunes))
-
-			require.NoError(t, err)
-		})
-
-		t.Run("制御文字が含まれるとき、エラーを返す", func(t *testing.T) {
-			err := domain.ValidateName("abc\x07def")
-
-			assert.ErrorIs(t, err, domain.ErrInvalidName)
-		})
-
-		t.Run("空白以外の文字を含み、上限以下で、制御文字を含まないとき、エラーにならない", func(t *testing.T) {
-			err := domain.ValidateName("プレイヤー1号")
-
-			require.NoError(t, err)
+					require.ErrorIs(t, err, domain.ErrInvalidName)
+					require.ErrorContains(t, err, tt.wantFragment)
+				})
+			}
 		})
 	})
 }

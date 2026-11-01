@@ -3,14 +3,22 @@ info:
   title: overload-party-account
   version: 0.1.0
   description: |
-    Account service の REST 契約 (gateway / shop / scenario / battle → account)。
-    本ファイルが SSoT。`packages/api-account` の Go 型は oapi-codegen が本ファイルから生成する。
+    アカウントサービスの REST 契約 (gateway・shop・scenario・battle・card から呼ばれる)。
+    本ファイルが SSoT で、`packages/api-account` の Go 型は oapi-codegen が本ファイルから生成する。
 
-    エンドポイント分類 (ADR-037 Phase 3):
-    - `/internal/v1/auth/*`: Firebase UID をキーとする bootstrap 系。player_id 確立前のため認証なし
-    - `/internal/v1/players/award-game-exp`: battle が直接呼ぶサーバー間バッチ。body に 2 プレイヤー分の player_id を含み JWT sub では表現できないため認証なし
-    - `/internal/v1/players/revert-battle-count`: gateway の停止時処理が直接呼ぶサーバー間バッチ。body に 2 プレイヤー分の player_id を含み JWT sub では表現できないため認証なし
-    - `/api/v1/account/me/*`: gateway / shop / scenario が `X-Internal-Auth` (HS256 JWT) を付けて呼ぶ player-scoped API。player_id は sub クレームから解決し path / body には含めない
+    エンドポイントの分類:
+    - `/internal/v1/auth/*`: Firebase UID をキーとする呼び出し。プレイヤーID が決まる前に呼ばれるため認証しない
+    - `/internal/v1/players/{playerID}/factions`: card が所持陣営を確かめるサービス間の照会。パスでプレイヤーID を受けるため認証しない
+    - `/internal/v1/players/award-game-exp`: battle が呼ぶサービス間の一括処理。ボディに 2 プレイヤー分の player_id を含み JWT の sub では表せないため認証しない
+    - `/internal/v1/players/revert-battle-count`: gateway の停止時処理が呼ぶサービス間の一括処理。ボディに 2 プレイヤー分の player_id を含み JWT の sub では表せないため認証しない
+    - `/api/v1/account/me/*`: gateway・shop・scenario が `X-Internal-Auth` (RS256 の JWT) を付けて呼ぶプレイヤー単位の API。プレイヤーID は sub クレームから決まり、パスにもボディにも含めない
+
+    エラー応答の本文は `{"error": "<文面>"}` の形で、取りうる文面は各応答の schema の pattern が定める。
+    文面の原則は次のとおりで、例外は各応答の pattern に従う。
+    - ボディが JSON として読めないときは `invalid request body`
+    - 必須項目が欠けている (空文字を含む) ときは `<項目名> is required`
+    - 値が許される範囲や形式の外のときは `<項目名> is invalid`
+    - 5xx は原因を応答に出さず、固定の文面 `internal server error` を返す
 
 paths:
   /health:
@@ -30,8 +38,9 @@ paths:
       operationId: registerPlayer
       summary: 新規プレイヤーを登録する (gateway が Firebase UID を中継)
       description: |
-        表示名はオンボード内 name 入力ステップで PUT /api/v1/account/me/name 経由で確定するため、
-        Register 時には受け取らない。
+        表示名はこの呼び出しでは受け取らない。オンボーディングの名前入力ステップで scenario が
+        発行する表示名設定イベント (`onboarding_name_set`) をアカウントサービスが購読して確定する。
+        同じ firebase_uid の二重登録は 409 になる。リトライを冪等にしたい呼び出し元はログインを呼ぶ。
       requestBody:
         required: true
         content:
@@ -46,11 +55,24 @@ paths:
               schema:
                 $ref: "#/components/schemas/PlayerResponse"
         "400":
-          description: firebase_uid が空
+          description: ボディが JSON として読めない、または firebase_uid が空
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [error]
+                properties:
+                  error:
+                    type: string
+                    pattern: "^(invalid request body|firebase_uid is required)$"
         "409":
-          description: 同一 firebase_uid で既に登録済み
+          description: 同じ firebase_uid で登録済み (同時に登録した場合の後発を含む)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "500":
-          description: DB 接続エラー
+          $ref: "#/components/responses/InternalServerError"
 
   /internal/v1/auth/login:
     post:
@@ -70,16 +92,25 @@ paths:
               schema:
                 $ref: "#/components/schemas/PlayerResponse"
         "400":
-          description: firebase_uid が空
+          description: ボディが JSON として読めない、または firebase_uid が空
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [error]
+                properties:
+                  error:
+                    type: string
+                    pattern: "^(invalid request body|firebase_uid is required)$"
         "404":
-          description: プレイヤーが存在しない
+          $ref: "#/components/responses/PlayerNotFound"
         "500":
-          description: DB 接続エラー
+          $ref: "#/components/responses/InternalServerError"
 
   /internal/v1/auth/by-firebase-uid/{firebaseUID}:
     get:
       operationId: getPlayerByFirebaseUID
-      summary: Firebase UID からプレイヤーを検索する (gateway などサービス間ルックアップ用)
+      summary: Firebase UID からプレイヤーを検索する (gateway などサービス間の照会用)
       parameters:
         - name: firebaseUID
           in: path
@@ -94,44 +125,57 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/PlayerResponse"
-        "400":
-          description: firebaseUID が空
         "404":
-          description: プレイヤーが存在しない
+          $ref: "#/components/responses/PlayerNotFound"
         "500":
-          description: DB 接続エラー
+          $ref: "#/components/responses/InternalServerError"
 
   /internal/v1/players/{playerID}/factions:
     get:
       operationId: listPlayerFactions
-      summary: 指定プレイヤーの所持ファクション一覧を返す (card → account)
+      summary: 指定プレイヤーの所持陣営一覧を返す (card → account)
       description: |
-        card がデッキ作成/編集時に宣言ファクションの所持を検証するためのサービス間ルックアップ。
-        player_id を path で受けるため bootstrap 系と同様に認証なし (/internal 配下)。
+        card がデッキの作成・編集時に、宣言した陣営を所持しているか確かめるためのサービス間の照会。
+        プレイヤーID をパスで受けるため認証しない (/internal 配下)。
       parameters:
         - name: playerID
           in: path
           required: true
+          description: UUID 形式のプレイヤーID
           schema:
             type: string
           x-go-name: PlayerID
       responses:
         "200":
-          description: 所持ファクション一覧
+          description: 所持陣営一覧
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/FactionListing"
+        "400":
+          description: パスのプレイヤーID が UUID 形式でない
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [error]
+                properties:
+                  error:
+                    type: string
+                    pattern: "^invalid player id$"
+        "404":
+          $ref: "#/components/responses/PlayerNotFound"
         "500":
-          description: DB 接続エラー
+          $ref: "#/components/responses/InternalServerError"
 
   /internal/v1/players/award-game-exp:
     post:
       operationId: awardGameExp
       summary: 対戦終了後に両プレイヤーへ経験値を付与する (battle → account)
       description: |
-        body に両 player_id を含むサーバー間バッチ呼び出し。JWT sub では表現できないため
-        bootstrap 系と同様に認証なし (/internal 配下)。
+        ボディに両プレイヤーの player_id を含むサービス間の一括処理。JWT の sub では表せないため
+        認証しない (/internal 配下)。2 人分の付与は 1 つの処理として確定し、片方が失敗したときはどちらにも付与しない。
+        winner_num が 0 のときは、reason が何であっても引き分けとして扱う。
       requestBody:
         required: true
         content:
@@ -142,20 +186,29 @@ paths:
         "204":
           description: 付与成功
         "400":
-          description: リクエストボディ不正
+          description: ボディが JSON として読めない、必須項目が欠けている、または値が許される範囲の外
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [error]
+                properties:
+                  error:
+                    type: string
+                    pattern: "^(invalid request body|(player1_id|player2_id|winner_num|reason|match_type) is required|(player1_id|player2_id|winner_num|match_type) is invalid)$"
         "404":
-          description: プレイヤーが存在しない
+          $ref: "#/components/responses/PlayerNotFound"
         "500":
-          description: DB 接続エラー
+          $ref: "#/components/responses/InternalServerError"
 
   /internal/v1/players/revert-battle-count:
     post:
       operationId: revertBattleCount
       summary: 停止で無効になった対戦の消費バトル回数を両プレイヤーに戻す (gateway → account)
       description: |
-        body に両 player_id・対戦識別子・バトル回数を消費した時刻を含むサーバー間バッチ呼び出し。
-        JWT sub では表現できないため bootstrap 系と同様に認証なし (/internal 配下)。
-        同一 game_id の呼び出しは 1 回のみ適用され、以降は idempotent に 204 を返す。
+        ボディに両プレイヤーの player_id・対戦識別子・バトル回数を消費した時刻を含むサービス間の一括処理。
+        JWT の sub では表せないため認証しない (/internal 配下)。
+        同じ game_id の呼び出しは 1 回だけ適用され、以降も 204 を返す。
       requestBody:
         required: true
         content:
@@ -164,11 +217,20 @@ paths:
               $ref: "#/components/schemas/RevertBattleCountRequest"
       responses:
         "204":
-          description: 返却成功 (同一 game_id の再呼び出しも成功扱い)
+          description: 返却成功 (同じ game_id の再呼び出しも成功)
         "400":
-          description: リクエストボディ不正
+          description: ボディが JSON として読めない、必須項目が欠けている、または値が許される範囲の外
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [error]
+                properties:
+                  error:
+                    type: string
+                    pattern: "^(invalid request body|(game_id|player1_id|player2_id) is required|(player1_id|player2_id) is invalid|consumed_at_millis must be positive)$"
         "500":
-          description: DB 接続エラー
+          $ref: "#/components/responses/InternalServerError"
 
   /api/v1/account/me:
     get:
@@ -184,16 +246,16 @@ paths:
               schema:
                 $ref: "#/components/schemas/PlayerResponse"
         "401":
-          description: 認証失敗
+          $ref: "#/components/responses/Unauthorized"
         "404":
-          description: プレイヤーが存在しない
+          $ref: "#/components/responses/PlayerNotFound"
         "500":
-          description: DB 接続エラー
+          $ref: "#/components/responses/InternalServerError"
 
   /api/v1/account/me/name:
     put:
       operationId: updateName
-      summary: プレイヤー名を変更する
+      summary: 表示名を変更する
       security:
         - InternalAuth: []
       requestBody:
@@ -210,21 +272,29 @@ paths:
               schema:
                 $ref: "#/components/schemas/PlayerResponse"
         "400":
-          description: name が空 / バリデーション違反
+          description: ボディが JSON として読めない、または name が表示名の基準に合わない (空・空白だけ・制御文字を含む・20 文字超)
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [error]
+                properties:
+                  error:
+                    type: string
+                    pattern: "^(invalid request body|invalid name.*)$"
         "401":
-          description: 認証失敗
+          $ref: "#/components/responses/Unauthorized"
         "404":
-          description: プレイヤーが存在しない
+          $ref: "#/components/responses/PlayerNotFound"
         "500":
-          description: DB 接続エラー
+          $ref: "#/components/responses/InternalServerError"
 
   /api/v1/account/me/onboarding/name/validate:
     post:
       operationId: validateNameForOnboarding
-      summary: オンボード内 name 入力ステップで scenario が呼ぶ表示名バリデーション (書き込みなし)
+      summary: オンボーディングの名前入力ステップで scenario が呼ぶ表示名の検証
       description: |
-        バリデーション SSoT は account の internal/domain/name.go。
-        書き込みは onboarding-name-set subscriber が行う。
+        表示名は保存しない。保存は scenario が発行する表示名設定イベント (`onboarding_name_set`) の購読が行う。
       security:
         - InternalAuth: []
       requestBody:
@@ -235,15 +305,24 @@ paths:
               $ref: "#/components/schemas/ValidateNameForOnboardingRequest"
       responses:
         "204":
-          description: バリデーション成功
+          description: 検証成功
         "400":
-          description: name が空 / 全空白 / 制御文字 / 上限超
+          description: ボディが JSON として読めない、または name が表示名の基準に合わない (空・空白だけ・制御文字を含む・20 文字超)
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [error]
+                properties:
+                  error:
+                    type: string
+                    pattern: "^(invalid request body|invalid name.*)$"
         "401":
-          description: 認証失敗
+          $ref: "#/components/responses/Unauthorized"
         "404":
-          description: プレイヤーが存在しない
+          $ref: "#/components/responses/PlayerNotFound"
         "500":
-          description: DB 接続エラー
+          $ref: "#/components/responses/InternalServerError"
 
   /api/v1/account/me/battle-limit:
     get:
@@ -253,17 +332,17 @@ paths:
         - InternalAuth: []
       responses:
         "200":
-          description: バトル制限情報
+          description: バトル回数制限の情報
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/BattleLimitResponse"
         "401":
-          description: 認証失敗
+          $ref: "#/components/responses/Unauthorized"
         "404":
-          description: プレイヤーが存在しない
+          $ref: "#/components/responses/PlayerNotFound"
         "500":
-          description: DB 接続エラー
+          $ref: "#/components/responses/InternalServerError"
 
   /api/v1/account/me/battle-limit/increment:
     post:
@@ -273,18 +352,24 @@ paths:
         - InternalAuth: []
       responses:
         "204":
-          description: インクリメント成功
+          description: 加算成功
         "401":
-          description: 認証失敗
+          $ref: "#/components/responses/Unauthorized"
         "404":
-          description: プレイヤーが存在しない
+          $ref: "#/components/responses/PlayerNotFound"
+        "429":
+          description: 無料プレイヤーの 1 日のバトル回数が上限に達している
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "500":
-          description: DB 接続エラー
+          $ref: "#/components/responses/InternalServerError"
 
   /api/v1/account/me/premium:
     put:
       operationId: updatePremium
-      summary: プレミアムステータスを更新する (shop webhook 経由)
+      summary: プレミアム状態を更新する (運用・テスト用。プレミアム状態の正本は shop)
       security:
         - InternalAuth: []
       requestBody:
@@ -297,18 +382,28 @@ paths:
         "204":
           description: 更新成功
         "400":
-          description: リクエストボディ不正
+          description: ボディが JSON として読めない、is_premium が欠けている、または expires_at_millis が 0 以下
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [error]
+                properties:
+                  error:
+                    type: string
+                    pattern: "^(invalid request body|is_premium is required|expires_at_millis is invalid)$"
         "401":
-          description: 認証失敗
+          $ref: "#/components/responses/Unauthorized"
         "404":
-          description: プレイヤーが存在しない
+          $ref: "#/components/responses/PlayerNotFound"
         "500":
-          description: DB 接続エラー
+          $ref: "#/components/responses/InternalServerError"
 
   /api/v1/account/me/exp:
     post:
       operationId: addExp
       summary: 経験値を加算する
+      description: 加算する経験値が 0 のときは何も変えずに成功する。
       security:
         - InternalAuth: []
       requestBody:
@@ -321,36 +416,48 @@ paths:
         "204":
           description: 加算成功
         "400":
-          description: リクエストボディ不正
+          description: ボディが JSON として読めない、exp_gain が欠けている、または exp_gain が負
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [error]
+                properties:
+                  error:
+                    type: string
+                    pattern: "^(invalid request body|exp_gain is required|exp_gain is invalid)$"
         "401":
-          description: 認証失敗
+          $ref: "#/components/responses/Unauthorized"
         "404":
-          description: プレイヤーが存在しない
+          $ref: "#/components/responses/PlayerNotFound"
         "500":
-          description: DB 接続エラー
+          $ref: "#/components/responses/InternalServerError"
 
   /api/v1/account/me/factions:
     get:
       operationId: listFactions
-      summary: プレイヤーが所有するファクション一覧を返す
+      summary: プレイヤーが所持する陣営の一覧を返す
       security:
         - InternalAuth: []
       responses:
         "200":
-          description: ファクション一覧
+          description: 所持陣営一覧
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/FactionListing"
         "401":
-          description: 認証失敗
+          $ref: "#/components/responses/Unauthorized"
         "404":
-          description: プレイヤーが存在しない
+          $ref: "#/components/responses/PlayerNotFound"
         "500":
-          description: DB 接続エラー
+          $ref: "#/components/responses/InternalServerError"
     post:
       operationId: grantFaction
-      summary: ファクション所有権を付与する (購入・報酬等)
+      summary: 陣営の所持を付与する (購入・報酬など)
+      description: |
+        付与できる陣営は、初期陣営の選択と同じ SHE・Tenki・Sugar・Tuners の 4 種だけ。
+        Neutral は付与できず 400 になる。
       security:
         - InternalAuth: []
       requestBody:
@@ -363,20 +470,29 @@ paths:
         "204":
           description: 付与成功
         "400":
-          description: faction が空
+          description: ボディが JSON として読めない、faction が空、または付与できない陣営
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [error]
+                properties:
+                  error:
+                    type: string
+                    pattern: "^(invalid request body|faction is required|faction is invalid)$"
         "401":
-          description: 認証失敗
+          $ref: "#/components/responses/Unauthorized"
         "404":
-          description: プレイヤーが存在しない
+          $ref: "#/components/responses/PlayerNotFound"
         "500":
-          description: DB 接続エラー
+          $ref: "#/components/responses/InternalServerError"
 
   /api/v1/account/me/factions/select:
     post:
       operationId: selectInitialFaction
-      summary: 初期ファクション選択 (チュートリアル完了時に scenario が呼び出す)
+      summary: 初期陣営を選択する (チュートリアル完了時に scenario が呼び出す)
       description: |
-        冪等。既に選択済みの場合は 409 を返すがクライアントにとってはエラーではない。
+        既に初期陣営を選択済みのプレイヤーが再び選ぶと 409 になり、選択済みの陣営は変わらない。
       security:
         - InternalAuth: []
       requestBody:
@@ -389,15 +505,28 @@ paths:
         "200":
           description: 選択成功
         "400":
-          description: faction_id が空 / 無効なファクション
+          description: ボディが JSON として読めない、faction_id が空、または選択できない陣営 (Neutral を含む)
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [error]
+                properties:
+                  error:
+                    type: string
+                    pattern: "^(invalid request body|faction_id is required|invalid faction.*)$"
         "401":
-          description: 認証失敗
+          $ref: "#/components/responses/Unauthorized"
         "404":
-          description: プレイヤーが存在しない
+          $ref: "#/components/responses/PlayerNotFound"
         "409":
-          description: 初期ファクション選択済み (冪等 no-op)
+          description: 初期陣営を選択済み
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "500":
-          description: DB 接続エラー
+          $ref: "#/components/responses/InternalServerError"
 
   /api/v1/account/me/settings:
     get:
@@ -407,23 +536,23 @@ paths:
         - InternalAuth: []
       responses:
         "200":
-          description: 設定情報
+          description: プレイヤー設定
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/PlayerSettingsResponse"
         "401":
-          description: 認証失敗
+          $ref: "#/components/responses/Unauthorized"
         "404":
-          description: プレイヤーが存在しない
+          $ref: "#/components/responses/PlayerNotFound"
         "500":
-          description: DB 接続エラー
+          $ref: "#/components/responses/InternalServerError"
     put:
       operationId: updatePlayerSettings
-      summary: プレイヤー設定を部分更新する
+      summary: プレイヤー設定を部分的に更新する
       description: |
-        Partial update semantics: nil フィールドは現状維持 (COALESCE in SQL)。
-        全 nil リクエストは 400 で弾く。
+        指定しなかった項目は保存済みの値のままになる。
+        項目を 1 つも指定しない更新は 400 になる。
       security:
         - InternalAuth: []
       requestBody:
@@ -434,19 +563,28 @@ paths:
               $ref: "#/components/schemas/UpdateSettingsRequest"
       responses:
         "200":
-          description: 更新後の設定情報
+          description: 更新後のプレイヤー設定
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/PlayerSettingsResponse"
         "400":
-          description: language が空 / 全 nil
+          description: ボディが JSON として読めない、項目が 1 つも指定されていない、language が空または 10 文字を超える、または音量が 0 から 100 の外
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [error]
+                properties:
+                  error:
+                    type: string
+                    pattern: "^(invalid request body|at least one settings field is required|language is required|(language|bgm_volume|se_volume) is invalid)$"
         "401":
-          description: 認証失敗
+          $ref: "#/components/responses/Unauthorized"
         "404":
-          description: プレイヤーが存在しない
+          $ref: "#/components/responses/PlayerNotFound"
         "500":
-          description: DB 接続エラー
+          $ref: "#/components/responses/InternalServerError"
 
 components:
   securitySchemes:
@@ -454,10 +592,45 @@ components:
       type: apiKey
       in: header
       name: X-Internal-Auth
-      description: gateway が発行する HS256 JWT。sub クレームに player_id を含む。
+      description: gateway が発行する RS256 の JWT。sub クレームにプレイヤーID を含む。
+
+  responses:
+    Unauthorized:
+      description: 認証失敗 (X-Internal-Auth ヘッダが無い、またはトークンが無効)
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    PlayerNotFound:
+      description: プレイヤーが存在しない
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    InternalServerError:
+      description: |
+        サーバー内部の障害 (データベースの障害、ゲーム設定が見つからない、経験値係数が 1 未満、
+        累計経験値が負、保存されたオンボーディングの進行状態が契約の値でないときなど)。
+        原因は応答に出さない。
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [error]
+            properties:
+              error:
+                type: string
+                pattern: "^internal server error$"
 
   schemas:
-    # ─── Health ────────────────────────────────────────────────────────
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+          description: 原因を示す文面
+
     HealthResponse:
       type: object
       required: [status]
@@ -466,12 +639,11 @@ components:
           type: string
           example: ok
 
-    # ─── Player (response) ─────────────────────────────────────────────
     PlayerResponse:
       type: object
       description: |
-        PlayerView + computed level progress を JSON 化した、内部 REST 契約の唯一の
-        Player 表現。GET /api/v1/account/me とその親戚 endpoint が共通で返す。
+        プレイヤーの基本情報とレベル進捗。GET /api/v1/account/me とその関連エンドポイントが
+        共通で返す、プレイヤーの唯一の表現。
       required:
         - player_id
         - firebase_uid
@@ -492,7 +664,7 @@ components:
           x-go-name: FirebaseUID
         name:
           type: string
-          description: オンボーディング未完了時は省略 (omit) される。
+          description: 表示名が未設定のときは省略される。
         level:
           type: integer
           format: int64
@@ -506,7 +678,7 @@ components:
           format: int64
         initial_faction:
           type: string
-          description: オンボーディングで選択した faction (player_factions.is_initial=TRUE から導出)。
+          description: オンボーディングで選択した陣営。未選択のときは省略される。
         onboarding_status:
           $ref: "#/components/schemas/OnboardingStatus"
         premium_expires_at:
@@ -571,10 +743,10 @@ components:
       properties:
         factions:
           type: array
+          description: 所持している陣営。順序は決まっていない。
           items:
             type: string
 
-    # ─── Requests ──────────────────────────────────────────────────────
     RegisterRequest:
       type: object
       required: [firebase_uid]
@@ -601,8 +773,8 @@ components:
     ValidateNameForOnboardingRequest:
       type: object
       description: |
-        オンボード内 name 入力ステップで scenario が呼ぶ表示名バリデーション専用 DTO。
-        値は永続化されない。書き込みは onboarding-name-set subscriber 経由。
+        オンボーディングの名前入力ステップで scenario が呼ぶ表示名の検証に使う。
+        値は保存されない。
       required: [name]
       properties:
         name:
@@ -610,8 +782,6 @@ components:
 
     UpdatePremiumRequest:
       type: object
-      description: |
-        ExpiresAtMillis は UNIX ミリ秒タイムスタンプ。null は NULL リセット。
       required: [is_premium]
       properties:
         is_premium:
@@ -619,6 +789,10 @@ components:
         expires_at_millis:
           type: integer
           format: int64
+          minimum: 1
+          description: |
+            プレミアムの有効期限の UNIX ミリ秒。省略したとき、または null のときは有効期限なしにする。
+            保存済みの有効期限は消える。
 
     AddExpRequest:
       type: object
@@ -627,6 +801,8 @@ components:
         exp_gain:
           type: integer
           format: int64
+          minimum: 0
+          description: 加算する経験値。0 のときは何も変えずに成功する。
 
     AwardGameExpRequest:
       type: object
@@ -634,24 +810,34 @@ components:
       properties:
         player1_id:
           type: string
+          description: 1 人目のプレイヤーID。UUID 形式。
           x-go-name: Player1ID
         player2_id:
           type: string
+          description: 2 人目のプレイヤーID。空でないときは UUID 形式。match_type が npc のときは空文字でよい。
           x-go-name: Player2ID
         winner_num:
           type: integer
           format: int64
+          minimum: 0
+          maximum: 2
+          description: 勝者の番号。1 は player1_id、2 は player2_id の勝ち。0 は reason によらず引き分け。
         reason:
           type: string
+          minLength: 1
+          description: 対戦の終了理由。draw のとき winner_num は 0 だけ許される。
         match_type:
           type: string
+          enum: [pvp, npc]
+          x-go-type: string
+          description: 対戦種別。
 
     RevertBattleCountRequest:
       type: object
       description: |
-        consumed_at_millis はバトル回数を消費した (gateway が increment を呼んだ) 時刻の
-        UNIX ミリ秒。停止発生時刻ではなく、消費時点の時刻を渡す。ゲーム日境界 (JST 05:00)
-        の判定はこの時刻を基準に account 側で行う。0 以下は 400 になる。
+        consumed_at_millis はバトル回数を消費した (gateway が加算を呼んだ) 時刻の UNIX ミリ秒。
+        停止が発生した時刻ではなく、消費した時点の時刻を渡す。
+        ゲーム日の境界 (JST 05:00) はこの時刻を基準に判定する。
       required: [game_id, player1_id, player2_id, consumed_at_millis]
       properties:
         game_id:
@@ -659,13 +845,16 @@ components:
           x-go-name: GameID
         player1_id:
           type: string
+          description: UUID 形式のプレイヤーID
           x-go-name: Player1ID
         player2_id:
           type: string
+          description: UUID 形式のプレイヤーID
           x-go-name: Player2ID
         consumed_at_millis:
           type: integer
           format: int64
+          minimum: 1
 
     FactionGrantRequest:
       type: object
@@ -673,12 +862,13 @@ components:
       properties:
         faction:
           type: string
+          description: 付与する陣営。初期陣営として選べる陣営だけを受け付ける (Neutral は付与できない)。
 
     SelectInitialFactionRequest:
       type: object
       description: |
-        Scenario calls this once the tutorial/story pins the player's faction choice;
-        account UPSERTs player_factions with is_initial=TRUE in one tx.
+        scenario がチュートリアルでプレイヤーの陣営の選択を確定したときに呼ぶ。
+        選択した陣営は所持陣営にも加わる。
       required: [faction_id]
       properties:
         faction_id:
@@ -688,26 +878,31 @@ components:
     UpdateSettingsRequest:
       type: object
       description: |
-        Partial update: nil フィールドは現状維持 (COALESCE in SQL)。
-        最低 1 つは non-nil である必要がある (handler 層で検証)。
+        指定しなかった項目は保存済みの値のままになる。
+        1 つ以上の項目を指定する必要があり、検証はアカウントサービスの受け口が行う。
       properties:
         language:
           type: string
+          description: 保存先の列の上限に合わせ、10 文字まで。
+          minLength: 1
+          maxLength: 10
         bgm_volume:
           type: integer
           format: int64
+          minimum: 0
+          maximum: 100
         se_volume:
           type: integer
           format: int64
+          minimum: 0
+          maximum: 100
         push_enabled:
           type: boolean
 
-    # ─── Enums (流出するもの) ──────────────────────────────────────────
     OnboardingStatus:
       type: string
       description: |
-        オンボーディング進捗。`internal/domain/onboarding_status.go` の定数群と完全一致。
-        drift は enum_drift_test.go で検知する。
+        オンボーディングの進行状態。段階は not_started、name_set、faction_set、completed の順に進む。
       enum:
         - not_started
         - name_set

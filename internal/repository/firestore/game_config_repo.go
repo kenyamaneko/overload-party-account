@@ -1,4 +1,4 @@
-// Package firestore は Firestore による account サービスの読み取り専用データアクセス実装を提供する。
+// Package firestore は Firestore を使った、ゲーム設定の読み取りの実装を提供する。
 package firestore
 
 import (
@@ -16,31 +16,42 @@ const gameConfigCollection = "game_config"
 
 var _ port.GameConfigRepo = (*GameConfigRepository)(nil)
 
-// GameConfigRepository は port.GameConfigRepo の Firestore 実装。
+// GameConfigRepository はゲーム設定の Firestore 実装である。
 type GameConfigRepository struct {
 	client *firestore.Client
 }
 
-// NewGameConfigRepository は GameConfigRepository を生成する。
-func NewGameConfigRepository(client *firestore.Client) *GameConfigRepository {
+// New は GameConfigRepository を生成する。
+func New(client *firestore.Client) *GameConfigRepository {
 	return &GameConfigRepository{client: client}
 }
 
-// GetInt64 は指定キーの設定値を int64 で返す。ドキュメント不在は port.ErrNotFound。
+// GetInt64 はキーに対応するゲーム設定の整数値を返す。
+// 設定がなければ port.ErrNotFound、値の項目がない・null・整数でないときは port.ErrValueNotInteger を返す。
+// 呼び出しが取り消されたときは context.Canceled、期限を過ぎたときは context.DeadlineExceeded を包んだエラーを返す。
 func (r *GameConfigRepository) GetInt64(ctx context.Context, key string) (int64, error) {
 	snap, err := r.client.Collection(gameConfigCollection).Doc(key).Get(ctx)
 	if err != nil {
-		if status.Code(err) == codes.NotFound {
+		switch status.Code(err) {
+		case codes.NotFound:
 			return 0, fmt.Errorf("game config %q: %w", key, port.ErrNotFound)
+		case codes.Canceled:
+			return 0, fmt.Errorf("get game config %q: %w: %w", key, context.Canceled, err)
+		case codes.DeadlineExceeded:
+			return 0, fmt.Errorf("get game config %q: %w: %w", key, context.DeadlineExceeded, err)
+		default:
+			return 0, fmt.Errorf("get game config %q: %w", key, err)
 		}
-		return 0, fmt.Errorf("get game config %q: %w", key, err)
 	}
 
 	var doc struct {
-		Value int64 `firestore:"value"`
+		Value *int64 `firestore:"value"`
 	}
 	if err := snap.DataTo(&doc); err != nil {
-		return 0, fmt.Errorf("parse game config %q: %w", key, err)
+		return 0, fmt.Errorf("game config %q: %w: %w", key, port.ErrValueNotInteger, err)
 	}
-	return doc.Value, nil
+	if doc.Value == nil {
+		return 0, fmt.Errorf("game config %q has no value: %w", key, port.ErrValueNotInteger)
+	}
+	return *doc.Value, nil
 }

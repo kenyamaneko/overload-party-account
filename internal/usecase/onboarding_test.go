@@ -1,255 +1,303 @@
-//go:build integration
-
 package usecase_test
 
 import (
-	"context"
 	"testing"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	gamedesign "github.com/kenyamaneko/overload-party-common/packages/game-design-constants"
-	apiscenario "github.com/kenyamaneko/overload-party-scenario/packages/api-scenario"
-
+	"github.com/kenyamaneko/overload-party-account/internal/adapter/logging/loggingtest"
 	"github.com/kenyamaneko/overload-party-account/internal/domain"
-	"github.com/kenyamaneko/overload-party-account/internal/repository/postgres"
+	"github.com/kenyamaneko/overload-party-account/internal/port/porttest"
 	"github.com/kenyamaneko/overload-party-account/internal/usecase"
+	"github.com/kenyamaneko/overload-party-account/internal/usecase/usecasetest"
 )
 
-func TestOnboardingInteractor_ApplyNameSet(t *testing.T) {
-	t.Run("[オンボーディング]オンボーディング進行の副作用反映", func(t *testing.T) {
-		t.Run("ApplyNameSetに共通する仕様", func(t *testing.T) {
-			t.Run("同一のイベントIDを処理するのが初めてのとき、処理を実行し、戻り値はtrueになり、オンボーディング状態は目標状態(name_set)へ進む", func(t *testing.T) {
-				interactor := newTestOnboardingInteractor(t)
-				playerID := registerTestPlayer(t, "firebase-onb-1")
+const onboardingPlayerID = "d4b1c7e9-2a5f-4e83-9c06-7f1a3b5d8e20"
 
-				processed, err := interactor.ApplyNameSet(context.Background(), uuid.NewString(), apiscenario.EventTypeOnboardingNameSet, playerID, "プレイヤー")
+func newOnboardingEnv(t *testing.T, stepCount int) (*usecasetest.UnitEnv, string) {
+	t.Helper()
+	env := usecasetest.NewUnitEnvWithPlayerIDGenerator(t, porttest.NewFixedPlayerIDGenerator(onboardingPlayerID))
+	playerID := usecasetest.RegisterPlayer(t, env.Auth)
+	usecasetest.AdvanceOnboarding(t, env.Onboarding, playerID, stepCount)
+	return env, playerID
+}
 
-				require.NoError(t, err)
-				assert.True(t, processed)
-				status, err := postgres.NewPlayerRepository(sharedPg.Pool).GetOnboardingStatus(context.Background(), playerID)
-				require.NoError(t, err)
-				assert.Equal(t, domain.OnboardingStatusNameSet, status)
+func playerInfoOf(t *testing.T, env *usecasetest.UnitEnv, playerID string) *domain.PlayerInfo {
+	t.Helper()
+	info, err := env.Player.GetPlayer(t.Context(), playerID)
+	require.NoError(t, err)
+	return info
+}
+
+func TestApplyNameSet(t *testing.T) {
+	t.Run("[オンボーディング進行]表示名設定イベントの反映", func(t *testing.T) {
+		t.Run("正常系", func(t *testing.T) {
+			t.Run("登録直後のプレイヤーに未処理のイベントを反映するとき", func(t *testing.T) {
+				t.Run("表示名がゆうしゃのとき、反映したあとに取得したプレイヤー情報のnameはゆうしゃになる", func(t *testing.T) {
+					env, playerID := newOnboardingEnv(t, 0)
+					err := env.Onboarding.ApplyNameSet(t.Context(), uuid.NewString(), usecasetest.DummyEventType, playerID, "ゆうしゃ")
+					require.NoError(t, err)
+					assert.Equal(t, usecasetest.ToPointer("ゆうしゃ"), playerInfoOf(t, env, playerID).View.Player.Name)
+				})
+
+				t.Run("反映したあとに取得したプレイヤー情報のonboarding_statusはname_setになる", func(t *testing.T) {
+					env, playerID := newOnboardingEnv(t, 0)
+					err := env.Onboarding.ApplyNameSet(t.Context(), uuid.NewString(), usecasetest.DummyEventType, playerID, "ゆうしゃ")
+					require.NoError(t, err)
+					assert.Equal(t, "name_set", playerInfoOf(t, env, playerID).View.Player.OnboardingStatus)
+				})
 			})
 
-			t.Run("同一のイベントIDが処理済みのとき、追加の副作用を起こさず、戻り値はfalseになる", func(t *testing.T) {
-				interactor := newTestOnboardingInteractor(t)
-				playerID := registerTestPlayer(t, "firebase-onb-2")
-				eventID := uuid.NewString()
-				_, err := interactor.ApplyNameSet(context.Background(), eventID, apiscenario.EventTypeOnboardingNameSet, playerID, "最初の名前")
-				require.NoError(t, err)
+			t.Run("同じevent_idのイベントを2回反映するとき", func(t *testing.T) {
+				t.Run("2回目の反映は、エラーにならない", func(t *testing.T) {
+					env, playerID := newOnboardingEnv(t, 0)
+					eventID := uuid.NewString()
+					require.NoError(t, env.Onboarding.ApplyNameSet(t.Context(), eventID, usecasetest.DummyEventType, playerID, "ゆうしゃ"))
+					assert.NoError(t, env.Onboarding.ApplyNameSet(t.Context(), eventID, usecasetest.DummyEventType, playerID, "ゆうしゃ"))
+				})
 
-				processed, err := interactor.ApplyNameSet(context.Background(), eventID, apiscenario.EventTypeOnboardingNameSet, playerID, "別の名前")
-
-				require.NoError(t, err)
-				assert.False(t, processed)
-				player, err := postgres.NewPlayerRepository(sharedPg.Pool).FindByID(context.Background(), playerID)
-				require.NoError(t, err)
-				require.NotNil(t, player.Name)
-				assert.Equal(t, "最初の名前", *player.Name)
+				t.Run("2回目の表示名がゆうしゃ2のとき、2回目を反映しても、反映したあとに取得したプレイヤー情報のnameはゆうしゃのままになる", func(t *testing.T) {
+					env, playerID := newOnboardingEnv(t, 0)
+					eventID := uuid.NewString()
+					require.NoError(t, env.Onboarding.ApplyNameSet(t.Context(), eventID, usecasetest.DummyEventType, playerID, "ゆうしゃ"))
+					require.NoError(t, env.Onboarding.ApplyNameSet(t.Context(), eventID, usecasetest.DummyEventType, playerID, "ゆうしゃ2"))
+					assert.Equal(t, usecasetest.ToPointer("ゆうしゃ"), playerInfoOf(t, env, playerID).View.Player.Name)
+				})
 			})
 
-			t.Run("処理本体の途中でエラーが起きたとき、イベントIDの処理済み記録もロールバックされ、同一のイベントIDで再配信されると再度処理が実行される", func(t *testing.T) {
-				interactor := newTestOnboardingInteractor(t)
-				eventID := uuid.NewString()
-				nonexistentPlayerID := uuid.NewString()
-				_, err := interactor.ApplyNameSet(context.Background(), eventID, apiscenario.EventTypeOnboardingNameSet, nonexistentPlayerID, "プレイヤー")
-				require.Error(t, err)
-
-				playerID := registerTestPlayer(t, "firebase-onb-3")
-				processed, err := interactor.ApplyNameSet(context.Background(), eventID, apiscenario.EventTypeOnboardingNameSet, playerID, "プレイヤー")
-
-				require.NoError(t, err)
-				assert.True(t, processed)
-			})
-
-			t.Run("目標状態への遷移が後退にあたるとき、オンボーディング状態を変更しない", func(t *testing.T) {
-				interactor := newTestOnboardingInteractor(t)
-				playerID := registerTestPlayer(t, "firebase-onb-4")
-				require.NoError(t, postgres.NewPlayerRepository(sharedPg.Pool).UpdateOnboardingStatus(context.Background(), playerID, domain.OnboardingStatusCompleted))
-
-				processed, err := interactor.ApplyNameSet(context.Background(), uuid.NewString(), apiscenario.EventTypeOnboardingNameSet, playerID, "プレイヤー")
-
-				require.NoError(t, err)
-				assert.True(t, processed)
-				status, err := postgres.NewPlayerRepository(sharedPg.Pool).GetOnboardingStatus(context.Background(), playerID)
-				require.NoError(t, err)
-				assert.Equal(t, domain.OnboardingStatusCompleted, status)
+			t.Run("onboarding_statusがname_setで表示名がゆうしゃのプレイヤーに、別のevent_idで表示名ゆうしゃ2のイベントを反映するとき、反映したあとに取得したプレイヤー情報のnameはゆうしゃ2になる", func(t *testing.T) {
+				env, playerID := newOnboardingEnv(t, usecasetest.StepsToNameSet)
+				require.NoError(t, env.Onboarding.ApplyNameSet(t.Context(), uuid.NewString(), usecasetest.DummyEventType, playerID, "ゆうしゃ2"))
+				assert.Equal(t, usecasetest.ToPointer("ゆうしゃ2"), playerInfoOf(t, env, playerID).View.Player.Name)
 			})
 		})
 
-		t.Run("ApplyNameSet固有の仕様", func(t *testing.T) {
-			t.Run("表示名が無効(空文字・空白のみ・20文字超・制御文字のいずれか)なとき、処理を実行せずエラーを返す", func(t *testing.T) {
-				interactor := newTestOnboardingInteractor(t)
-				playerID := registerTestPlayer(t, "firebase-onb-5")
+		t.Run("異常系", func(t *testing.T) {
+			t.Run("空文字の表示名のイベントを反映するとき", func(t *testing.T) {
+				t.Run("表示名が不正であることを示すエラーになる", func(t *testing.T) {
+					env, playerID := newOnboardingEnv(t, 0)
+					err := env.Onboarding.ApplyNameSet(t.Context(), uuid.NewString(), usecasetest.DummyEventType, playerID, "")
+					assert.ErrorIs(t, err, domain.ErrInvalidName)
+				})
 
-				_, err := interactor.ApplyNameSet(context.Background(), uuid.NewString(), apiscenario.EventTypeOnboardingNameSet, playerID, "")
+				t.Run("反映に失敗したあと、同じevent_idで表示名ゆうしゃのイベントを反映すると、反映したあとに取得したプレイヤー情報のnameはゆうしゃになる", func(t *testing.T) {
+					env, playerID := newOnboardingEnv(t, 0)
+					eventID := uuid.NewString()
+					require.Error(t, env.Onboarding.ApplyNameSet(t.Context(), eventID, usecasetest.DummyEventType, playerID, ""))
+					require.NoError(t, env.Onboarding.ApplyNameSet(t.Context(), eventID, usecasetest.DummyEventType, playerID, "ゆうしゃ"))
+					assert.Equal(t, usecasetest.ToPointer("ゆうしゃ"), playerInfoOf(t, env, playerID).View.Player.Name)
+				})
 
-				require.Error(t, err)
-				player, err := postgres.NewPlayerRepository(sharedPg.Pool).FindByID(context.Background(), playerID)
-				require.NoError(t, err)
-				assert.Nil(t, player.Name)
-			})
-
-			t.Run("表示名が有効なとき、対象プレイヤーの表示名を指定値に更新する", func(t *testing.T) {
-				interactor := newTestOnboardingInteractor(t)
-				playerID := registerTestPlayer(t, "firebase-onb-6")
-
-				_, err := interactor.ApplyNameSet(context.Background(), uuid.NewString(), apiscenario.EventTypeOnboardingNameSet, playerID, "新しい名前")
-
-				require.NoError(t, err)
-				player, err := postgres.NewPlayerRepository(sharedPg.Pool).FindByID(context.Background(), playerID)
-				require.NoError(t, err)
-				require.NotNil(t, player.Name)
-				assert.Equal(t, "新しい名前", *player.Name)
+				t.Run("反映に失敗したあとにプレイヤー情報を取得すると、nameは含まれない", func(t *testing.T) {
+					env, playerID := newOnboardingEnv(t, 0)
+					require.Error(t, env.Onboarding.ApplyNameSet(t.Context(), uuid.NewString(), usecasetest.DummyEventType, playerID, ""))
+					assert.Nil(t, playerInfoOf(t, env, playerID).View.Player.Name)
+				})
 			})
 		})
 	})
 }
 
-func TestOnboardingInteractor_ApplyFactionSet(t *testing.T) {
-	t.Run("[オンボーディング]オンボーディング進行の副作用反映", func(t *testing.T) {
-		t.Run("ApplyFactionSet固有の仕様", func(t *testing.T) {
-			t.Run("初期選択ファクションIDが選択可能な4ファクション(SHE/Tenki/Sugar/Tuners)に含まれないNeutralのとき、処理を実行せずエラーを返す", func(t *testing.T) {
-				interactor := newTestOnboardingInteractor(t)
-				playerID := registerTestPlayer(t, "firebase-onb-faction-1")
+func TestApplyFactionSet(t *testing.T) {
+	t.Run("[オンボーディング進行]陣営設定イベントの反映", func(t *testing.T) {
+		t.Run("正常系", func(t *testing.T) {
+			t.Run("onboarding_statusがname_setのプレイヤーに未処理のイベントを反映するとき", func(t *testing.T) {
+				t.Run("陣営がSHEのとき、反映したあとに取得したプレイヤー情報のinitial_factionはSHEになる", func(t *testing.T) {
+					env, playerID := newOnboardingEnv(t, usecasetest.StepsToNameSet)
+					require.NoError(t, env.Onboarding.ApplyFactionSet(t.Context(), uuid.NewString(), usecasetest.DummyEventType, playerID, "SHE"))
+					assert.Equal(t, usecasetest.ToPointer("SHE"), playerInfoOf(t, env, playerID).View.InitialFaction)
+				})
 
-				_, err := interactor.ApplyFactionSet(context.Background(), uuid.NewString(), apiscenario.EventTypeOnboardingFactionSet, playerID, gamedesign.FactionNeutral)
-
-				require.Error(t, err)
-				got, err := postgres.NewFactionRepository(sharedPg.Pool).GetInitialFaction(context.Background(), playerID)
-				require.NoError(t, err)
-				assert.Nil(t, got)
+				t.Run("反映したあとに取得したプレイヤー情報のonboarding_statusはfaction_setになる", func(t *testing.T) {
+					env, playerID := newOnboardingEnv(t, usecasetest.StepsToNameSet)
+					require.NoError(t, env.Onboarding.ApplyFactionSet(t.Context(), uuid.NewString(), usecasetest.DummyEventType, playerID, "SHE"))
+					assert.Equal(t, "faction_set", playerInfoOf(t, env, playerID).View.Player.OnboardingStatus)
+				})
 			})
 
-			t.Run("対象プレイヤーが初期ファクション未選択のとき、指定したファクションを初期ファクションとして設定する", func(t *testing.T) {
-				interactor := newTestOnboardingInteractor(t)
-				playerID := registerTestPlayer(t, "firebase-onb-faction-2")
-
-				processed, err := interactor.ApplyFactionSet(context.Background(), uuid.NewString(), apiscenario.EventTypeOnboardingFactionSet, playerID, gamedesign.FactionSHE)
-
-				require.NoError(t, err)
-				assert.True(t, processed)
-				got, err := postgres.NewFactionRepository(sharedPg.Pool).GetInitialFaction(context.Background(), playerID)
-				require.NoError(t, err)
-				require.NotNil(t, got)
-				assert.Equal(t, gamedesign.FactionSHE, *got)
+			t.Run("onboarding_statusがname_setのプレイヤーに同じevent_idの陣営設定イベントを2回反映すると、2回目の反映は、エラーにならない", func(t *testing.T) {
+				env, playerID := newOnboardingEnv(t, usecasetest.StepsToNameSet)
+				eventID := uuid.NewString()
+				require.NoError(t, env.Onboarding.ApplyFactionSet(t.Context(), eventID, usecasetest.DummyEventType, playerID, "SHE"))
+				assert.NoError(t, env.Onboarding.ApplyFactionSet(t.Context(), eventID, usecasetest.DummyEventType, playerID, "SHE"))
 			})
 
-			t.Run("対象プレイヤーが既に別のファクションを初期ファクションとして選択済みのとき、ErrFactionConflictを返し、初期ファクションは変更しない", func(t *testing.T) {
-				interactor := newTestOnboardingInteractor(t)
-				playerID := registerTestPlayer(t, "firebase-onb-faction-3")
-				require.NoError(t, postgres.NewFactionRepository(sharedPg.Pool).SetInitialFaction(context.Background(), playerID, gamedesign.FactionSHE))
+			t.Run("初期陣営にSHEが確定済みのプレイヤーに、別のevent_idでSHEのイベントを反映するとき", func(t *testing.T) {
+				t.Run("エラーにならない", func(t *testing.T) {
+					env, playerID := newOnboardingEnv(t, usecasetest.StepsToFactionSet)
+					assert.NoError(t, env.Onboarding.ApplyFactionSet(t.Context(), uuid.NewString(), usecasetest.DummyEventType, playerID, "SHE"))
+				})
 
-				_, err := interactor.ApplyFactionSet(context.Background(), uuid.NewString(), apiscenario.EventTypeOnboardingFactionSet, playerID, gamedesign.FactionTenki)
+				t.Run("反映したあとに取得したプレイヤー情報のinitial_factionはSHEのままになる", func(t *testing.T) {
+					env, playerID := newOnboardingEnv(t, usecasetest.StepsToFactionSet)
+					require.NoError(t, env.Onboarding.ApplyFactionSet(t.Context(), uuid.NewString(), usecasetest.DummyEventType, playerID, "SHE"))
+					assert.Equal(t, usecasetest.ToPointer("SHE"), playerInfoOf(t, env, playerID).View.InitialFaction)
+				})
 
-				assert.ErrorIs(t, err, usecase.ErrFactionConflict)
-				got, err := postgres.NewFactionRepository(sharedPg.Pool).GetInitialFaction(context.Background(), playerID)
-				require.NoError(t, err)
-				require.NotNil(t, got)
-				assert.Equal(t, gamedesign.FactionSHE, *got)
+				t.Run("反映したあとに取得したプレイヤー情報のonboarding_statusはfaction_setのままになる", func(t *testing.T) {
+					env, playerID := newOnboardingEnv(t, usecasetest.StepsToFactionSet)
+					require.NoError(t, env.Onboarding.ApplyFactionSet(t.Context(), uuid.NewString(), usecasetest.DummyEventType, playerID, "SHE"))
+					assert.Equal(t, "faction_set", playerInfoOf(t, env, playerID).View.Player.OnboardingStatus)
+				})
+			})
+		})
+
+		t.Run("異常系", func(t *testing.T) {
+			t.Run("初期陣営にSHEが確定済みのプレイヤーに、別のevent_idでTenkiのイベントを反映するとき", func(t *testing.T) {
+				t.Run("陣営の衝突を示すエラーになる", func(t *testing.T) {
+					env, playerID := newOnboardingEnv(t, usecasetest.StepsToFactionSet)
+					err := env.Onboarding.ApplyFactionSet(t.Context(), uuid.NewString(), usecasetest.DummyEventType, playerID, "Tenki")
+					assert.ErrorIs(t, err, usecase.ErrFactionConflict)
+				})
+
+				t.Run("反映に失敗したあとにプレイヤー情報を取得すると、initial_factionはSHEのままになる", func(t *testing.T) {
+					env, playerID := newOnboardingEnv(t, usecasetest.StepsToFactionSet)
+					require.Error(t, env.Onboarding.ApplyFactionSet(t.Context(), uuid.NewString(), usecasetest.DummyEventType, playerID, "Tenki"))
+					assert.Equal(t, usecasetest.ToPointer("SHE"), playerInfoOf(t, env, playerID).View.InitialFaction)
+				})
 			})
 
-			t.Run("対象プレイヤーが既に同じファクションを初期ファクションとして選択済みのとき(再配信)、ErrFactionConflictを返さない", func(t *testing.T) {
-				interactor := newTestOnboardingInteractor(t)
-				playerID := registerTestPlayer(t, "firebase-onb-faction-4")
-				require.NoError(t, postgres.NewFactionRepository(sharedPg.Pool).SetInitialFaction(context.Background(), playerID, gamedesign.FactionSHE))
+			t.Run("onboarding_statusがname_setのプレイヤーに、陣営がNeutralのイベントを反映するとき", func(t *testing.T) {
+				t.Run("不正な陣営を示すエラーになる", func(t *testing.T) {
+					env, playerID := newOnboardingEnv(t, usecasetest.StepsToNameSet)
+					err := env.Onboarding.ApplyFactionSet(t.Context(), uuid.NewString(), usecasetest.DummyEventType, playerID, "Neutral")
+					assert.ErrorIs(t, err, usecase.ErrInvalidFaction)
+				})
 
-				_, err := interactor.ApplyFactionSet(context.Background(), uuid.NewString(), apiscenario.EventTypeOnboardingFactionSet, playerID, gamedesign.FactionSHE)
-
-				assert.NotErrorIs(t, err, usecase.ErrFactionConflict)
+				t.Run("反映に失敗したあとにプレイヤー情報を取得すると、initial_factionは含まれない", func(t *testing.T) {
+					env, playerID := newOnboardingEnv(t, usecasetest.StepsToNameSet)
+					require.Error(t, env.Onboarding.ApplyFactionSet(t.Context(), uuid.NewString(), usecasetest.DummyEventType, playerID, "Neutral"))
+					assert.Nil(t, playerInfoOf(t, env, playerID).View.InitialFaction)
+				})
 			})
 
-			t.Run("対象プレイヤーが既に同じファクションを初期ファクションとして選択済みのとき(再配信)、オンボーディング状態の前進は行われる", func(t *testing.T) {
-				interactor := newTestOnboardingInteractor(t)
-				playerID := registerTestPlayer(t, "firebase-onb-faction-5")
-				require.NoError(t, postgres.NewFactionRepository(sharedPg.Pool).SetInitialFaction(context.Background(), playerID, gamedesign.FactionSHE))
-
-				_, err := interactor.ApplyFactionSet(context.Background(), uuid.NewString(), apiscenario.EventTypeOnboardingFactionSet, playerID, gamedesign.FactionSHE)
-
-				require.NoError(t, err)
-				status, err := postgres.NewPlayerRepository(sharedPg.Pool).GetOnboardingStatus(context.Background(), playerID)
-				require.NoError(t, err)
-				assert.Equal(t, domain.OnboardingStatusFactionSet, status)
+			t.Run("onboarding_statusがnot_startedのプレイヤーに陣営設定イベントを反映すると、段階を飛ばしていることを示すエラーになる", func(t *testing.T) {
+				env, playerID := newOnboardingEnv(t, 0)
+				err := env.Onboarding.ApplyFactionSet(t.Context(), uuid.NewString(), usecasetest.DummyEventType, playerID, "SHE")
+				assert.ErrorIs(t, err, domain.ErrOnboardingStatusSkipped)
 			})
 		})
 	})
 }
 
-func TestOnboardingInteractor_ApplyCompleted(t *testing.T) {
-	t.Run("[オンボーディング]オンボーディング進行の副作用反映", func(t *testing.T) {
-		t.Run("同一のイベントIDを処理するのが初めてのとき、処理を実行し、戻り値はtrueになり、オンボーディング状態は目標状態(completed)へ進む", func(t *testing.T) {
-			interactor := newTestOnboardingInteractor(t)
-			playerID := registerTestPlayer(t, "firebase-onb-completed-1")
+func TestApplyCompleted(t *testing.T) {
+	t.Run("[オンボーディング進行]完了イベントの反映", func(t *testing.T) {
+		t.Run("正常系", func(t *testing.T) {
+			t.Run("onboarding_statusがfaction_setのプレイヤーに未処理のイベントを反映すると、反映したあとに取得したプレイヤー情報のonboarding_statusはcompletedになる", func(t *testing.T) {
+				env, playerID := newOnboardingEnv(t, usecasetest.StepsToFactionSet)
+				require.NoError(t, env.Onboarding.ApplyCompleted(t.Context(), uuid.NewString(), usecasetest.DummyEventType, playerID))
+				assert.Equal(t, "completed", playerInfoOf(t, env, playerID).View.Player.OnboardingStatus)
+			})
 
-			processed, err := interactor.ApplyCompleted(context.Background(), uuid.NewString(), apiscenario.EventTypePlayerOnboarded, playerID)
+			t.Run("onboarding_statusがfaction_setのプレイヤーに同じevent_idのイベントを2回反映すると、2回目の反映は、エラーにならない", func(t *testing.T) {
+				env, playerID := newOnboardingEnv(t, usecasetest.StepsToFactionSet)
+				eventID := uuid.NewString()
+				require.NoError(t, env.Onboarding.ApplyCompleted(t.Context(), eventID, usecasetest.DummyEventType, playerID))
+				assert.NoError(t, env.Onboarding.ApplyCompleted(t.Context(), eventID, usecasetest.DummyEventType, playerID))
+			})
 
-			require.NoError(t, err)
-			assert.True(t, processed)
-			status, err := postgres.NewPlayerRepository(sharedPg.Pool).GetOnboardingStatus(context.Background(), playerID)
-			require.NoError(t, err)
-			assert.Equal(t, domain.OnboardingStatusCompleted, status)
+			t.Run("onboarding_statusがcompletedのプレイヤーに別のevent_idのイベントを反映するとき", func(t *testing.T) {
+				t.Run("エラーにならない", func(t *testing.T) {
+					env, playerID := newOnboardingEnv(t, usecasetest.StepsToCompleted)
+					assert.NoError(t, env.Onboarding.ApplyCompleted(t.Context(), uuid.NewString(), usecasetest.DummyEventType, playerID))
+				})
+
+				t.Run("警告ログは出ない", func(t *testing.T) {
+					env, playerID := newOnboardingEnv(t, usecasetest.StepsToCompleted)
+					logs := loggingtest.Capture(t)
+					require.NoError(t, env.Onboarding.ApplyCompleted(t.Context(), uuid.NewString(), usecasetest.DummyEventType, playerID))
+					assert.Empty(t, usecasetest.SelectWarnings(logs))
+				})
+			})
 		})
 
-		t.Run("同一のイベントIDが処理済みのとき、戻り値はfalseになる", func(t *testing.T) {
-			interactor := newTestOnboardingInteractor(t)
-			playerID := registerTestPlayer(t, "firebase-onb-completed-2")
-			eventID := uuid.NewString()
-			_, err := interactor.ApplyCompleted(context.Background(), eventID, apiscenario.EventTypePlayerOnboarded, playerID)
-			require.NoError(t, err)
+		t.Run("異常系", func(t *testing.T) {
+			t.Run("onboarding_statusがname_setのプレイヤーに未処理のイベントを反映するとき", func(t *testing.T) {
+				t.Run("段階を飛ばしていることを示すエラーになる", func(t *testing.T) {
+					env, playerID := newOnboardingEnv(t, usecasetest.StepsToNameSet)
+					err := env.Onboarding.ApplyCompleted(t.Context(), uuid.NewString(), usecasetest.DummyEventType, playerID)
+					assert.ErrorIs(t, err, domain.ErrOnboardingStatusSkipped)
+				})
 
-			processed, err := interactor.ApplyCompleted(context.Background(), eventID, apiscenario.EventTypePlayerOnboarded, playerID)
+				t.Run("反映に失敗したあとにプレイヤー情報を取得すると、onboarding_statusはname_setのままになる", func(t *testing.T) {
+					env, playerID := newOnboardingEnv(t, usecasetest.StepsToNameSet)
+					require.Error(t, env.Onboarding.ApplyCompleted(t.Context(), uuid.NewString(), usecasetest.DummyEventType, playerID))
+					assert.Equal(t, "name_set", playerInfoOf(t, env, playerID).View.Player.OnboardingStatus)
+				})
+			})
+		})
+	})
+}
 
-			require.NoError(t, err)
-			assert.False(t, processed)
+func TestOnboardingStatusNotRegressing(t *testing.T) {
+	t.Run("[オンボーディング進行]進行状態の後戻り防止", func(t *testing.T) {
+		t.Run("正常系", func(t *testing.T) {
+			t.Run("onboarding_statusがname_setのプレイヤーに表示名設定イベントを反映するとき", func(t *testing.T) {
+				t.Run("反映したあとに取得したプレイヤー情報のonboarding_statusはname_setのままになる", func(t *testing.T) {
+					env, playerID := newOnboardingEnv(t, usecasetest.StepsToNameSet)
+					require.NoError(t, env.Onboarding.ApplyNameSet(t.Context(), uuid.NewString(), usecasetest.DummyEventType, playerID, "ゆうしゃ2"))
+					assert.Equal(t, "name_set", playerInfoOf(t, env, playerID).View.Player.OnboardingStatus)
+				})
+
+				t.Run("警告ログは出ない", func(t *testing.T) {
+					env, playerID := newOnboardingEnv(t, usecasetest.StepsToNameSet)
+					logs := loggingtest.Capture(t)
+					require.NoError(t, env.Onboarding.ApplyNameSet(t.Context(), uuid.NewString(), usecasetest.DummyEventType, playerID, "ゆうしゃ2"))
+					assert.Empty(t, usecasetest.SelectWarnings(logs))
+				})
+			})
 		})
 
-		t.Run("同一のイベントIDが処理済みのとき、オンボーディング状態はfaction_setのままになる", func(t *testing.T) {
-			interactor := newTestOnboardingInteractor(t)
-			playerID := registerTestPlayer(t, "firebase-onb-completed-3")
-			eventID := uuid.NewString()
-			_, err := interactor.ApplyCompleted(context.Background(), eventID, apiscenario.EventTypePlayerOnboarded, playerID)
-			require.NoError(t, err)
-			require.NoError(t, postgres.NewPlayerRepository(sharedPg.Pool).UpdateOnboardingStatus(context.Background(), playerID, domain.OnboardingStatusFactionSet))
+		t.Run("異常系", func(t *testing.T) {
+			t.Run("onboarding_statusがfaction_setのプレイヤーに表示名設定イベントを反映すると、反映したあとに取得したプレイヤー情報のonboarding_statusはfaction_setのままになる", func(t *testing.T) {
+				env, playerID := newOnboardingEnv(t, usecasetest.StepsToFactionSet)
+				require.NoError(t, env.Onboarding.ApplyNameSet(t.Context(), uuid.NewString(), usecasetest.DummyEventType, playerID, "ゆうしゃ2"))
+				assert.Equal(t, "faction_set", playerInfoOf(t, env, playerID).View.Player.OnboardingStatus)
+			})
 
-			_, err = interactor.ApplyCompleted(context.Background(), eventID, apiscenario.EventTypePlayerOnboarded, playerID)
+			t.Run("onboarding_statusがcompletedで初期陣営がSHEのプレイヤーに、陣営がSHEの陣営設定イベントを反映すると、反映したあとに取得したプレイヤー情報のonboarding_statusはcompletedのままになる", func(t *testing.T) {
+				env, playerID := newOnboardingEnv(t, usecasetest.StepsToCompleted)
+				require.NoError(t, env.Onboarding.ApplyFactionSet(t.Context(), uuid.NewString(), usecasetest.DummyEventType, playerID, "SHE"))
+				assert.Equal(t, "completed", playerInfoOf(t, env, playerID).View.Player.OnboardingStatus)
+			})
 
-			require.NoError(t, err)
-			status, err := postgres.NewPlayerRepository(sharedPg.Pool).GetOnboardingStatus(context.Background(), playerID)
-			require.NoError(t, err)
-			assert.Equal(t, domain.OnboardingStatusFactionSet, status)
-		})
+			t.Run("onboarding_statusがcompletedのプレイヤーに表示名設定イベントを反映するとき", func(t *testing.T) {
+				t.Run("警告ログが1件出る", func(t *testing.T) {
+					env, playerID := newOnboardingEnv(t, usecasetest.StepsToCompleted)
+					logs := loggingtest.Capture(t)
+					require.NoError(t, env.Onboarding.ApplyNameSet(t.Context(), uuid.NewString(), usecasetest.DummyEventType, playerID, "ゆうしゃ2"))
+					assert.Len(t, usecasetest.SelectWarnings(logs), 1)
+				})
 
-		t.Run("対象プレイヤーが存在せずイベント処理が一度失敗したとき、同一のイベントIDで再配信されると、戻り値はtrueになる", func(t *testing.T) {
-			interactor := newTestOnboardingInteractor(t)
-			eventID := uuid.NewString()
-			nonexistentPlayerID := uuid.NewString()
-			_, err := interactor.ApplyCompleted(context.Background(), eventID, apiscenario.EventTypePlayerOnboarded, nonexistentPlayerID)
-			require.Error(t, err)
+				t.Run("反映するプレイヤーのIDがd4b1c7e9-2a5f-4e83-9c06-7f1a3b5d8e20のとき、警告ログのplayer_idはd4b1c7e9-2a5f-4e83-9c06-7f1a3b5d8e20になる", func(t *testing.T) {
+					env, playerID := newOnboardingEnv(t, usecasetest.StepsToCompleted)
+					logs := loggingtest.Capture(t)
+					require.NoError(t, env.Onboarding.ApplyNameSet(t.Context(), uuid.NewString(), usecasetest.DummyEventType, playerID, "ゆうしゃ2"))
+					assert.Equal(t, []string{"d4b1c7e9-2a5f-4e83-9c06-7f1a3b5d8e20"}, usecasetest.SelectWarningValues(logs, "player_id"))
+				})
 
-			playerID := registerTestPlayer(t, "firebase-onb-completed-4")
-			processed, err := interactor.ApplyCompleted(context.Background(), eventID, apiscenario.EventTypePlayerOnboarded, playerID)
+				t.Run("警告ログのcurrentはcompletedになる", func(t *testing.T) {
+					env, playerID := newOnboardingEnv(t, usecasetest.StepsToCompleted)
+					logs := loggingtest.Capture(t)
+					require.NoError(t, env.Onboarding.ApplyNameSet(t.Context(), uuid.NewString(), usecasetest.DummyEventType, playerID, "ゆうしゃ2"))
+					assert.Equal(t, []string{"completed"}, usecasetest.SelectWarningValues(logs, "current"))
+				})
 
-			require.NoError(t, err)
-			assert.True(t, processed)
-		})
+				t.Run("警告ログのtargetはname_setになる", func(t *testing.T) {
+					env, playerID := newOnboardingEnv(t, usecasetest.StepsToCompleted)
+					logs := loggingtest.Capture(t)
+					require.NoError(t, env.Onboarding.ApplyNameSet(t.Context(), uuid.NewString(), usecasetest.DummyEventType, playerID, "ゆうしゃ2"))
+					assert.Equal(t, []string{"name_set"}, usecasetest.SelectWarningValues(logs, "target"))
+				})
 
-		t.Run("対象プレイヤーが存在せずイベント処理が一度失敗したとき、同一のイベントIDで再配信されると、オンボーディング状態は目標状態(completed)へ進む", func(t *testing.T) {
-			interactor := newTestOnboardingInteractor(t)
-			eventID := uuid.NewString()
-			nonexistentPlayerID := uuid.NewString()
-			_, err := interactor.ApplyCompleted(context.Background(), eventID, apiscenario.EventTypePlayerOnboarded, nonexistentPlayerID)
-			require.Error(t, err)
-
-			playerID := registerTestPlayer(t, "firebase-onb-completed-5")
-			_, err = interactor.ApplyCompleted(context.Background(), eventID, apiscenario.EventTypePlayerOnboarded, playerID)
-
-			require.NoError(t, err)
-			status, err := postgres.NewPlayerRepository(sharedPg.Pool).GetOnboardingStatus(context.Background(), playerID)
-			require.NoError(t, err)
-			assert.Equal(t, domain.OnboardingStatusCompleted, status)
+				t.Run("反映前の表示名がゆうしゃで、表示名がゆうしゃ2のイベントを反映しても、反映したあとに取得したプレイヤー情報のnameはゆうしゃのままになる", func(t *testing.T) {
+					env, playerID := newOnboardingEnv(t, usecasetest.StepsToCompleted)
+					require.NoError(t, env.Onboarding.ApplyNameSet(t.Context(), uuid.NewString(), usecasetest.DummyEventType, playerID, "ゆうしゃ2"))
+					assert.Equal(t, usecasetest.ToPointer("ゆうしゃ"), playerInfoOf(t, env, playerID).View.Player.Name)
+				})
+			})
 		})
 	})
 }

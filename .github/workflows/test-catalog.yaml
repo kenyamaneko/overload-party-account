@@ -44,10 +44,10 @@ jobs:
         with:
           title: account テスト観点カタログ
           sections: |
-            外から見た振る舞い:単体テスト:go-json:go-test-unit.json:github.com/kenyamaneko/overload-party-account/internal/handler/,github.com/kenyamaneko/overload-party-account/internal/router
-            内部の挙動:単体テスト:go-json:go-test-unit.json:github.com/kenyamaneko/overload-party-account/internal/adapter/,github.com/kenyamaneko/overload-party-account/internal/config,github.com/kenyamaneko/overload-party-account/internal/domain,github.com/kenyamaneko/overload-party-account/internal/presenter,github.com/kenyamaneko/overload-party-account/internal/repository/,github.com/kenyamaneko/overload-party-account/internal/usecase
-            外から見た振る舞い:結合テスト:go-json:go-test-integration.json:github.com/kenyamaneko/overload-party-account/internal/handler/,github.com/kenyamaneko/overload-party-account/internal/router
-            内部の挙動:結合テスト:go-json:go-test-integration.json:github.com/kenyamaneko/overload-party-account/internal/adapter/,github.com/kenyamaneko/overload-party-account/internal/config,github.com/kenyamaneko/overload-party-account/internal/domain,github.com/kenyamaneko/overload-party-account/internal/presenter,github.com/kenyamaneko/overload-party-account/internal/repository/,github.com/kenyamaneko/overload-party-account/internal/usecase
+            外から見た振る舞い:単体テスト:go-json:go-test-unit.json:github.com/kenyamaneko/overload-party-account/cmd/,github.com/kenyamaneko/overload-party-account/internal/handler/,github.com/kenyamaneko/overload-party-account/internal/router
+            内部の挙動:単体テスト:go-json:go-test-unit.json:github.com/kenyamaneko/overload-party-account/internal/adapter/,github.com/kenyamaneko/overload-party-account/internal/config,github.com/kenyamaneko/overload-party-account/internal/domain,github.com/kenyamaneko/overload-party-account/internal/port,github.com/kenyamaneko/overload-party-account/internal/presenter,github.com/kenyamaneko/overload-party-account/internal/repository/,github.com/kenyamaneko/overload-party-account/internal/usecase
+            外から見た振る舞い:結合テスト:go-json:go-test-integration.json:github.com/kenyamaneko/overload-party-account/cmd/,github.com/kenyamaneko/overload-party-account/internal/handler/,github.com/kenyamaneko/overload-party-account/internal/router
+            内部の挙動:結合テスト:go-json:go-test-integration.json:github.com/kenyamaneko/overload-party-account/internal/adapter/,github.com/kenyamaneko/overload-party-account/internal/config,github.com/kenyamaneko/overload-party-account/internal/domain,github.com/kenyamaneko/overload-party-account/internal/port,github.com/kenyamaneko/overload-party-account/internal/presenter,github.com/kenyamaneko/overload-party-account/internal/repository/,github.com/kenyamaneko/overload-party-account/internal/usecase
           subgroups: |
             外から見た振る舞い:単体テスト:API パッケージ:go-json:go-test-unit-extra.json
       - name: Upload Pages artifact

@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
@@ -11,13 +12,14 @@ import (
 	"github.com/kenyamaneko/overload-party-account/internal/port"
 )
 
+const (
+	uniqueViolationCode     = "23505"
+	foreignKeyViolationCode = "23503"
+)
+
 var _ port.TxRunner = (*TxManager)(nil)
 
-// dbtx は connFrom が pgxpool.Pool と pgx.Tx を透過的に切り替えるための最大公約数。
-// pgx v5 の DBTX (sqlc 生成) と形が等価だが、本リポジトリは sqlc 未導入のため
-// 自前定義する。package-private に閉じているのは、postgres パッケージ外からの
-// 直接 DB アクセスを設計上禁じている (port 経由が SSoT) ため。
-// sqlc を導入する場合は本 interface を捨てて sqlc 側の DBTX に寄せる。
+// dbtx は接続プールとトランザクションに共通する、SQL を実行する操作である。
 type dbtx interface {
 	Exec(ctx context.Context, sql string, arguments ...any) (pgconn.CommandTag, error)
 	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
@@ -26,21 +28,35 @@ type dbtx interface {
 
 type txKey struct{}
 
-func txFromContext(ctx context.Context) dbtx {
+// findTx は ctx に結び付いたトランザクションを返す。なければ nil を返す。
+func findTx(ctx context.Context) dbtx {
 	if tx, ok := ctx.Value(txKey{}).(dbtx); ok {
 		return tx
 	}
 	return nil
 }
 
-func connFrom(ctx context.Context, pool *pgxpool.Pool) dbtx {
-	if tx := txFromContext(ctx); tx != nil {
+// resolveDBTX は ctx にトランザクションがあればそれを、なければ接続プールを返す。
+func resolveDBTX(ctx context.Context, pool *pgxpool.Pool) dbtx {
+	if tx := findTx(ctx); tx != nil {
 		return tx
 	}
 	return pool
 }
 
-// TxManager は pgxpool.Pool を使用した TxRunner の実装。
+// isUniqueViolation は err が一意制約違反かを返す。
+func isUniqueViolation(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == uniqueViolationCode
+}
+
+// isForeignKeyViolation は err が外部キー制約違反かを返す。
+func isForeignKeyViolation(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == foreignKeyViolationCode
+}
+
+// TxManager は接続プールを使った port.TxRunner の PostgreSQL 実装である。
 type TxManager struct {
 	pool *pgxpool.Pool
 }
@@ -50,13 +66,18 @@ func NewTxManager(pool *pgxpool.Pool) *TxManager {
 	return &TxManager{pool: pool}
 }
 
-// RunInTx はトランザクション内で fn を実行する。
-func (m *TxManager) RunInTx(ctx context.Context, fn func(ctx context.Context) error) error {
+// RunInTx は fn を1つのトランザクションで実行する。
+// fn が返したエラーと同じ原因のエラーを返し、その場合 fn の書き込みは確定しない。
+// 呼び出しが取り消されていないのにトランザクションを開始できないときは、port.ErrDatabaseUnavailable を包んだエラーを返す。
+func (m *TxManager) RunInTx(ctx context.Context, fn func(ctx context.Context) error) (err error) {
 	tx, err := m.pool.Begin(ctx)
 	if err != nil {
-		return fmt.Errorf("begin tx: %w", err)
+		if ctx.Err() != nil {
+			return fmt.Errorf("begin tx: %w", err)
+		}
+		return fmt.Errorf("begin tx: %w: %w", port.ErrDatabaseUnavailable, err)
 	}
-	defer func() { _ = tx.Rollback(ctx) }()
+	defer func() { err = joinRollbackError(err, tx.Rollback(ctx)) }()
 
 	txCtx := context.WithValue(ctx, txKey{}, tx)
 	if err := fn(txCtx); err != nil {
@@ -66,4 +87,13 @@ func (m *TxManager) RunInTx(ctx context.Context, fn func(ctx context.Context) er
 		return fmt.Errorf("commit tx: %w", err)
 	}
 	return nil
+}
+
+// joinRollbackError は、処理の結果 err に、巻き戻しの失敗 rollbackErr を合わせて返す。
+func joinRollbackError(err, rollbackErr error) error {
+	// 確定済みのトランザクションの巻き戻しは必ず ErrTxClosed になるため、失敗として扱わない。
+	if rollbackErr == nil || errors.Is(rollbackErr, pgx.ErrTxClosed) {
+		return err
+	}
+	return errors.Join(err, fmt.Errorf("rollback tx: %w", rollbackErr))
 }

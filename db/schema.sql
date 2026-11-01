@@ -1,26 +1,18 @@
--- overload-party-account - PostgreSQL DDL (service-local SSoT)
+-- overload-party-account - PostgreSQL DDL (このサービスの SSoT)
 --
--- Tables owned by the account service per ADR-011 (service split) and
--- ADR-014 (schema ownership). Other services MUST NOT read or write these
--- tables directly — they call the account internal REST API instead.
+-- 他のサービスはこれらのテーブルを直接読み書きせず、アカウントサービスの内部 REST API を呼ぶ。
+-- 陣営のマスターデータは common の factions.yaml が SSoT のため、サーバー側に陣営の表を持たない。
 --
--- All tables live in the `account` schema.
---
--- NOTE: The `factions` reference table has been retired by the ADR-014
--- 補遺. Faction master data is now sourced from common/data/factions.yaml
--- and compiled into the shared constants packages; we no longer store a
--- server-side mirror.
---
--- psqldef compatible — ops repo applies this file to Cloud SQL.
+-- ops リポジトリが psqldef でこのファイルを Cloud SQL に適用するため、psqldef が解釈できる DDL だけを書く。
 
 -- =============================================================================
--- Schema
+-- スキーマ
 -- =============================================================================
 
 CREATE SCHEMA IF NOT EXISTS account;
 
 -- =============================================================================
--- Schema-local helpers
+-- スキーマ内の補助関数
 -- =============================================================================
 
 CREATE OR REPLACE FUNCTION account.update_updated_at()
@@ -35,21 +27,25 @@ $$ LANGUAGE plpgsql;
 -- account.players
 -- =============================================================================
 
--- onboarding_status はオンボーディング進行の SSoT。`name` の nullable 状態とは独立に
--- 「未完了 (not_started / name_set / faction_set) と完了 (completed)」を識別可能にする。
--- NULL を「データ消失」専用にし、未完了は明示的な列挙値で表現する設計。state machine は
--- 一方向遷移のみ (not_started → name_set → faction_set → completed)。
+-- onboarding_status はオンボーディングの進行状態。表示名 (name) が NULL かどうかとは独立に、
+-- 未完了 (not_started / name_set / faction_set) と完了 (completed) を区別できるよう、列挙値で持つ。
+-- NULL はデータの消失を示す値として使うため、未完了にも使わない。
+-- 進行は not_started → name_set → faction_set → completed の一方向だけ。
 --
--- 「オンボーディングで選択した faction」は player_factions.is_initial が表現し、players
--- 側に専用カラムを置かない (所持リストと初回選択の SSoT を 1 テーブルに集約)。
+-- オンボーディングで選択した陣営は player_factions.is_initial が表す。所持陣営と初期陣営の SSoT を
+-- 1 つの表に集めるため、players には専用の列を持たない。
+--
+-- last_premium_event_occurred_at は、古いプレミアム状態更新イベントが新しい状態を上書きしないよう、
+-- 最後に反映したイベントの発生時刻を保存する。REST によるプレミアム状態の更新は、この列を変えない。
 CREATE TABLE account.players (
   player_id          UUID NOT NULL DEFAULT gen_random_uuid(), -- UUID
-  firebase_uid       VARCHAR(128) NOT NULL,          -- Firebase Auth UID (Unique)
+  firebase_uid       VARCHAR(128) NOT NULL,          -- Firebase Auth UID (一意)
   name               VARCHAR(50),                    -- 表示名 (NULL: 未設定)
-  is_premium         BOOLEAN NOT NULL,               -- 課金ステータス
+  is_premium         BOOLEAN NOT NULL,               -- プレミアム状態
   equipped_icon_no   BIGINT,                         -- 装備中アイコン番号（NULL: デフォルト）
-  onboarding_status  VARCHAR(20) NOT NULL DEFAULT 'not_started', -- オンボード進行状態
-  premium_expires_at TIMESTAMPTZ,                    -- サブスク有効期限
+  onboarding_status  VARCHAR(20) NOT NULL DEFAULT 'not_started', -- オンボーディング進行状態
+  premium_expires_at TIMESTAMPTZ,                    -- プレミアムの有効期限
+  last_premium_event_occurred_at TIMESTAMPTZ,        -- 最後に反映したプレミアム状態更新イベントの発生時刻 (NULL: 未反映)
   created_at         TIMESTAMPTZ NOT NULL DEFAULT now(), -- 作成日時
   updated_at         TIMESTAMPTZ NOT NULL DEFAULT now(), -- 更新日時
   PRIMARY KEY (player_id),
@@ -61,40 +57,35 @@ CREATE UNIQUE INDEX idx_players_firebase_uid ON account.players(firebase_uid);
 CREATE TRIGGER trg_players_updated_at BEFORE UPDATE ON account.players FOR EACH ROW EXECUTE FUNCTION account.update_updated_at();
 
 -- =============================================================================
--- account.player_progression (child of players, 1:1)
+-- account.player_progression (players の子、1:1)
 --
--- level/exp は戦闘ごとに高頻度で UPDATE されるため、手動操作で更新される players
--- のプロフィール系カラムと分離する。これにより:
---   * players.updated_at がバトル頻度で動かず、プロフィール変更の検知に使える
---   * 経験値加算の行ロックが players 全体に波及しない
---   * VACUUM / MVCC のコストが players に集中しない
+-- exp は戦闘ごとに高頻度で UPDATE されるため、プロフィール系の players と別の表にする。
 -- =============================================================================
 
 CREATE TABLE account.player_progression (
   player_id  UUID PRIMARY KEY REFERENCES account.players(player_id) ON DELETE CASCADE, -- 親テーブル参照
-  level      BIGINT NOT NULL DEFAULT 1,             -- レベル (Default: 1)
-  exp        BIGINT NOT NULL DEFAULT 0,             -- 経験値 (Default: 0)
+  exp        BIGINT NOT NULL DEFAULT 0,             -- 経験値 (初期値: 0)
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()     -- 更新日時
 );
 CREATE TRIGGER trg_player_progression_updated_at BEFORE UPDATE ON account.player_progression FOR EACH ROW EXECUTE FUNCTION account.update_updated_at();
 
 -- =============================================================================
--- account.player_daily_battle (child of players, 1 行/プレイヤー/ゲーム日)
--- 履歴を残して将来の BigQuery エクスポートで分析可能にする。
--- ゲーム日 (game_date) は JST 05:00 リセットの civil.Date を service 層が決める。
+-- account.player_daily_battle (players の子、1 行/プレイヤー/ゲーム日)
+-- 履歴を残し、分析できるようにする。
+-- ゲーム日 (game_date) は JST 05:00 で切り替わる日付で、usecase 層が決める。
 -- =============================================================================
 
 CREATE TABLE account.player_daily_battle (
   player_id          UUID NOT NULL REFERENCES account.players(player_id) ON DELETE CASCADE, -- 親テーブル参照
-  game_date          DATE NOT NULL,                  -- ゲーム日 (JST 05:00 リセット)
+  game_date          DATE NOT NULL,                  -- ゲーム日 (JST 05:00 で切り替わる)
   daily_battle_count BIGINT NOT NULL,                -- そのゲーム日のバトル回数
   PRIMARY KEY (player_id, game_date)
 );
 
 -- =============================================================================
--- account.battle_count_reversals (消費バトル回数の返却が対戦単位で一度しか
--- 適用されないことを保証する冪等性ガード。processed_events は Pub/Sub 配信の
--- 冪等性専用のため、REST 呼び出しの冪等性はここで別に持つ)
+-- account.battle_count_reversals
+-- 消費バトル回数の返却を、対戦ごとに 1 回だけ適用するための記録。
+-- processed_events は Pub/Sub の再配信専用のため、REST 呼び出しの重複はここで別に防ぐ。
 -- =============================================================================
 
 CREATE TABLE account.battle_count_reversals (
@@ -104,18 +95,21 @@ CREATE TABLE account.battle_count_reversals (
 
 -- =============================================================================
 -- account.player_factions (陣営所持の中間テーブル)
+--
+-- faction の CHECK 制約の値は、陣営の SSoT (factions.yaml) から生成された game-design-constants を元に
+-- scripts/generate_schema_factions.go が書き換える。手で編集しない。
 -- =============================================================================
 
 CREATE TABLE account.player_factions (
   player_id   UUID NOT NULL REFERENCES account.players(player_id) ON DELETE CASCADE, -- 親テーブル参照
-  faction     VARCHAR(20) NOT NULL CHECK (faction IN ('SHE', 'Tenki', 'Sugar', 'Tuners', 'Neutral')), -- 陣営名 (SHE / Tenki / Sugar / Tuners / Neutral)
-  is_initial  BOOLEAN NOT NULL DEFAULT FALSE,        -- オンボーディングで選択した faction か (1 プレイヤーにつき最大 1 行 TRUE)
+  faction     VARCHAR(20) NOT NULL CHECK (faction IN ('Neutral', 'SHE', 'Tenki', 'Sugar', 'Tuners')), -- 陣営名
+  is_initial  BOOLEAN NOT NULL DEFAULT FALSE,        -- オンボーディングで選択した陣営か (1 プレイヤーにつき最大 1 行 TRUE)
   acquired_at TIMESTAMPTZ NOT NULL DEFAULT now(),    -- 取得日時
   PRIMARY KEY (player_id, faction)
 );
 
--- 「オンボーディングで選択した faction は 1 プレイヤーに最大 1 つ」を partial unique index で保証する。
--- アプリ層で SELECT FOR UPDATE する代わりに DB 側で唯一性を担保する。
+-- オンボーディングで選択した陣営は 1 プレイヤーにつき最大 1 つなので、部分一意インデックスで保証する。
+-- アプリ側でロックを取らずに、DB 側で一意性を担保するため。
 CREATE UNIQUE INDEX idx_player_factions_initial
   ON account.player_factions(player_id) WHERE is_initial = TRUE;
 
@@ -134,11 +128,11 @@ CREATE TABLE account.player_settings (
 CREATE TRIGGER trg_player_settings_updated_at BEFORE UPDATE ON account.player_settings FOR EACH ROW EXECUTE FUNCTION account.update_updated_at();
 
 -- =============================================================================
--- account.processed_events (Pub/Sub subscriber idempotency)
+-- account.processed_events (Pub/Sub 購読の冪等性)
 -- =============================================================================
 
 CREATE TABLE account.processed_events (
-  event_id     UUID PRIMARY KEY,                     -- Pub/Sub EventID (publisher 生成の UUIDv4)
-  event_type   TEXT NOT NULL,                        -- イベント種別 (faction_acquired / premium_updated / player_onboarded)
+  event_id     UUID PRIMARY KEY,                     -- Pub/Sub のイベントID (発行元が生成する UUIDv4)
+  event_type   TEXT NOT NULL,                        -- 受信したイベントの event_type
   processed_at TIMESTAMPTZ NOT NULL DEFAULT now()    -- 処理日時
 );
