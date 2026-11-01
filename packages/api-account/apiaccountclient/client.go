@@ -1,40 +1,65 @@
-// Package apiaccountclient は consumer から wire 詳細 (REST path / HTTP status code) を
-// 隠蔽するため、生成 client を sentinel error 変換でラップする。
+// Package apiaccountclient は、アカウントサービスの REST 契約の呼び出しを、
+// 経路や HTTP ステータスを隠したエラー値つきの操作として提供する。
 package apiaccountclient
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"mime"
 	"net/http"
+	"net/url"
 
 	apiaccount "github.com/kenyamaneko/overload-party-account/packages/api-account"
 )
 
-// Sentinel errors. wire 契約 (OpenAPI spec) で定義された status code の意味を sentinel として export する。
-var (
-	// ErrNotFound は status 404。
-	ErrNotFound = errors.New("apiaccountclient: not found")
+const (
+	// jsonMediaType は契約が成功応答の本文に定める種類。
+	jsonMediaType = "application/json"
 
-	// ErrUnauthorized は status 401。
-	ErrUnauthorized = errors.New("apiaccountclient: unauthorized")
-
-	// ErrBadRequest は status 400。
-	ErrBadRequest = errors.New("apiaccountclient: bad request")
-
-	// ErrConflict は status 409。registerPlayer で重複登録時に返る。
-	ErrConflict = errors.New("apiaccountclient: conflict")
-
-	// ErrInternalServer は status 5xx。
-	ErrInternalServer = errors.New("apiaccountclient: internal server error")
+	// minServerErrorStatus と maxServerErrorStatus は、サーバー内部エラーを示すステータスの範囲。
+	minServerErrorStatus = 500
+	maxServerErrorStatus = 599
 )
 
-// Client は overload-party-account REST API の sentinel-error converted client。
+// 応答から判別できる原因ごとのエラー値。errors.Is で判別する。
+var (
+	// ErrNotFound は、アカウントサービスが 404 を返したことを示す。
+	ErrNotFound = errors.New("apiaccountclient: not found")
+
+	// ErrUnauthorized は、アカウントサービスが 401 を返したことを示す。
+	ErrUnauthorized = errors.New("apiaccountclient: unauthorized")
+
+	// ErrBadRequest は、アカウントサービスが 400 を返したことを示す。
+	ErrBadRequest = errors.New("apiaccountclient: bad request")
+
+	// ErrConflict は、アカウントサービスが 409 を返したことを示す。
+	ErrConflict = errors.New("apiaccountclient: conflict")
+
+	// ErrInternalServer は、アカウントサービスが 500 から 599 を返したことを示す。
+	ErrInternalServer = errors.New("apiaccountclient: internal server error")
+
+	// ErrConnectionFailed は、アカウントサービスに接続できなかったことを示す。
+	ErrConnectionFailed = errors.New("apiaccountclient: connection failed")
+
+	// ErrInvalidBody は、成功の応答の本文が契約の形式でないことを示す。
+	ErrInvalidBody = errors.New("apiaccountclient: invalid response body")
+
+	// ErrInvalidContentType は、成功の応答の Content-Type が契約の形式でないことを示す。
+	ErrInvalidContentType = errors.New("apiaccountclient: invalid response content type")
+
+	// ErrInvalidBaseURL は、基底URLが URL として解釈できない、またはスキームかホストが無いことを示す。
+	ErrInvalidBaseURL = errors.New("apiaccountclient: invalid base URL")
+)
+
+// Client はアカウントサービスの REST 契約を呼び出す。
 type Client struct {
-	api *apiaccount.ClientWithResponses
+	api *apiaccount.Client
 }
 
-// Option は Client 構築時の設定。
+// Option は Client の生成時に指定する設定。
 type Option func(*config)
 
 type config struct {
@@ -42,270 +67,198 @@ type config struct {
 	editors    []apiaccount.RequestEditorFn
 }
 
-// WithHTTPClient は基底 HTTP doer を差し替える。デフォルトは http.DefaultClient。
+// WithHTTPClient はリクエストの送信に使う HTTP クライアントを差し替える。
+// 指定しないときは http.DefaultClient を使う。
 func WithHTTPClient(doer apiaccount.HttpRequestDoer) Option {
 	return func(c *config) { c.httpClient = doer }
 }
 
-// WithRequestEditorFn は全リクエストに適用する RequestEditor を追加する。
+// WithRequestEditorFn はすべてのリクエストを送信前に編集する関数を追加する。
+// 指定した順に適用する。
 func WithRequestEditorFn(fn apiaccount.RequestEditorFn) Option {
 	return func(c *config) { c.editors = append(c.editors, fn) }
 }
 
-// New は baseURL に接続する Client を生成する。
+// New は baseURL のアカウントサービスに接続する Client を生成する。
+// baseURL が URL として解釈できない、またはスキームかホストが無いときは ErrInvalidBaseURL を返す。
 func New(baseURL string, opts ...Option) (*Client, error) {
-	cfg := &config{}
+	if err := validateBaseURL(baseURL); err != nil {
+		return nil, err
+	}
+
+	cfg := &config{httpClient: http.DefaultClient}
 	for _, opt := range opts {
 		opt(cfg)
 	}
 
 	apiOpts := make([]apiaccount.ClientOption, 0, 1+len(cfg.editors))
-	if cfg.httpClient != nil {
-		apiOpts = append(apiOpts, apiaccount.WithHTTPClient(cfg.httpClient))
-	}
-	for _, ed := range cfg.editors {
-		apiOpts = append(apiOpts, apiaccount.WithRequestEditorFn(ed))
+	apiOpts = append(apiOpts, apiaccount.WithHTTPClient(connectionDoer{next: cfg.httpClient}))
+	for _, editor := range cfg.editors {
+		apiOpts = append(apiOpts, apiaccount.WithRequestEditorFn(editor))
 	}
 
-	api, err := apiaccount.NewClientWithResponses(baseURL, apiOpts...)
+	api, err := apiaccount.NewClient(baseURL, apiOpts...)
 	if err != nil {
-		return nil, fmt.Errorf("apiaccountclient: new: %w", err)
+		return nil, fmt.Errorf("apiaccountclient: new client: %w", err)
 	}
 	return &Client{api: api}, nil
 }
 
-// GetHealth はサービス死活監視用エンドポイントを叩く。
-func (c *Client) GetHealth(ctx context.Context) (*apiaccount.HealthResponse, error) {
-	resp, err := c.api.GetHealthWithResponse(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("apiaccountclient: GetHealth: %w", err)
-	}
-	if resp.JSON200 != nil {
-		return resp.JSON200, nil
-	}
-	return nil, newStatusError("GetHealth", resp.StatusCode())
-}
-
-// RegisterPlayer は新規プレイヤーを登録する。spec は 201 Created を返す。
+// RegisterPlayer は新規プレイヤーを登録する。
 func (c *Client) RegisterPlayer(ctx context.Context, req apiaccount.RegisterRequest) (*apiaccount.PlayerResponse, error) {
-	resp, err := c.api.RegisterPlayerWithResponse(ctx, apiaccount.RegisterPlayerJSONRequestBody(req))
-	if err != nil {
-		return nil, fmt.Errorf("apiaccountclient: RegisterPlayer: %w", err)
-	}
-	if resp.JSON201 != nil {
-		return resp.JSON201, nil
-	}
-	return nil, newStatusError("RegisterPlayer", resp.StatusCode())
+	return callJSON[apiaccount.PlayerResponse]("RegisterPlayer", http.StatusCreated, func() (*http.Response, error) {
+		return c.api.RegisterPlayer(ctx, apiaccount.RegisterPlayerJSONRequestBody(req))
+	})
 }
 
-// LoginPlayer は既存プレイヤーをログインさせる。
+// LoginPlayer は登録済みのプレイヤーをログインさせる。
 func (c *Client) LoginPlayer(ctx context.Context, req apiaccount.LoginRequest) (*apiaccount.PlayerResponse, error) {
-	resp, err := c.api.LoginPlayerWithResponse(ctx, apiaccount.LoginPlayerJSONRequestBody(req))
-	if err != nil {
-		return nil, fmt.Errorf("apiaccountclient: LoginPlayer: %w", err)
-	}
-	if resp.JSON200 != nil {
-		return resp.JSON200, nil
-	}
-	return nil, newStatusError("LoginPlayer", resp.StatusCode())
+	return callJSON[apiaccount.PlayerResponse]("LoginPlayer", http.StatusOK, func() (*http.Response, error) {
+		return c.api.LoginPlayer(ctx, apiaccount.LoginPlayerJSONRequestBody(req))
+	})
 }
 
-// GetPlayerByFirebaseUID は Firebase UID で player を引く。
+// GetPlayerByFirebaseUID は Firebase UID のプレイヤーを検索する。
 func (c *Client) GetPlayerByFirebaseUID(ctx context.Context, firebaseUID string) (*apiaccount.PlayerResponse, error) {
-	resp, err := c.api.GetPlayerByFirebaseUIDWithResponse(ctx, firebaseUID)
-	if err != nil {
-		return nil, fmt.Errorf("apiaccountclient: GetPlayerByFirebaseUID: %w", err)
-	}
-	if resp.JSON200 != nil {
-		return resp.JSON200, nil
-	}
-	return nil, newStatusError("GetPlayerByFirebaseUID", resp.StatusCode())
+	return callJSON[apiaccount.PlayerResponse]("GetPlayerByFirebaseUID", http.StatusOK, func() (*http.Response, error) {
+		return c.api.GetPlayerByFirebaseUID(ctx, firebaseUID)
+	})
 }
 
-// AwardGameExp はゲーム結果に基づき player に exp を付与する。spec は 204 を返す。
+// AwardGameExp は対戦結果に応じた経験値を両プレイヤーに付与する。
 func (c *Client) AwardGameExp(ctx context.Context, req apiaccount.AwardGameExpRequest) error {
-	resp, err := c.api.AwardGameExpWithResponse(ctx, apiaccount.AwardGameExpJSONRequestBody(req))
-	if err != nil {
-		return fmt.Errorf("apiaccountclient: AwardGameExp: %w", err)
-	}
-	if resp.StatusCode() == http.StatusNoContent {
-		return nil
-	}
-	return newStatusError("AwardGameExp", resp.StatusCode())
+	return callWithoutBody("AwardGameExp", http.StatusNoContent, func() (*http.Response, error) {
+		return c.api.AwardGameExp(ctx, apiaccount.AwardGameExpJSONRequestBody(req))
+	})
 }
 
-// RevertBattleCount は停止で無効になった対戦の消費バトル回数を両プレイヤーに戻す。spec は 204 を返す。
+// RevertBattleCount は停止で無効になった対戦の消費バトル回数を両プレイヤーに戻す。
 func (c *Client) RevertBattleCount(ctx context.Context, req apiaccount.RevertBattleCountRequest) error {
-	resp, err := c.api.RevertBattleCountWithResponse(ctx, apiaccount.RevertBattleCountJSONRequestBody(req))
-	if err != nil {
-		return fmt.Errorf("apiaccountclient: RevertBattleCount: %w", err)
-	}
-	if resp.StatusCode() == http.StatusNoContent {
-		return nil
-	}
-	return newStatusError("RevertBattleCount", resp.StatusCode())
+	return callWithoutBody("RevertBattleCount", http.StatusNoContent, func() (*http.Response, error) {
+		return c.api.RevertBattleCount(ctx, apiaccount.RevertBattleCountJSONRequestBody(req))
+	})
 }
 
-// GetPlayer は呼出元 player 自身の情報を返す (X-Internal-Auth の sub から解決)。
+// GetPlayer は呼び出し元のプレイヤー自身の情報を返す。
 func (c *Client) GetPlayer(ctx context.Context) (*apiaccount.PlayerResponse, error) {
-	resp, err := c.api.GetPlayerWithResponse(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("apiaccountclient: GetPlayer: %w", err)
-	}
-	if resp.JSON200 != nil {
-		return resp.JSON200, nil
-	}
-	return nil, newStatusError("GetPlayer", resp.StatusCode())
+	return callJSON[apiaccount.PlayerResponse]("GetPlayer", http.StatusOK, func() (*http.Response, error) {
+		return c.api.GetPlayer(ctx)
+	})
 }
 
-// UpdateName は player 表示名を更新する。
-func (c *Client) UpdateName(ctx context.Context, req apiaccount.UpdateNameRequest) (*apiaccount.PlayerResponse, error) {
-	resp, err := c.api.UpdateNameWithResponse(ctx, apiaccount.UpdateNameJSONRequestBody(req))
-	if err != nil {
-		return nil, fmt.Errorf("apiaccountclient: UpdateName: %w", err)
-	}
-	if resp.JSON200 != nil {
-		return resp.JSON200, nil
-	}
-	return nil, newStatusError("UpdateName", resp.StatusCode())
-}
-
-// ValidateNameForOnboarding は表示名のバリデーションを問い合わせる (書き込みなし)。spec は 204 を返す。
+// ValidateNameForOnboarding はオンボーディングで入力された表示名を、保存せずに検証する。
 func (c *Client) ValidateNameForOnboarding(ctx context.Context, req apiaccount.ValidateNameForOnboardingRequest) error {
-	resp, err := c.api.ValidateNameForOnboardingWithResponse(ctx, apiaccount.ValidateNameForOnboardingJSONRequestBody(req))
-	if err != nil {
-		return fmt.Errorf("apiaccountclient: ValidateNameForOnboarding: %w", err)
-	}
-	if resp.StatusCode() == http.StatusNoContent {
-		return nil
-	}
-	return newStatusError("ValidateNameForOnboarding", resp.StatusCode())
+	return callWithoutBody("ValidateNameForOnboarding", http.StatusNoContent, func() (*http.Response, error) {
+		return c.api.ValidateNameForOnboarding(ctx, apiaccount.ValidateNameForOnboardingJSONRequestBody(req))
+	})
 }
 
 // GetBattleLimit は 1 日のバトル回数制限と残り回数を返す。
 func (c *Client) GetBattleLimit(ctx context.Context) (*apiaccount.BattleLimitResponse, error) {
-	resp, err := c.api.GetBattleLimitWithResponse(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("apiaccountclient: GetBattleLimit: %w", err)
-	}
-	if resp.JSON200 != nil {
-		return resp.JSON200, nil
-	}
-	return nil, newStatusError("GetBattleLimit", resp.StatusCode())
+	return callJSON[apiaccount.BattleLimitResponse]("GetBattleLimit", http.StatusOK, func() (*http.Response, error) {
+		return c.api.GetBattleLimit(ctx)
+	})
 }
 
-// IncrementBattleCount は当日のバトルカウントをインクリメントする。spec は 204 を返す。
+// IncrementBattleCount は当日のバトル回数を 1 増やす。
 func (c *Client) IncrementBattleCount(ctx context.Context) error {
-	resp, err := c.api.IncrementBattleCountWithResponse(ctx)
-	if err != nil {
-		return fmt.Errorf("apiaccountclient: IncrementBattleCount: %w", err)
-	}
-	if resp.StatusCode() == http.StatusNoContent {
-		return nil
-	}
-	return newStatusError("IncrementBattleCount", resp.StatusCode())
+	return callWithoutBody("IncrementBattleCount", http.StatusNoContent, func() (*http.Response, error) {
+		return c.api.IncrementBattleCount(ctx)
+	})
 }
 
-// UpdatePremium は player の premium 状態を更新する。spec は 204 を返す。
-func (c *Client) UpdatePremium(ctx context.Context, req apiaccount.UpdatePremiumRequest) error {
-	resp, err := c.api.UpdatePremiumWithResponse(ctx, apiaccount.UpdatePremiumJSONRequestBody(req))
-	if err != nil {
-		return fmt.Errorf("apiaccountclient: UpdatePremium: %w", err)
-	}
-	if resp.StatusCode() == http.StatusNoContent {
-		return nil
-	}
-	return newStatusError("UpdatePremium", resp.StatusCode())
-}
-
-// AddExp は exp を加算する (主に dev 用)。spec は 204 を返す。
-func (c *Client) AddExp(ctx context.Context, req apiaccount.AddExpRequest) error {
-	resp, err := c.api.AddExpWithResponse(ctx, apiaccount.AddExpJSONRequestBody(req))
-	if err != nil {
-		return fmt.Errorf("apiaccountclient: AddExp: %w", err)
-	}
-	if resp.StatusCode() == http.StatusNoContent {
-		return nil
-	}
-	return newStatusError("AddExp", resp.StatusCode())
-}
-
-// ListFactions は player が所有する faction 一覧を返す。
+// ListFactions はプレイヤーが所持する陣営の一覧を返す。
 func (c *Client) ListFactions(ctx context.Context) (*apiaccount.FactionListing, error) {
-	resp, err := c.api.ListFactionsWithResponse(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("apiaccountclient: ListFactions: %w", err)
-	}
-	if resp.JSON200 != nil {
-		return resp.JSON200, nil
-	}
-	return nil, newStatusError("ListFactions", resp.StatusCode())
+	return callJSON[apiaccount.FactionListing]("ListFactions", http.StatusOK, func() (*http.Response, error) {
+		return c.api.ListFactions(ctx)
+	})
 }
 
-// GrantFaction は faction を player に付与する。spec は 204 を返す。
-func (c *Client) GrantFaction(ctx context.Context, req apiaccount.FactionGrantRequest) error {
-	resp, err := c.api.GrantFactionWithResponse(ctx, apiaccount.GrantFactionJSONRequestBody(req))
-	if err != nil {
-		return fmt.Errorf("apiaccountclient: GrantFaction: %w", err)
-	}
-	if resp.StatusCode() == http.StatusNoContent {
-		return nil
-	}
-	return newStatusError("GrantFaction", resp.StatusCode())
+// connectionDoer は、リクエストの送信に失敗したエラーに ErrConnectionFailed を付ける。
+type connectionDoer struct {
+	next apiaccount.HttpRequestDoer
 }
 
-// SelectInitialFaction はオンボーディングで初期 faction を選択する。spec は 200 を返す。
-func (c *Client) SelectInitialFaction(ctx context.Context, req apiaccount.SelectInitialFactionRequest) error {
-	resp, err := c.api.SelectInitialFactionWithResponse(ctx, apiaccount.SelectInitialFactionJSONRequestBody(req))
+func (d connectionDoer) Do(req *http.Request) (*http.Response, error) {
+	resp, err := d.next.Do(req)
 	if err != nil {
-		return fmt.Errorf("apiaccountclient: SelectInitialFaction: %w", err)
+		return nil, fmt.Errorf("%w: %w", ErrConnectionFailed, err)
 	}
-	if resp.StatusCode() == http.StatusOK {
-		return nil
-	}
-	return newStatusError("SelectInitialFaction", resp.StatusCode())
+	return resp, nil
 }
 
-// GetPlayerSettings は player の設定値を返す。
-func (c *Client) GetPlayerSettings(ctx context.Context) (*apiaccount.PlayerSettingsResponse, error) {
-	resp, err := c.api.GetPlayerSettingsWithResponse(ctx)
+func validateBaseURL(baseURL string) error {
+	parsed, err := url.Parse(baseURL)
 	if err != nil {
-		return nil, fmt.Errorf("apiaccountclient: GetPlayerSettings: %w", err)
+		return fmt.Errorf("%w: %w", ErrInvalidBaseURL, err)
 	}
-	if resp.JSON200 != nil {
-		return resp.JSON200, nil
+	if parsed.Scheme == "" || parsed.Host == "" {
+		return fmt.Errorf("%w: %q has no scheme or host", ErrInvalidBaseURL, baseURL)
 	}
-	return nil, newStatusError("GetPlayerSettings", resp.StatusCode())
+	return nil
 }
 
-// UpdatePlayerSettings は player の設定値を更新する。
-func (c *Client) UpdatePlayerSettings(ctx context.Context, req apiaccount.UpdateSettingsRequest) (*apiaccount.PlayerSettingsResponse, error) {
-	resp, err := c.api.UpdatePlayerSettingsWithResponse(ctx, apiaccount.UpdatePlayerSettingsJSONRequestBody(req))
+// callJSON は send の応答が wantStatus のとき、JSON の本文を T に読み取って返す。
+func callJSON[T any](op string, wantStatus int, send func() (*http.Response, error)) (*T, error) {
+	resp, err := send()
 	if err != nil {
-		return nil, fmt.Errorf("apiaccountclient: UpdatePlayerSettings: %w", err)
+		return nil, fmt.Errorf("apiaccountclient: %s: %w", op, err)
 	}
-	if resp.JSON200 != nil {
-		return resp.JSON200, nil
+	defer resp.Body.Close()
+
+	if resp.StatusCode != wantStatus {
+		return nil, newStatusError(op, resp.StatusCode)
 	}
-	return nil, newStatusError("UpdatePlayerSettings", resp.StatusCode())
+	if !isJSONContentType(resp.Header.Get("Content-Type")) {
+		return nil, fmt.Errorf("apiaccountclient: %s: %w: %q", op, ErrInvalidContentType, resp.Header.Get("Content-Type"))
+	}
+	raw, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("apiaccountclient: %s: read body: %w: %w", op, ErrConnectionFailed, err)
+	}
+	var body T
+	if err := json.Unmarshal(raw, &body); err != nil {
+		return nil, fmt.Errorf("apiaccountclient: %s: %w: %w", op, ErrInvalidBody, err)
+	}
+	return &body, nil
 }
 
-// newStatusError は HTTP status code を sentinel error (errors.Is 分岐可能) に変換する。
+// callWithoutBody は send の応答が wantStatus のとき、本文を読まずに成功とする。
+func callWithoutBody(op string, wantStatus int, send func() (*http.Response, error)) error {
+	resp, err := send()
+	if err != nil {
+		return fmt.Errorf("apiaccountclient: %s: %w", op, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != wantStatus {
+		return newStatusError(op, resp.StatusCode)
+	}
+	return nil
+}
+
+func isJSONContentType(contentType string) bool {
+	mediaType, _, err := mime.ParseMediaType(contentType)
+	return err == nil && mediaType == jsonMediaType
+}
+
+// newStatusError は想定外の HTTP ステータスを、errors.Is で判別できるエラーに変換する。
+// 契約に無いステータスは、ステータスコードを含むエラーにする。
 func newStatusError(op string, code int) error {
-	var sentinel error
+	var cause error
 	switch {
 	case code == http.StatusUnauthorized:
-		sentinel = ErrUnauthorized
+		cause = ErrUnauthorized
 	case code == http.StatusNotFound:
-		sentinel = ErrNotFound
+		cause = ErrNotFound
 	case code == http.StatusBadRequest:
-		sentinel = ErrBadRequest
+		cause = ErrBadRequest
 	case code == http.StatusConflict:
-		sentinel = ErrConflict
-	case code >= http.StatusInternalServerError:
-		sentinel = ErrInternalServer
+		cause = ErrConflict
+	case code >= minServerErrorStatus && code <= maxServerErrorStatus:
+		cause = ErrInternalServer
 	default:
 		return fmt.Errorf("apiaccountclient: %s: unexpected status %d", op, code)
 	}
-	return fmt.Errorf("apiaccountclient: %s: %w", op, sentinel)
+	return fmt.Errorf("apiaccountclient: %s: %w", op, cause)
 }
