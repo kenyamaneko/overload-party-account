@@ -2,64 +2,63 @@ package rest
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/kenyamaneko/overload-party-account/internal/domain"
+	"github.com/kenyamaneko/overload-party-account/internal/presenter"
 	"github.com/kenyamaneko/overload-party-account/internal/usecase"
 	apiaccount "github.com/kenyamaneko/overload-party-account/packages/api-account"
-	gamedesign "github.com/kenyamaneko/overload-party-common/packages/game-design-constants"
 
 	internalauth "github.com/kenyamaneko/overload-party-gateway/packages/internalauth-go"
 )
 
-// PlayerHandler はプレイヤー情報の REST エンドポイントを処理する。
+// PlayerHandler はプレイヤー情報・表示名・バトル回数・プレミアム状態・経験値の REST の受け口である。
 type PlayerHandler struct {
-	playerInteractor *usecase.PlayerInteractor
+	playerInteractor  *usecase.PlayerInteractor
+	premiumInteractor *usecase.PremiumInteractor
 }
 
 // NewPlayerHandler は PlayerHandler を生成する。
-func NewPlayerHandler(playerInteractor *usecase.PlayerInteractor) *PlayerHandler {
-	return &PlayerHandler{playerInteractor: playerInteractor}
+func NewPlayerHandler(playerInteractor *usecase.PlayerInteractor, premiumInteractor *usecase.PremiumInteractor) *PlayerHandler {
+	return &PlayerHandler{playerInteractor: playerInteractor, premiumInteractor: premiumInteractor}
 }
 
-// GetPlayer はプレイヤー情報を返す。
+// GetPlayer は認証済みプレイヤーのプレイヤー情報を返す。
 func (h *PlayerHandler) GetPlayer(c *gin.Context) {
 	playerID := c.GetString(internalauth.PlayerIDContextKey)
-	resp, err := h.playerInteractor.GetPlayerResponse(c.Request.Context(), playerID)
+	info, err := h.playerInteractor.GetPlayer(c.Request.Context(), playerID)
 	if err != nil {
 		respondError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, resp)
+	respondPlayer(c, http.StatusOK, info)
 }
 
-// UpdateName はプレイヤー名を更新する。
+// UpdateName は認証済みプレイヤーの表示名を更新する。
 func (h *PlayerHandler) UpdateName(c *gin.Context) {
 	playerID := c.GetString(internalauth.PlayerIDContextKey)
 
 	var req apiaccount.UpdateNameRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	if !bindRequestBody(c, &req) {
 		return
 	}
 
-	player, err := h.playerInteractor.UpdateName(c.Request.Context(), playerID, req.Name)
+	info, err := h.playerInteractor.UpdateName(c.Request.Context(), playerID, req.Name)
 	if err != nil {
 		respondError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, player)
+	respondPlayer(c, http.StatusOK, info)
 }
 
-// ValidateNameForOnboarding はオンボード内 name 入力ステップで scenario が呼ぶ
-// バリデーション専用ハンドラ。書き込みは onboarding-name-set subscriber が担うため、
-// ここでは行わない。
+// ValidateNameForOnboarding はオンボーディング中の表示名が正しいかを検証する。表示名は保存しない。
 func (h *PlayerHandler) ValidateNameForOnboarding(c *gin.Context) {
 	playerID := c.GetString(internalauth.PlayerIDContextKey)
 
 	var req apiaccount.ValidateNameForOnboardingRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	if !bindRequestBody(c, &req) {
 		return
 	}
 
@@ -70,18 +69,18 @@ func (h *PlayerHandler) ValidateNameForOnboarding(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
-// GetBattleLimit はプレイヤーの日次バトル制限情報を返す。
+// GetBattleLimit は認証済みプレイヤーの1日のバトル回数と上限を返す。
 func (h *PlayerHandler) GetBattleLimit(c *gin.Context) {
 	playerID := c.GetString(internalauth.PlayerIDContextKey)
-	result, err := h.playerInteractor.GetBattleLimit(c.Request.Context(), playerID)
+	limit, err := h.playerInteractor.GetBattleLimit(c.Request.Context(), playerID)
 	if err != nil {
 		respondError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, result)
+	c.JSON(http.StatusOK, presenter.ToBattleLimitResponse(limit))
 }
 
-// IncrementBattleCount は日次バトル回数をインクリメントする。
+// IncrementBattleCount は認証済みプレイヤーの当日のバトル回数を1回増やす。
 func (h *PlayerHandler) IncrementBattleCount(c *gin.Context) {
 	playerID := c.GetString(internalauth.PlayerIDContextKey)
 	if err := h.playerInteractor.IncrementBattleCount(c.Request.Context(), playerID); err != nil {
@@ -91,29 +90,36 @@ func (h *PlayerHandler) IncrementBattleCount(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
-// UpdatePremium はプレイヤーのプレミアムステータスを更新する。
+// UpdatePremium は認証済みプレイヤーのプレミアム状態を更新する。
 func (h *PlayerHandler) UpdatePremium(c *gin.Context) {
 	playerID := c.GetString(internalauth.PlayerIDContextKey)
+
 	var req apiaccount.UpdatePremiumRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	if !bindRequestBody(c, &req, "is_premium") {
 		return
 	}
-	if err := h.playerInteractor.UpdatePremium(c.Request.Context(), playerID, req.IsPremium, req.ExpiresAtMillis); err != nil {
+	expiresAt, isValid := toExpiresAt(req.ExpiresAtMillis)
+	if !isValid {
+		respondBadRequest(c, invalidFieldMessage("expires_at_millis"))
+		return
+	}
+
+	if err := h.premiumInteractor.UpdatePremium(c.Request.Context(), playerID, req.IsPremium, expiresAt); err != nil {
 		respondError(c, err)
 		return
 	}
 	c.Status(http.StatusNoContent)
 }
 
-// AddExp はプレイヤーに経験値を付与する。
+// AddExp は認証済みプレイヤーに経験値を加算する。
 func (h *PlayerHandler) AddExp(c *gin.Context) {
 	playerID := c.GetString(internalauth.PlayerIDContextKey)
+
 	var req apiaccount.AddExpRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	if !bindRequestBody(c, &req, "exp_gain") {
 		return
 	}
+
 	if err := h.playerInteractor.AwardExp(c.Request.Context(), playerID, req.ExpGain); err != nil {
 		respondError(c, err)
 		return
@@ -121,24 +127,33 @@ func (h *PlayerHandler) AddExp(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
-// AwardGameExp はゲーム終了後の経験値を両プレイヤーに付与する。
-// battle が直接呼ぶサーバー間バッチエンドポイントで body に両 player_id を含むため、
-// JWT sub では表現できない。/internal/v1 配下に残し JWT を要求しない。
+// AwardGameExp は対戦の結果に応じた経験値を両プレイヤーに付与する。
 func (h *PlayerHandler) AwardGameExp(c *gin.Context) {
 	var req apiaccount.AwardGameExpRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	if !bindRequestBody(c, &req, "winner_num") {
 		return
 	}
-	if req.Player1ID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "player1_id is required"})
+	if respondIfEmpty(c, "player1_id", req.Player1ID) ||
+		respondIfEmpty(c, "reason", req.Reason) ||
+		respondIfEmpty(c, "match_type", req.MatchType) {
 		return
 	}
-	if req.Player2ID == "" && req.MatchType != gamedesign.MatchTypeNpc {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "player2_id is required"})
+	player1ID, isPlayer1Valid := parsePlayerIDField(c, "player1_id", req.Player1ID)
+	if !isPlayer1Valid {
 		return
 	}
-	if err := h.playerInteractor.AwardGameExp(c.Request.Context(), req.Player1ID, req.Player2ID, req.WinnerNum, req.Reason, req.MatchType); err != nil {
+	player2ID := ""
+	if req.Player2ID != "" {
+		var isPlayer2Valid bool
+		player2ID, isPlayer2Valid = parsePlayerIDField(c, "player2_id", req.Player2ID)
+		if !isPlayer2Valid {
+			return
+		}
+	}
+
+	err := h.playerInteractor.AwardGameExp(c.Request.Context(), player1ID, player2ID,
+		domain.WinnerNumber(req.WinnerNum), domain.WinReason(req.Reason), domain.MatchType(req.MatchType))
+	if err != nil {
 		respondError(c, err)
 		return
 	}
@@ -146,35 +161,46 @@ func (h *PlayerHandler) AwardGameExp(c *gin.Context) {
 }
 
 // RevertBattleCount は停止で無効になった対戦の消費バトル回数を両プレイヤーに戻す。
-// gateway の停止時処理が直接呼ぶサーバー間バッチエンドポイントで body に両 player_id を
-// 含むため、JWT sub では表現できない。/internal/v1 配下に残し JWT を要求しない。
 func (h *PlayerHandler) RevertBattleCount(c *gin.Context) {
 	var req apiaccount.RevertBattleCountRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	if !bindRequestBody(c, &req) {
 		return
 	}
-	if req.GameID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "game_id is required"})
+	if respondIfEmpty(c, "game_id", req.GameID) ||
+		respondIfEmpty(c, "player1_id", req.Player1ID) ||
+		respondIfEmpty(c, "player2_id", req.Player2ID) {
 		return
 	}
-	if req.Player1ID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "player1_id is required"})
-		return
-	}
-	if req.Player2ID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "player2_id is required"})
-		return
-	}
-	// 未指定のゼロ値を許すと 1970-01-01 のゲーム日で処理され戻し損ねたまま game_id だけ
-	// 消費されるため、0 以下を弾く。
 	if req.ConsumedAtMillis <= 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "consumed_at_millis must be positive"})
+		respondBadRequest(c, "consumed_at_millis must be positive")
 		return
 	}
-	if err := h.playerInteractor.RevertBattleCount(c.Request.Context(), req.GameID, req.ConsumedAtMillis, req.Player1ID, req.Player2ID); err != nil {
+	player1ID, isPlayer1Valid := parsePlayerIDField(c, "player1_id", req.Player1ID)
+	if !isPlayer1Valid {
+		return
+	}
+	player2ID, isPlayer2Valid := parsePlayerIDField(c, "player2_id", req.Player2ID)
+	if !isPlayer2Valid {
+		return
+	}
+
+	consumedAt := time.UnixMilli(req.ConsumedAtMillis).UTC()
+	if err := h.playerInteractor.RevertBattleCount(c.Request.Context(), req.GameID, consumedAt, player1ID, player2ID); err != nil {
 		respondError(c, err)
 		return
 	}
 	c.Status(http.StatusNoContent)
+}
+
+// toExpiresAt はプレミアムの有効期限の UNIX ミリ秒を時刻にする。
+// 省略されたときは nil を返し、0 以下のときは false を返す。
+func toExpiresAt(expiresAtMillis *int64) (expiresAt *time.Time, isValid bool) {
+	if expiresAtMillis == nil {
+		return nil, true
+	}
+	if *expiresAtMillis <= 0 {
+		return nil, false
+	}
+	t := time.UnixMilli(*expiresAtMillis).UTC()
+	return &t, true
 }

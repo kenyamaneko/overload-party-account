@@ -1,6 +1,7 @@
 package rest
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -11,7 +12,7 @@ import (
 	internalauth "github.com/kenyamaneko/overload-party-gateway/packages/internalauth-go"
 )
 
-// FactionHandler は初期ファクション選択フローの REST エンドポイントを処理する。
+// FactionHandler は陣営の選択・付与・一覧の REST の受け口である。
 type FactionHandler struct {
 	factionInteractor *usecase.FactionInteractor
 }
@@ -21,17 +22,12 @@ func NewFactionHandler(factionInteractor *usecase.FactionInteractor) *FactionHan
 	return &FactionHandler{factionInteractor: factionInteractor}
 }
 
-// SelectInitialFaction は初期ファクション選択を処理する。
+// SelectInitialFaction は初期陣営を選択する。
 func (h *FactionHandler) SelectInitialFaction(c *gin.Context) {
 	playerID := c.GetString(internalauth.PlayerIDContextKey)
 
 	var req apiaccount.SelectInitialFactionRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-	if req.FactionID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "faction_id is required"})
+	if !bindRequestBody(c, &req) || respondIfEmpty(c, "faction_id", req.FactionID) {
 		return
 	}
 
@@ -42,39 +38,43 @@ func (h *FactionHandler) SelectInitialFaction(c *gin.Context) {
 	c.Status(http.StatusOK)
 }
 
-// GrantFaction はプレイヤーにファクションを付与する。
+// GrantFaction は陣営を所持陣営に加える。
 func (h *FactionHandler) GrantFaction(c *gin.Context) {
 	playerID := c.GetString(internalauth.PlayerIDContextKey)
+
 	var req apiaccount.FactionGrantRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	if !bindRequestBody(c, &req) || respondIfEmpty(c, "faction", req.Faction) {
 		return
 	}
-	if req.Faction == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "faction is required"})
-		return
-	}
+
 	if err := h.factionInteractor.GrantFaction(c.Request.Context(), playerID, req.Faction); err != nil {
+		if errors.Is(err, usecase.ErrInvalidFaction) {
+			respondBadRequest(c, invalidFieldMessage("faction"))
+			return
+		}
 		respondError(c, err)
 		return
 	}
 	c.Status(http.StatusNoContent)
 }
 
-// ListFactions はプレイヤーの所持ファクション一覧を返す。
+// ListFactions は認証済みプレイヤーの所持陣営の一覧を返す。
 func (h *FactionHandler) ListFactions(c *gin.Context) {
-	playerID := c.GetString(internalauth.PlayerIDContextKey)
-	factions, err := h.factionInteractor.ListFactions(c.Request.Context(), playerID)
-	if err != nil {
-		respondError(c, err)
-		return
-	}
-	c.JSON(http.StatusOK, apiaccount.FactionListing{Factions: factions})
+	h.respondFactionListing(c, c.GetString(internalauth.PlayerIDContextKey))
 }
 
-// ListPlayerFactions は path の player_id の所持ファクション一覧を返す (サービス間ルックアップ)。
+// ListPlayerFactions はパスで指定されたプレイヤーの所持陣営の一覧を返す。
 func (h *FactionHandler) ListPlayerFactions(c *gin.Context) {
-	playerID := c.Param("playerID")
+	playerID, isValid := parsePlayerID(c.Param("playerID"))
+	if !isValid {
+		respondBadRequest(c, invalidPlayerIDMessage)
+		return
+	}
+	h.respondFactionListing(c, playerID)
+}
+
+// respondFactionListing は playerID の所持陣営の一覧を応答する。
+func (h *FactionHandler) respondFactionListing(c *gin.Context, playerID string) {
 	factions, err := h.factionInteractor.ListFactions(c.Request.Context(), playerID)
 	if err != nil {
 		respondError(c, err)
